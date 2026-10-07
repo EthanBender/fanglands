@@ -100,7 +100,11 @@ window.FANGLANDS = {
       // a bronze axe at Woodcutting 1 lands 45% of swings (finishGather: 0.35 + 0.1 per axe tier) and a miss swings again. 24 swings: a false timeout is 24 misses in a row, 0.55^24 = 5.9e-7
       const r = F.untilAction(a0 === 'chop' ? 24 * (Math.ceil(player.action.need * 60) + 1) : 1, () => countItem('wood') >= 1);
       check('chop: timed swings, one log, stump left, regrows', typeof r === 'number' && countItem('wood') === 1 && tileAt(tree.x, tree.y) === T.STUMP && regrow.some(x => x.i === idx(tree.x, tree.y)) && player.skills.woodcutting.xp === 25, { steps: r, wood: countItem('wood'), tile: tileName(tileAt(tree.x, tree.y)), tree: [tree.x, tree.y], at: [+(player.x / TILE).toFixed(2), +(player.y / TILE).toFixed(2)], a0, n0, near0, hp: player.hp, action: player.action && player.action.type, n1: notice && notice.text }); }
-    { const oak = F.nearestTile([T.OAK]); F.goAdjacent(oak.x, oak.y); F.fight(3000); F.goAdjacent(oak.x, oak.y); F.press('KeyE'); F.sim(3, []); check('oak needs Woodcutting 5', !player.action && notice && /Woodcutting level 5/.test(notice.text), { notice: notice && notice.text }); }
+    // (the nearest oak a knight can walk up to: on the bigger map the nearest may stand in a copse with no open side)
+    { const px = Math.floor(player.x / TILE), py = Math.floor(player.y / TILE), oaks = [], OAK_REACH = 40;   // how far round the knight to look, in tiles (a distance, not a place)
+      for (let y = Math.max(0, py - OAK_REACH); y <= Math.min(MAP_H - 1, py + OAK_REACH); y++) for (let x = Math.max(0, px - OAK_REACH); x <= Math.min(MAP_W - 1, px + OAK_REACH); x++) if (tileAt(x, y) === T.OAK) oaks.push({ x, y, d: Math.hypot(x - px, y - py) });
+      oaks.sort((a, b) => a.d - b.d);
+      const oak = oaks.slice(0, 12).find(o => typeof F.goAdjacent(o.x, o.y) === 'number') || F.nearestTile([T.OAK]); F.fight(3000); F.goAdjacent(oak.x, oak.y); F.press('KeyE'); F.sim(3, []); check('oak needs Woodcutting 5', !player.action && notice && /Woodcutting level 5/.test(notice.text), { notice: notice && notice.text }); }
     { const tree = F.nearestTile([T.TREE]); F.goAdjacent(tree.x, tree.y); F.fight(3000); F.goAdjacent(tree.x, tree.y); F.press('KeyE'); F.untilAction(player.action && player.action.type === 'chop' ? 24 * (Math.ceil(player.action.need * 60) + 1) : 1, () => countItem('wood') >= 2); } peace(false); // the second log is timed too: a goblin's hit cancels the swing and every plank check after it fails
     topUp('wood', 2); openPanel('craft'); render(); const crafted = F.clickButton('2 Logs → 4 Planks'); closePanel();
     check('craft planks from the pack', crafted && countItem('plank') === 4 && countItem('wood') === 0, { plank: countItem('plank') });
@@ -328,7 +332,7 @@ window.FANGLANDS = {
     { // the signpost shows the struck-out name, not a note saying it was crossed out
       dialog.queue.length = 0; dialog.cur = null; F.tp(SIGN_TILE.x - 1, SIGN_TILE.y); F.face(SIGN_TILE.x, SIGN_TILE.y); F.press('KeyE'); F.sim(2, []);
       const txt = (dialog.cur && dialog.cur.text) || ''; const struck = 'HOLLOWFORD'.split('').map(c => c + '̶').join('');
-      check('signpost: HOLLOWFORD is struck through (U+0336 after every letter) and scorched, never "crossed out"', txt.includes('̶') && txt.includes(struck) && /scorched/.test(txt) && !/crossed out/.test(txt) && /THISTLEDOWN, 1 mile/.test(txt), { txt });
+      check('signpost: HOLLOWFORD is struck through (U+0336 after every letter) and scorched, never "crossed out"', txt.includes('̶') && txt.includes(struck) && /scorched/.test(txt) && !/crossed out/.test(txt) && /THISTLEDOWN, east, 1 mile/.test(txt), { txt });
       dialog.queue.length = 0; dialog.cur = null; }
     { // gear tiers: every new item exists with the stated stats, colour, shape, stack 1, id; recipes at the stated level; bronze in the shops; sappers can drop bombs
       const A = { bronze_helm: ['helm', 3, '#b8863a'], bronze_body: ['body', 7, '#b8863a'], bronze_legs: ['legs', 5, '#b8863a'], bronze_shield: ['shield', 4, '#b8863a'], steel_legs: ['legs', 14, '#d5d9e0'], steel_shield: ['shield', 12, '#d5d9e0'] };
@@ -443,7 +447,8 @@ window.FANGLANDS = {
       // patchy rather than a flat sheet, there must be open ground between it, and lava and obsidian must survive.
       check('ashfields: ash lies in patches — 25–80% of dragon country, scorch and bare dirt between, lava and obsidian kept', cover >= 0.25 && cover <= 0.8 && green > 500 && lava >= 40 && obs >= 30, { cover: +cover.toFixed(2), ash, area, openGround: green, lava, obs }); }
     { // the jungle runs south to the map edge: giant trees and ferns in the band y 140–178 at the old density
-      let trees = 0, ferns = 0, band = 0, row150 = 0; for (let y = AW.ty(140); y <= AW.ty(178); y++) for (let x = AW.tx(100); x <= AW.tx(198); x++) { band++; const t = tileAt(x, y); if (t === T.JUNGLE) { trees++; if (y === AW.ty(150)) row150++; } else if (t === T.FERN) ferns++; }
+      // (to the Sound's west shore: since the spread the Sound's deep water runs down the jungle's east side)
+      let trees = 0, ferns = 0, band = 0, row150 = 0; for (let y = AW.ty(140); y <= AW.ty(178); y++) for (let x = AW.tx(100), xe = Math.min(AW.tx(198), ATLAS.GROUNDS.sound[0] - 1); x <= xe; x++) { band++; const t = tileAt(x, y); if (t === T.JUNGLE) { trees++; if (y === AW.ty(150)) row150++; } else if (t === T.FERN) ferns++; }
       check('jungle: the biome continues south (y 140–178, x 100–198) at the same density; jungle trees stand at y 150', row150 >= 20 && trees / band > 0.3 && trees / band < 0.5 && ferns / band > 0.06 && regionAt(AW.tx(150), AW.ty(160)).name === 'The Jungle' && regionAt(...ATLAS.frame('sylvaris').p(133, 120)).name === 'Sylvaris', { row150, trees: +(trees / band).toFixed(2), ferns: +(ferns / band).toFixed(2), region: regionAt(AW.tx(150), AW.ty(160)).name }); }
     peace(false);
     for (const h of HOOKS.selfTest) h(check, F, { give, peace, openSpot, clearJunk });

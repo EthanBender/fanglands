@@ -372,7 +372,7 @@
       const pieces = CAN_MARKS.every(([x, y]) => tileAt(x, y) === AG_MARK) && CAN_LOGS.every(([x, y]) => tileAt(x, y) === AG_LOG)
         && CAN_NETS.every(([x, y]) => tileAt(x, y) === AG_NET) && tileAt(...CAN_GAP1[0]) === AG_GAP && tileAt(...CAN_GAP2[0]) === AG_GAP;
       const reach = F.bfs(...ATLAS.port('hollowford.south'), CAN_MARKS[0][0], CAN_MARKS[0][1]);           // from the jungle path down to the start flag
-      setLv(CANOPY_LV); F.tp(ATLAS.world.tx(140), ATLAS.world.ty(102)); const walked = F.walkTo(CAN_MARKS[0][0], CAN_MARKS[0][1], 4000);
+      setLv(CANOPY_LV); F.tp(...ATLAS.track('r3b_jungle')[1].map(Math.round)); const walked = F.walkTo(CAN_MARKS[0][0], CAN_MARKS[0][1], 4000);   // from a point on the Jungle Path
       check(P + 'the Sylvaris canopy run is carved in the treetops (deck, vine rail, logs, nets, two gaps, five flags) and you can walk to it from the jungle path',
         deck === CAN_TRACK.length && rail === CAN.x1 - CAN.x0 - 1 && pieces && !!reach && typeof walked === 'number' && tileOf().tx === CAN_MARKS[0][0],
         { deck, track: CAN_TRACK.length, rail, pieces, reach: reach && reach.length, walked, at: tileOf() }); }

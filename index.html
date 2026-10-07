@@ -64,7 +64,7 @@ function mulberry32(seed) {
 
 // ---------- constants ----------
 const TILE = 48;
-const MAP_W = 260, MAP_H = 180;
+const MAP_W = 400, MAP_H = 280;   // the Great Spread (Stage 4a): was 260 x 180
 const WORLD_SEED = 20260907;
 const CAVE_EXIT_X = 20;
 const SAVE_KEY = 'fanglands.save.v2';
@@ -459,7 +459,7 @@ resize();
 //                  inside(id, k), spawn(id), solidAt(map, tx, ty), hash(), export(), RULES, FIXED_TILES, SPEED_CAP, slug }
 // ============================================================================
 {
-  const ATLAS_V = 1;
+  const ATLAS_V = 2;   // 2: the Great Spread (400 x 280; export() carries the anchors and the ports)
   const ID_RE = /^[a-z0-9_]{1,40}$/;
   const AREA_PRI = 2000;   // an area beats every region (regions are 1000 - their REGIONS index)
   // "The Fang's Lair" -> fang_lair, "Goblin Camp" -> goblin_camp, "Miller's Pond" -> miller_pond
@@ -527,7 +527,8 @@ resize();
     // an instance's own region sits at REGIONS[0] while the knight is inside it: that one is the instance, not a region
     const instNames = new Set(ids.map(id => (I.get(id) || {}).name));
     const regs = REGIONS.filter(r => !instNames.has(r.name));
-    regs.forEach((r, k) => { const p = add(base(slug(r.name), r.name, r.sub, 'region', OVER)); if (p) { p.pri = 1000 - k; p.rects.push([r.x0, r.y0, r.x1, r.y1]); } });
+    // (a region may name its Atlas id, `atlas`, where its name would slug to another: Castle Brightwater is `brightwater`)
+    regs.forEach((r, k) => { const p = add(base(r.atlas || slug(r.name), r.name, r.sub, 'region', OVER)); if (p) { p.pri = 1000 - k; p.rects.push([r.x0, r.y0, r.x1, r.y1]); } });
     for (const id of ids) {
       const d = I.get(id); if (!d) continue;
       const p = add(base(id, d.name, d.sub, 'instance', id)); if (!p) continue;
@@ -639,9 +640,15 @@ resize();
       const p = A.places.find(q => q.call === cid);
       calls[cid] = { map: c.map, near: c.near || null, type: c.type || null, place: p ? p.id : null };
     }
+    // the frames' anchors (each place's box on this map, a reserved place's plan box) and every named port, from the
+    // Stage 4a spread on (§7): the server and the tests read positions from here, never from literals
+    const F = window.ATLAS, anchors = {}, ports = {};
+    if (F.ANCHORS) for (const id of Object.keys(F.ANCHORS).sort()) { const b = F.box(id); if (b) anchors[id] = { kind: F.ANCHORS[id].kind, box: b.map(v => Math.round(v)) }; }
+    if (F.PORTS) for (const id of Object.keys(F.PORTS).sort()) { const q = F.port(id); if (q) ports[id] = [Math.round(q[0]), Math.round(q[1])]; }
     return {
       v: ATLAS_V, hash: A.hash, MAP_W, MAP_H, TILE, places: A.places.map(keep), grid: runs(A.grid), fixed,
       spawns: MONSTER_SPAWNS.map(s => [s.type, s.tx, s.ty, !!s.camp]), doors, calls, speed: Object.assign({}, SPEED_CAP, { max: SPEED_MAX }),
+      anchors, ports,
     };
   }
 
@@ -654,16 +661,18 @@ resize();
 
 // ============================================================================
 // THE ATLAS FRAMES — every place named once, so the Great Spread (260x180 -> 400x280) is one table, not 2,000 literals
-// (the spread spec, §8; Stage 0). Nothing in the game reads these yet except the self-tests at the end of this block:
-// Stages 1-3 rewrite each file's coordinates as reads of a frame, and Stage 4a moves the anchors. Until then every
-// frame is the identity, the world mapping is the identity and every pin's offset is 0, so nothing on screen moves.
+// (the spread spec, §8; Stage 0). Stages 1-3 rewrote every file's coordinates as reads of a frame; Stage 4a moved the
+// anchors: every place sits at its `to`, the world stretches through WORLD's breakpoints and the map is 400 x 280.
 //
 //   ATLAS.ANCHORS[id]  { box: [x0,y0,x1,y1] (old map, inclusive), at: [x,y] (where the box's top-left is now),
 //                        to: [x,y] (the §2 top-left at the spread), kind: 'place', guard }    a place that moves rigidly
 //                      { box: null, newBox: [...] (the 400x280 plan), kind: 'reserved' }     a new place, live from 4a
 //   ATLAS.PORTS[id]    [anchorId, x, y]: a named point in that anchor's OLD coordinates (a door, a gate, a road end);
 //                      ['new', x, y]: a point of a new place, in the 400x280 plan's coordinates (live from 4a)
-//   ATLAS.TRACKS[id]   today's road, path, river and node polylines; each point ['port', id] | ['w', x, y] | [anchorId, x, y]
+//   ATLAS.TRACKS[id]   the road network (§5), the river and the node list; each point ['port', id] | ['n', x, y] (the new
+//                      map's own) | ['w', x, y] (an old world point, stretched) | [anchorId, x, y]
+//   ATLAS.GROUNDS      the new grounds (the Sound, the east sea, the Grub Fields), in the new map's coordinates
+//   ATLAS.SIGNPOSTS    the road nodes that carry a signpost; ATLAS.signText(x, y) is what one says
 //   ATLAS.WORLD        { xs, ys }: piecewise-linear, monotone breakpoints [old, new] of the stretched land between places
 //   ATLAS.PINS         where a rigid place feature must meet a stretched world seam (§3)
 //
@@ -674,8 +683,7 @@ resize();
 //   ATLAS.port(id) ATLAS.box(id) ATLAS.track(id) ATLAS.guards() ATLAS.anchorOf(x, y) ATLAS.oldToNew(x, y) ATLAS.oldToNewWorld(x, y)
 //   ATLAS.frameProblems() ATLAS.strict()
 // oldToNew and oldToNewWorld are for the save migration and the tools ONLY, never for game code: game code names its frame.
-// None of this is in ATLAS.export() or ATLAS.hash() (§7: anchors and ports join export() in Stage 4a), so atlas.json and
-// the world's hash do not move.
+// ATLAS.export() carries the anchors' boxes and the ports since Stage 4a (§7); ATLAS.hash() covers none of this table.
 // ============================================================================
 {
   const A = window.ATLAS;
@@ -719,14 +727,27 @@ resize();
     bandit_hills:    { newBox: [250, 148, 274, 170] },
     skypier:         { newBox: [160, 8, 174, 22] },
     wreck_rock:      { newBox: [278, 112, 288, 122] },
-    brightwater:     { newBox: [366, 136, 392, 164] },
+    brightwater:     { newBox: [366, 136, 391, 164] },     // x to 391, not 392: the map's outer 8-tile ring (x 392..399) is the east sea's (ADDENDUM C)
     ash_wastes:      { newBox: [0, 217, 159, 279] },
     sylvaris_growth: { newBox: [205, 198, 270, 250] },     // kept free for the growing Sylvaris
+    // ADDENDUM A: ground reserved for the two skills built after the spread (the builder's boxes: both pass the spacing
+    // test, 25+ tiles from every other place's centre, and lie within 10 tiles of a main road)
+    alchemy:         { newBox: [110, 71, 125, 82] },       // the Glasshouse: Goblin Fields, east of Millbrook's bend of the river, beside the Long Road
+    necromancy:      { newBox: [66, 106, 81, 119] },       // the Old Barrow: Wolfwood's dark west end, beside the Wolfwood Road
+  };
+  // the new grounds (§1, §4), in the 400x280 plan's coordinates: REGIONS boxes, and the water 93-spread lays
+  const GROUNDS = {
+    // the Sound: deep water from the Grey Sea's south shore to the map's foot, so the whole east is ferry-only. x 303..311,
+    // nine wide as §1 has it but nine tiles west of §1's 312..320: 90-canyon's red country (the dust, scree and scrub round
+    // the Redcut's rim) reaches 14 tiles west of the rim, to x 313, and the Sound must not drown it
+    sound:       [303, 140, 311, 279],
+    east_sea:    [392, 0, 399, 279],     // the east sea: the map's outer ring on the east (ADDENDUM C keeps x 392..399 for it)
+    grub_fields: [312, 100, 391, 279],   // the Grub Fields: the Far Shore's scrub between Grubmarket and the Redcut, east of the Sound (the Redcut's own box wins inside it)
   };
   const GUARD = 3;   // the ring round every place that 39, 92, 93-roads and placeAction keep clear (ATLAS.guards())
   for (const id in ANCHORS) {
     const a = ANCHORS[id];
-    if (a.box) Object.assign(a, { at: [a.box[0], a.box[1]], kind: 'place', guard: GUARD });   // Stage 0: at = the old top-left (identity)
+    if (a.box) Object.assign(a, { at: a.to.slice(), kind: 'place', guard: GUARD });   // Stage 4a: every place at its section-2 top-left
     else Object.assign(a, { box: null, kind: 'reserved', guard: GUARD });
   }
   // places that may lie inside another (§4 spacing): [inner, outer]
@@ -793,12 +814,15 @@ resize();
     'ash_shrine.shrine': ['ash_shrine', 87, 103],
     'fang_lair.gate': ['fang_lair', 18, 108], 'fang_lair.circle': ['fang_lair', 18, 117], 'fang_lair.approach': ['fang_lair', 20, 105], 'fang_lair.node': ['fang_lair', 36, 105],
     'canopy.door': ['canopy', 121, 101], 'sylvaris.gap': ['sylvaris', 137, 114], 'sylvaris.node': ['sylvaris', 133, 112],
-    // §4/§5, in the 400x280 plan
-    'old_bridge.span': ['new', 136, 93], 'old_bridge.south': ['new', 140, 98], 'goblin_road.bridge': ['new', 228, 92],
+    // §4/§5, in the 400x280 plan (old_bridge.south is 138,99, not 140,98: the watchtower's ruin stands on 141..145 x 97..101)
+    'old_bridge.span': ['new', 136, 93], 'old_bridge.south': ['new', 138, 99], 'goblin_road.bridge': ['new', 228, 92],
     'millbrook.gate': ['new', 86, 80], 'saltmere.gate': ['new', 252, 74], 'saltmere.huts': ['new', 256, 72], 'crossroads_inn.yard': ['new', 160, 122],
     'beacon_hills.tower_w': ['new', 116, 12], 'beacon_hills.tower_n': ['new', 128, 8], 'beacon_hills.tower_e': ['new', 139, 15],
     'hunters_lodge.door': ['new', 112, 110], 'outpost_north.road': ['new', 217, 70], 'outpost_south.road': ['new', 236, 100],
-    'bandit_hills.toll': ['new', 262, 158], 'skypier.pad': ['new', 167, 20],
+    'bandit_hills.toll': ['new', 262, 158], 'skypier.pad': ['new', 167, 20], 'skypier.mast': ['new', 167, 12], 'brightwater.landing': ['new', 378, 150],
+    'wreck_rock.rock': ['new', 283, 117], 'alchemy.door': ['new', 125, 78], 'necromancy.door': ['new', 73, 119],
+    // 63-house's Wolfwood arch landing: open forest on the Wolfwood Road west of the Old Bridge (it was a world point)
+    'wolfwood.arch': ['new', 125, 104],
   };
   // ports that lie outside their own box on purpose: relative geometry that moves with the place (one line of reason each)
   const PORT_REL = {
@@ -806,36 +830,94 @@ resize();
     'thistledown.river_se': "the river's turn past the town's south-east corner, a row below the wall: it moves with the town (TRACKS.river)",
   };
 
-  // ---------- the tracks: today's values (no readers yet); each point a port, a world point or an anchor point ----------
-  // 39-worldblend's and 92-worldshape's ROADS (11 polylines), the NODES (92's 15; 39 reads the first 9), 39's RIVER,
-  // 27-dragons' PATH and FARM_PATH, 25-elves' PATH, 24-dwarves' shaft lane and 26-boats' dock lanes. Points are tagged by
-  // the smallest old box that holds them (tools/anchor-of.mjs); the river is the stretched world's (§2), bar where it runs
-  // through a pond: its head (the first two points, inside Miller's Pond, which it leaves by the east shore) and its three
-  // points through the small pond south of Thistledown (inside OWNERS' south-pond strip, thistledown's) and the next one,
-  // the port thistledown.river_se (146,57, the turn past the town's south-east corner a row below the wall: PORT_REL), which
-  // move with their ponds and the town. The jiggle found the channel cut each time the pond, or Thistledown, moved alone.
-  // (Stage 4a lays the river anew.)
-  const P = id => ['port', id], w = (x, y) => ['w', x, y];
+  // ---------- the tracks: the spread's road network (§5) and its river ----------
+  // Stage 4a lays the whole network as continuous DIRT tracks (02-world, at chance 1: 2 wide on a main road, 1 on a spur),
+  // so every place, port and stake is joined on day one; Stage 6 paves the same TRACKS. Every end is a port; an interior
+  // point is a port, a place's own point ([anchorId, x, y], its OLD coordinates) or a new-map point (['n', x, y], the
+  // 400x280 plan's own coordinates). ['w', x, y] (an OLD world point through the stretch) is still read, for a track
+  // written before the spread. 39-worldblend and 92-worldshape read every track but the river and the nodes as a road
+  // (the river bridges them, nothing solid is added near them, the scarp leaves them open); 26-boats lays the dock's verge
+  // from the Sea Road, 20-hollowford widens the Goblin Road, 25-elves trods the Jungle Path, 27-dragons and 93-ashedge
+  // keep the Ash Road clear. A route differs from §5's sketch where a place stands in its way (each named below).
+  const P = id => ['port', id], w = (x, y) => ['w', x, y], n = (x, y) => ['n', x, y];
   const TRACKS = {
-    road_cave: [P('cave.mouth'), P('signpost.sign'), ['thistledown', 84, 32]],
-    road_quarry_spur: [P('signpost.sign'), P('quarry.spur')],
-    road_wolfwood: [['thistledown', 84, 32], P('thistledown.west_lane_s'), w(60, 70), ['wren', 31, 76]],
-    road_camp: [['thistledown', 141, 32], ['camp', 150, 30]],
-    road_east_lane: [['thistledown', 141, 14], ['thistledown', 141, 32]],
-    road_dock_lane: [['thistledown', 141, 14], ['dock', 161, 14]],
-    road_hollowford: [['camp', 150, 39], w(150, 50), w(146, 58), ['hollowford', 141, 64], P('hollowford.north')],
-    path_ash: [['warden', 60, 94], ['warden', 60, 100], ['warden', 56, 104], w(48, 105), P('fang_lair.node')],
+    // R1 the Cave Road (main): the cave mouth, the Mill Lane fork 70,26, the story signpost, Thistledown's west gate
+    // (east along row 7 first, north of Death's House 1 at the cave's corner)
+    r1_cave: [P('cave.mouth'), n(33, 8), n(45, 14), n(70, 26), P('signpost.sign'), n(125, 48), P('thistledown.west_gate')],
+    // R1a the Quarry Track (from the signpost; the Beacon fork at 98,30) to the miners' cart
+    r1a_quarry: [P('signpost.sign'), n(98, 30), P('quarry.spur')],
+    // R1b the Beacon Path: the fork on the Quarry Track, up the ridge to the three towers
+    r1b_beacon: [n(98, 30), n(112, 20), P('beacon_hills.tower_w'), P('beacon_hills.tower_n'), P('beacon_hills.tower_e')],
+    // R1c Mill Lane: west round Miller's Pond (§5 ran it by the pond's landing, but the river leaves the pond's east shore
+    // there and Mill Lane has no bridge), down to Millbrook's gate
+    r1c_mill: [n(70, 26), n(60, 38), n(57, 56), n(62, 72), P('millbrook.gate')],
+    // R2 the Sea Road (main): the east gate, the Toll Post 215,49, the camp's gap fork 228,48, north round the palisade
+    // (the camp's west field, not through its fence), the shore lane, Harl's dock
+    r2_sea: [P('thistledown.east_gate'), n(200, 50), n(215, 49), n(228, 48), n(227, 36), n(246, 30), P('dock.land')],
+    spur_camp_gap: [n(228, 48), P('camp.west_gap')],
+    // R2a the Skypier spur (§5 lists it for Stage 7; laid now so the stakes are joined): up the lane outside the east wall
+    r2a_skypier: [n(200, 50), n(200, 33), n(185, 25), P('skypier.pad')],
+    // R3 the Long Road South (main): the lane outside the west wall (Thistledown's own), past the Glasshouse plot, over the
+    // Old Bridge, west of the watchtower's ruin, the Crossroads Inn, Hollowford's west entry, the square
+    r3_long: [P('thistledown.west_gate'), P('thistledown.west_lane_n'), ['thistledown', 84, 51], n(131, 82), P('old_bridge.span'), P('old_bridge.south'),
+      n(146, 108), P('crossroads_inn.yard'), n(185, 126), P('hollowford.west'), P('hollowford.square')],
+    spur_glasshouse: [n(134, 78), P('alchemy.door')],
+    // R3b the Jungle Path: Hollowford's south exit through the giants' gap, the canopy fork 214,174, Sylvaris' gap
+    r3b_jungle: [P('hollowford.south'), n(222, 160), n(214, 174), n(222, 195), P('sylvaris.gap')],
+    spur_canopy: [n(214, 174), P('canopy.door')],
+    // R4 the Goblin Road (main): out of the camp's south palisade gap (its own point), east of the War Shed, past the
+    // north outpost's stakes (10 off), the plank bridge, past the south outpost's stakes (4 off), Hollowford's north entry
+    r4_goblin: [['camp', 150, 39], n(238, 68), n(232, 80), P('goblin_road.bridge'), n(227, 104), P('hollowford.north')],
+    // R4a the Saltmere spur (from the Goblin Road at 232,80); R4b the Coast Path back up to the Sea Road (a loop: dock,
+    // Saltmere, camp)
+    r4a_saltmere: [n(232, 80), P('saltmere.gate')],
+    r4b_coast: [P('saltmere.huts'), n(250, 52), n(246, 30)],
+    // R5 the Wolfwood Road (main): the bridge's south end, the Wolfwood arch landing, the Lodge, beside the Old Barrow,
+    // past the step below Wren's door (the hut's own wall is not the road's), between the graveyard and the Deepholm rock,
+    // the graveyard gate
+    r5_wolfwood: [P('old_bridge.south'), P('wolfwood.arch'), P('hunters_lodge.door'), n(84, 121), n(62, 122), n(55, 126), n(50, 126), n(40, 126), n(36, 116), P('graveyard.gate')],
+    spur_barrow: [n(73, 121), P('necromancy.door')],
+    // R6 the Ash Road (main): the inn, round (not through) the stone circle, the Warden's post and gate, Dunstan's turn
+    // (the warden's own points), the old ash path to the lair's approach and gate
+    r6_ash: [P('crossroads_inn.yard'), n(130, 128), n(100, 140), P('warden.post'), P('warden.gate'), ['warden', 60, 100], ['warden', 56, 104], n(78, 164),
+      P('fang_lair.node'), P('fang_lair.approach'), P('fang_lair.gate')],
+    // R6a the Shrine spur, from Dunstan's turn; the farm path (the warden's own)
+    r6a_shrine: [P('warden.turn'), P('ash_shrine.shrine')],
     path_farm: [['warden', 60, 100], ['warden', 63, 103], ['warden', 69, 103]],
-    path_jungle: [P('hollowford.south'), w(141, 101), w(136, 105), ['sylvaris', 132, 109], P('sylvaris.node')],
+    // R7 the Drovers' Track (a cart track, never paved): the inn to the south outpost
+    r7_drovers: [P('crossroads_inn.yard'), n(200, 108), P('outpost_south.road')],
+    // R8 the Bandit Track: Hollowford's east side to the bandit hills' toll
+    r8_bandit: [P('hollowford.east'), n(255, 145), P('bandit_hills.toll')],
+    // the miners' lane inside the quarry (24-dwarves')
     shaft_lane: [['quarry', 54, 13], ['quarry', 54, 8], ['quarry', 55, 8], ['quarry', 55, 5], ['quarry', 57, 5]],
+    // the places that must stay mutually reachable, in chain order (39 reads the first nine, 92 all fifteen)
     nodes: [P('cave.mouth'), P('signpost.sign'), P('thistledown.west_gate'), P('dock.planks'), P('hollowford.heart'), P('warden.node'), P('fang_lair.node'),
       P('hollowford.south'), P('quarry.shaft'), P('wren.wren'), P('graveyard.grave'), ['pond', 38, 36], P('camp.walker'), P('sylvaris.node'), P('thistledown.square')],
-    river: [['pond', 44, 38], ['pond', 47, 44], w(48, 50), w(52, 56), w(62, 58), w(72, 60), w(84, 60), w(94, 61), w(102, 59), w(110, 62), w(118, 60), w(124, 62),
-      ['thistledown', 128, 61], ['thistledown', 134, 60], ['thistledown', 140, 59], P('thistledown.river_se'), w(154, 53), w(178, 47)],
+    // the river, laid anew (§3, §5): from inside Miller's Pond (its old head) out by the east shore, south-east past
+    // Millbrook's bend, then east along the
+    // Goblin Fields / Wolfwood scarp under the two road bridges, out to the Grey Sea below Saltmere
+    river: [['pond', 44, 38], P('pond.outflow'), n(90, 62), n(102, 70), n(106, 84), n(114, 96), n(124, 95), P('old_bridge.span'), n(148, 92), n(160, 97), n(170, 98),
+      n(182, 93), n(196, 94), n(212, 97), P('goblin_road.bridge'), n(240, 94), n(252, 88), n(264, 84)],
   };
+  // the main roads (§5: 2 wide; placeAction keeps them and the tile either side clear; Stage 6 paves them first)
+  const MAIN_ROADS = ['r1_cave', 'r2_sea', 'r3_long', 'r4_goblin', 'r5_wolfwood', 'r6_ash'];
+  // every road (a track that is not the river or the node list): what 02-world lays and 39 and 92 keep open
+  const ROAD_IDS = Object.keys(TRACKS).filter(id => id !== 'river' && id !== 'nodes');
+  // the signposts (§5): a SIGN beside every node with three or more legs, and at the Lodge and Millbrook; 06-systems sends a
+  // SIGN other than the story's to ATLAS.signText, which names each arm and the place it leads to
+  // { at: the node, sign: where the post stands (else 93-spread finds open ground two to four tiles off the node) }: the
+  // two by Thistledown's gates stand clear of the High Street's line through the gates
+  const SIGNPOSTS = [{ at: n(70, 26) }, { at: n(98, 30) }, { at: P('thistledown.west_gate'), sign: n(138, 54) }, { at: n(200, 50), sign: n(203, 46) }, { at: n(228, 48) },
+    { at: n(232, 80) }, { at: n(246, 30) }, { at: P('old_bridge.south') }, { at: P('crossroads_inn.yard') }, { at: P('hollowford.square') }, { at: n(214, 174) },
+    { at: ['warden', 60, 100] }, { at: P('hunters_lodge.door') }, { at: P('millbrook.gate') }];
 
   // ---------- the stretched world, and the seam pins (§3) ----------
-  const WORLD = { xs: [[0, 0], [MAP_W - 1, MAP_W - 1]], ys: [[0, 0], [MAP_H - 1, MAP_H - 1]] };   // identity until Stage 4a
+  // Stage 4a (spec §3): old x 0..162 (the Goblin Fields, Wolfwood, the Ashfields and the Jungle) to 0..262, old 162..200
+  // (the Grey Sea and the Sound) to 262..318, old 200..259 (the Far Shore, the Grub Fields and the Redcut) to 318..399;
+  // every row 0..179 to 0..279. The first column and row inside the tree border stay where they are ([1, 1]): a pass that
+  // runs "from the first column" (W.tx(1): the rim, the scarp, the dither) must start at 1, or the column between the
+  // border and the scarp's first face is a way round it.
+  const WORLD = { xs: [[0, 0], [1, 1], [162, 262], [200, 318], [259, 399]], ys: [[0, 0], [1, 1], [179, 279]] };
   // near each of its ports a pinned seam moves with the port's place (its old value through the port's frame) instead of
   // the stretch, tapered back to the stretch over 12 tiles either side (W.pin); `axis` is the coordinate the seam is
   // moved in, `along` the one it runs along
@@ -844,6 +926,7 @@ resize();
     { id: 'gw_steps', seam: 'the Goblin Fields / Wolfwood scarp (92 sGW)', axis: 'y', ports: ['graveyard.steps'] },
     { id: 'giants', seam: 'the Wolfwood / Jungle wall (92 sWJ)', axis: 'y', ports: ['hollowford.south'] },
     { id: 'jungle_west', seam: 'the Ashfields / Jungle wall (37 x 100, 39 jungle column)', axis: 'x', ports: ['warden.east_wall'], old: 100 },   // old: a straight seam's old line (W.line)
+    // (the river is laid in the new map's own points through these ports, so its pin moves nothing: W.pin skips a new port)
     { id: 'river', seam: 'the river polyline (TRACKS.river)', axis: 'y', ports: ['old_bridge.span', 'goblin_road.bridge', 'pond.outflow'] },
     { id: 'strait', seam: 'the 39 strait and Far Shore coast loops', axis: 'x', ports: ['far_shore.strait'] },
     { id: 'sea', seam: "the Grey Sea's west coast (39 COVES)", axis: 'x', ports: ['dock.planks'] },   // + saltmere.jetty when Saltmere is drawn (Stage 5b)
@@ -947,10 +1030,11 @@ resize();
   const live = id => !!ANCHORS[id] && ANCHORS[id].kind === 'place';
   function port(id) {
     const q = PORTS[id]; if (!q) return null;
-    if (q[0] === 'new') { const pre = id.split('.')[0]; return !ANCHORS[pre] || live(pre) ? [q[1], q[2]] : null; }   // a reserved place's ports are live from 4a
+    if (q[0] === 'new') return [q[1], q[2]];   // a new place's port, in the 400x280 plan's own coordinates (live since 4a)
     const f = FRAMES[q[0]]; return f ? [f.x(q[1]), f.y(q[2])] : null;
   }
-  const box = id => live(id) ? FRAMES[id].newBox : null;
+  // a place's new box; a reserved place's (§4, live from 4a) is its plan box
+  const box = id => live(id) ? FRAMES[id].newBox : ANCHORS[id] && ANCHORS[id].kind === 'reserved' ? ANCHORS[id].newBox.slice() : null;
   const area = b => (b[2] - b[0] + 1) * (b[3] - b[1] + 1);
   // the place box (OLD map) holding the point. One box: that place. More than one: the OWNERS rect or the port at that
   // exact point that decides it (decided: 'owner' | 'port'); otherwise the smallest box, flagged overlap: true (a human
@@ -976,7 +1060,94 @@ resize();
   const oldToNewWorld = (x, y) => [W.x(x), W.y(y)];
   function track(id) {
     const t = TRACKS[id]; if (!t) return null;
-    return t.map(q => q[0] === 'port' ? port(q[1]) : q[0] === 'w' ? [W.x(q[1]), W.y(q[2])] : FRAMES[q[0]] ? [FRAMES[q[0]].x(q[1]), FRAMES[q[0]].y(q[2])] : null);
+    return t.map(q => q[0] === 'port' ? port(q[1]) : q[0] === 'n' ? [q[1], q[2]] : q[0] === 'w' ? [W.x(q[1]), W.y(q[2])] : FRAMES[q[0]] ? [FRAMES[q[0]].x(q[1]), FRAMES[q[0]].y(q[2])] : null);
+  }
+  // one track point, as [x, y] on the map
+  const pointOf = q => q[0] === 'port' ? port(q[1]) : q[0] === 'n' ? [q[1], q[2]] : q[0] === 'w' ? [W.x(q[1]), W.y(q[2])] : FRAMES[q[0]] ? [FRAMES[q[0]].x(q[1]), FRAMES[q[0]].y(q[2])] : null;
+  // the reserved places (§4 and addendum A): their boxes take stakes and a plaque, and placeAction refuses them
+  const reserved = () => Object.keys(ANCHORS).filter(id => ANCHORS[id].kind === 'reserved').map(id => ({ id, box: ANCHORS[id].newBox.slice() }));
+  const reservedAt = (tx, ty) => { for (const id in ANCHORS) { const a = ANCHORS[id]; if (a.kind === 'reserved' && inB(a.newBox, tx, ty)) return id; } return null; };
+  // a tile on a main road or one either side of it: within 2 tiles of a main road's centre line (the 2-wide road and
+  // a tile of verge either side). A mask, made once (the tracks never move after load).
+  const segD = (px, py, ax, ay, bx, by) => { const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy || 1, t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / l2)); return Math.hypot(px - ax - t * dx, py - ay - t * dy); };
+  let MAIN_MASK = null;
+  function onMainRoad(tx, ty) {
+    if (tx < 0 || ty < 0 || tx >= MAP_W || ty >= MAP_H) return false;
+    if (!MAIN_MASK) {
+      MAIN_MASK = new Uint8Array(MAP_W * MAP_H);
+      for (const id of MAIN_ROADS) { const pl = track(id);
+        for (let k = 1; k < pl.length; k++) { const [ax, ay] = pl[k - 1], [bx, by] = pl[k];
+          for (let y = Math.max(0, Math.floor(Math.min(ay, by) - 2)); y <= Math.min(MAP_H - 1, Math.ceil(Math.max(ay, by) + 2)); y++)
+            for (let x = Math.max(0, Math.floor(Math.min(ax, bx) - 2)); x <= Math.min(MAP_W - 1, Math.ceil(Math.max(ax, bx) + 2)); x++) if (segD(x, y, ax, ay, bx, by) <= 2) MAIN_MASK[y * MAP_W + x] = 1; } }
+    }
+    return MAIN_MASK[ty * MAP_W + tx] === 1;
+  }
+  // ---------- the signposts' words (§5): each arm, which way it points and the place at its far end ----------
+  const PLACE_WORDS = { cave: 'the cave', signpost: 'the old signpost', quarry: 'Grey Quarry', pond: "Miller's Pond", thistledown: 'Thistledown', camp: 'the Goblin Camp',
+    dock: "Harl's dock", hollowford: 'Hollowford', warden: "the Warden's gate", ash_shrine: 'the ash shrine', fang_lair: "the Fang's lair", canopy: 'the canopy run',
+    sylvaris: 'Sylvaris', wren: "Old Wren's hut", graveyard: 'the graveyard', old_bridge: 'the Old Bridge', millbrook: 'Millbrook', saltmere: 'Saltmere',
+    crossroads_inn: 'the Crossroads Inn', beacon_hills: 'Beacon Hills', hunters_lodge: "the Hunters' Lodge", outpost_north: 'the goblin outpost',
+    outpost_south: 'the goblin outpost', bandit_hills: 'the Bandit Hills', skypier: 'the Skypier', alchemy: 'the Glasshouse', necromancy: 'the Old Barrow',
+    wolfwood: 'Wolfwood', goblin_road: 'the goblin bridge' };
+  const ROAD_WORDS = { r1_cave: 'the Cave Road', r1a_quarry: 'the Quarry Track', r1b_beacon: 'the Beacon Path', r1c_mill: 'Mill Lane', r2_sea: 'the Sea Road',
+    spur_camp_gap: "the camp's gap", r2a_skypier: 'the Skypier lane', r3_long: 'the Long Road', spur_glasshouse: 'the Glasshouse plot', r3b_jungle: 'the Jungle Path',
+    spur_canopy: 'the canopy run', r4_goblin: 'the Goblin Road', r4a_saltmere: 'the Saltmere lane', r4b_coast: 'the Coast Path', r5_wolfwood: 'the Wolfwood Road',
+    spur_barrow: 'the Old Barrow', r6_ash: 'the Ash Road', r6a_shrine: 'the shrine path', path_farm: "Dunstan's farm", r7_drovers: "the Drovers' Track",
+    r8_bandit: 'the Bandit Track', shaft_lane: 'the mine shaft' };
+  const COMPASS = ['east', 'south-east', 'south', 'south-west', 'west', 'north-west', 'north', 'north-east'];
+  // the words for a leg's far end: a port names its place (a reserved one says the builders are at work); a junction
+  // names the road it meets
+  const placeWords = pre => { const name = PLACE_WORDS[pre] || pre; return ANCHORS[pre] && ANCHORS[pre].kind === 'reserved' ? name + ' (builders at work)' : name; };
+  function endWords(q, tid) {
+    if (q[0] === 'port') return placeWords(q[1].split('.')[0]);
+    if (q[0] !== 'n' && q[0] !== 'w' && PLACE_WORDS[q[0]]) return placeWords(q[0]);   // a place's own point: that place
+    const at = pointOf(q);
+    for (const id of ROAD_IDS) if (id !== tid && track(id).some(p => Math.hypot(p[0] - at[0], p[1] - at[1]) < 1)) return ROAD_WORDS[id] || id;
+    return ROAD_WORDS[tid] || tid;
+  }
+  // a point `d` tiles along the polyline from index k toward index k + dir
+  function along(pl, k, dir, d) {
+    let [x, y] = pl[k];
+    for (let i = k; i + dir >= 0 && i + dir < pl.length; i += dir) { const [nx, ny] = pl[i + dir], L = Math.hypot(nx - x, ny - y); if (L >= d) return [x + (nx - x) * d / L, y + (ny - y) * d / L]; d -= L; x = nx; y = ny; }
+    return [x, y];
+  }
+  // the arms at a node: every road through it (or ending at it), and at a place's own node (a port of that place) every
+  // road that leaves that place by another of its ports within 20 tiles (Hollowford's square: the roads from its four entries)
+  function signLegs(nx, ny, place) {
+    const legs = [];
+    for (const id of ROAD_IDS) {
+      const pts = TRACKS[id], pl = track(id);
+      let best = -1, bd = 2.5; pl.forEach((p, k) => { const d = Math.hypot(p[0] - nx, p[1] - ny); if (d < bd) { bd = d; best = k; } });
+      if (best < 0 && place) for (const k of [0, pl.length - 1]) { const q = pts[k]; if (q[0] === 'port' && q[1].split('.')[0] === place && Math.hypot(pl[k][0] - nx, pl[k][1] - ny) <= 20) best = k; }
+      if (best < 0) continue;
+      for (const dir of [-1, 1]) { const end = dir < 0 ? 0 : pl.length - 1; if (best === end) continue;
+        const [ax, ay] = Math.hypot(pl[best][0] - nx, pl[best][1] - ny) > 2.5 ? pl[best] : along(pl, best, dir, 8), a = Math.atan2(ay - ny, ax - nx), word = COMPASS[((Math.round(a / (Math.PI / 4)) % 8) + 8) % 8];
+        legs.push({ road: id, to: endWords(pts[end], id), dir: word }); }
+    }
+    return legs;
+  }
+  // the node a signpost at (tx, ty) stands by (within 7 tiles), and the place it is a port of, if any
+  function signNode(tx, ty) {
+    let node = null, nd = 7.5, place = null;
+    for (const q of SIGNPOSTS) { const p = pointOf(q.at); const d = Math.hypot(p[0] - tx, p[1] - ty); if (d < nd) { nd = d; node = p; place = q.at[0] === 'port' ? q.at[1].split('.')[0] : null; } }
+    return node ? { node, place } : null;
+  }
+  // its arms, [{ road, to, dir }], each named once (the place it stands at is not an arm of its own)
+  function signArms(tx, ty) {
+    const at = signNode(tx, ty); if (!at) return [];
+    const seen = new Set(), out = [];
+    for (const l of signLegs(at.node[0], at.node[1], at.place)) { const k = l.to + '|' + l.dir; if (seen.has(k) || (at.place && l.to === placeWords(at.place))) continue; seen.add(k); out.push(l); }
+    return out;
+  }
+  // the text of the signpost at (tx, ty): the node it stands by (within 7 tiles), each arm on its own; null if none
+  function signText(tx, ty) {
+    const at = signNode(tx, ty); if (!at) return null;
+    const { node, place } = at, arms = [], cap = w => w.charAt(0).toUpperCase() + w.slice(1);
+    for (const l of signArms(tx, ty)) arms.push('→ ' + cap(l.to) + ', ' + l.dir + '.');
+    // a post at a place's own gate or door says where it stands (Thistledown's west gate: the town is through it)
+    if (place && PLACE_WORDS[place]) { const b = box(place), here = b && (tx < b[0] || tx > b[2] || ty < b[1] || ty > b[3]) ? null : 'here';
+      if (here) arms.unshift('Here: ' + cap(placeWords(place)) + '.'); else if (b) { const a = Math.atan2((b[1] + b[3]) / 2 - ty, (b[0] + b[2]) / 2 - tx); arms.unshift('→ ' + cap(placeWords(place)) + ', ' + COMPASS[((Math.round(a / (Math.PI / 4)) % 8) + 8) % 8] + '.'); } }
+    return arms.length ? arms.join('   ') : null;
   }
   function guards() {
     const out = [];
@@ -1026,15 +1197,18 @@ resize();
     if (!monotone(WORLD.xs) || !monotone(WORLD.ys)) problems.push('WORLD is not monotone');
     for (const pin of PINS) for (const pid of pin.ports) if (!PORTS[pid]) problems.push('pin ' + pin.id + ' names no port ' + pid);
     for (const tid in TRACKS) for (const q of TRACKS[tid]) {
-      if (q[0] === 'port' ? !PORTS[q[1]] : q[0] !== 'w' && !live(q[0])) problems.push('track ' + tid + ' has a point that names nothing: ' + JSON.stringify(q));
-      else if (q[0] !== 'port' && q[0] !== 'w' && !FRAMES[q[0]].inOld(q[1], q[2])) problems.push('track ' + tid + ' point ' + JSON.stringify(q) + ' lies outside ' + q[0] + "'s box");
+      if (q[0] === 'port' ? !PORTS[q[1]] : q[0] !== 'w' && q[0] !== 'n' && !live(q[0])) problems.push('track ' + tid + ' has a point that names nothing: ' + JSON.stringify(q));
+      else if (q[0] === 'n' ? !(q[1] >= 0 && q[2] >= 0 && q[1] < PLAN_W && q[2] < PLAN_H) : q[0] !== 'port' && q[0] !== 'w' && !FRAMES[q[0]].inOld(q[1], q[2])) problems.push('track ' + tid + ' point ' + JSON.stringify(q) + ' lies outside ' + (q[0] === 'n' ? 'the planned map' : q[0] + "'s box"));
     }
+    for (const id of MAIN_ROADS) if (!TRACKS[id]) problems.push('MAIN_ROADS names no track ' + id);
+    for (const q of SIGNPOSTS) for (const r of [q.at, q.sign]) if (r && r[0] === 'port' && !PORTS[r[1]]) problems.push('a signpost names no port ' + r[1]);
     if (problems.length) console.error('ATLAS frames: ' + problems.join('; '));
   }
 
   Object.assign(A, {
     ANCHORS, PORTS, PORT_REL, TRACKS, WORLD, PINS, NESTED, OWNERS, PLAN: { W: PLAN_W, H: PLAN_H },
     frame, world: W, port, box, track, guards, anchorOf, oldToNew, oldToNewWorld,
+    MAIN_ROADS, ROAD_IDS, SIGNPOSTS, GROUNDS, pointOf, reserved, reservedAt, onMainRoad, signText, signLegs, signArms,
     frameProblems: () => problems.slice(), strict: () => [...STRICT.values()].map(e => e.slice()),
   });
 
@@ -1042,24 +1216,26 @@ resize();
   HOOKS.selfTest.push((check, F, h) => {
     const PF = 'atlas frames: ', strictBefore = new Map(STRICT);   // what the game logged so far: put back after these checks add their own
     check(PF + 'the anchor table is whole: boxes in the map and apart (old boxes may overlap where they still stand), the 400x280 plan apart, every port in its own box, WORLD monotone, every pin and track point naming something real', problems.length === 0, { problems: problems.slice(0, 8) });
-    // Stage 0: every frame, the world and every pin are the identity, so nothing on screen can have moved
-    const notId = Object.keys(FRAMES).filter(id => { const f = FRAMES[id], a = ANCHORS[id]; return f.dx !== 0 || f.dy !== 0 || f.x(a.box[0] + 0.5) !== a.box[0] + 0.5 || f.iy(f.y(a.box[3])) !== a.box[3]; });
-    const wId = [0, 7.25, 0.1, 37.3, 61.5 + 0.7 * 6.5, MAP_W - 1].every(v => W.x(v) === v && W.ix(v) === v) && [0, 3.5, MAP_H - 1].every(v => W.y(v) === v && W.iy(v) === v) && W.tx(12.4) === 12 && W.ty(12.6) === 13;
-    const pinsZero = PINS.every(pin => [0, 50, 96, 140].every(al => W.pin(pin.id, 42.5, al) === 42.5 && W.unpin(pin.id, 42.5, al) === 42.5));
-    check(PF + 'Stage 0: every frame, the world and every seam pin are the identity (frame.x = x, W.x = x, pin offset 0)', notId.length === 0 && wId && pinsZero, { notId, wId, pinsZero });
+    // Stage 4a: every place sits at its section-2 top-left, and the world stretches through section 3's breakpoints
+    const offBad = Object.keys(FRAMES).filter(id => { const f = FRAMES[id], a = ANCHORS[id]; return f.dx !== a.to[0] - a.box[0] || f.dy !== a.to[1] - a.box[1] || f.ix(f.x(a.box[0] + 0.5)) !== a.box[0] + 0.5; });
+    const wOk = MAP_W === PLAN_W && MAP_H === PLAN_H && W.x(0) === 0 && W.x(1) === 1 && W.y(1) === 1 && W.x(162) === 262 && W.x(200) === 318 && W.x(259) === 399 && W.y(179) === 279 && W.y(0) === 0 &&
+      [0, 7.25, 61.5, 150, 199.5, 259].every(v => Math.abs(W.ix(W.x(v)) - v) < 1e-9) && [0, 3.5, 95, 179].every(v => Math.abs(W.iy(W.y(v)) - v) < 1e-9);
+    const pinIds = PINS.every(pin => pin.ports.every(pid => PORTS[pid]));
+    check(PF + "Stage 4a: every place sits at its section-2 top-left (each frame's offset is its new top-left less its old one), the map is 400 x 280, and the world stretches through section 3's breakpoints (old x 162 to 262, 200 to 318, 259 to 399; row 179 to 279; the first column and row inside the border kept) with the inverse undoing it",
+      offBad.length === 0 && wOk && pinIds, { offBad, wOk, pinIds, map: [MAP_W, MAP_H] });
     // the API's shapes
-    const Fh = frame('hollowford'), r = Fh.rect({ x0: 122, y0: 66, x1: 156, y1: 92, name: 'HF' }), pt = Fh.pt({ x: 140, y: 80, label: 'well' });
-    const shapes = JSON.stringify(Fh.p(140, 80)) === '[140,80]' && r.name === 'HF' && r.x1 === Fh.x(156) && pt.label === 'well' && pt.x === Fh.x(140) &&
-      JSON.stringify(Fh.pts([[1, 2], { x: 3, y: 4 }]).map(q => Array.isArray(q) ? q : [q.x, q.y])) === '[[1,2],[3,4]]' && JSON.stringify(Fh.box([1, 2, 3, 4])) === '[1,2,3,4]' && Fh.inOld(120, 59) && !Fh.inOld(119, 59);
+    const Fh = frame('hollowford'), hx = Fh.dx, hy = Fh.dy, r = Fh.rect({ x0: 122, y0: 66, x1: 156, y1: 92, name: 'HF' }), pt = Fh.pt({ x: 140, y: 80, label: 'well' });
+    const shapes = JSON.stringify(Fh.p(140, 80)) === JSON.stringify([140 + hx, 80 + hy]) && r.name === 'HF' && r.x1 === 156 + hx && pt.label === 'well' && pt.x === 140 + hx &&
+      JSON.stringify(Fh.pts([[1, 2], { x: 3, y: 4 }]).map(q => Array.isArray(q) ? q : [q.x, q.y])) === JSON.stringify([[1 + hx, 2 + hy], [3 + hx, 4 + hy]]) && JSON.stringify(Fh.box([1, 2, 3, 4])) === JSON.stringify([1 + hx, 2 + hy, 3 + hx, 4 + hy]) && Fh.inOld(120, 59) && !Fh.inOld(119, 59);
     let threw = false; try { frame('nowhere'); } catch (e) { threw = true; }
     check(PF + "a frame answers in every shape the conversions use (p, pt, pts, rect, box, inOld) and keeps a rect's other fields; an unknown place throws", shapes && threw, { shapes, threw });
     // helpers
-    const sp = port('thistledown.square'), reserved = port('old_bridge.span'), hfBox = box('hollowford'), g = guards().find(q => q.id === 'hollowford');
+    const sp = port('thistledown.square'), span = port('old_bridge.span'), hfBox = box('hollowford'), obBox = box('old_bridge'), g = guards().find(q => q.id === 'hollowford');
     const smallest = anchorOf(160, 18), ow = oldToNew(140, 80), none = oldToNew(60, 70), nw = oldToNewWorld(60, 70), trackOk = Object.keys(TRACKS).every(id => track(id).every(q => Array.isArray(q) && q.length === 2 && Number.isFinite(q[0]) && Number.isFinite(q[1])));
-    check(PF + 'port, box, guards, anchorOf (an overlap tile goes to its owner: the dock / camp corner 160,18 to the dock), oldToNew (null on open land) and every track resolve; a reserved place has no box or port before 4a',
-      JSON.stringify(sp) === '[112,33]' && reserved === null && box('old_bridge') === null && JSON.stringify(hfBox) === '[120,59,160,96]' && g && g.x0 === hfBox[0] - ANCHORS.hollowford.guard && g.y1 === hfBox[3] + ANCHORS.hollowford.guard &&
-      smallest && smallest.id === 'dock' && smallest.holders.includes('camp') && JSON.stringify(ow) === '[140,80]' && none === null && JSON.stringify(nw) === '[60,70]' && trackOk,
-      { sp, reserved, hfBox, g, smallest, ow, none, trackOk });
+    check(PF + "port, box, guards, anchorOf (an overlap tile goes to its owner: the dock / camp corner 160,18 to the dock), oldToNew (null on open land) and every track resolve at the spread: the square at 169,52, Hollowford's box 206..246 x 112..149, the well 140,80 at 226,133; a reserved place's port and box are live (the Old Bridge's span 136,93, its box 128..146 x 86..102)",
+      JSON.stringify(sp) === '[169,52]' && JSON.stringify(span) === '[136,93]' && JSON.stringify(obBox) === '[128,86,146,102]' && JSON.stringify(hfBox) === '[206,112,246,149]' && g && g.x0 === hfBox[0] - ANCHORS.hollowford.guard && g.y1 === hfBox[3] + ANCHORS.hollowford.guard &&
+      smallest && smallest.id === 'dock' && smallest.holders.includes('camp') && JSON.stringify(ow) === '[226,133]' && none === null && JSON.stringify(nw) === JSON.stringify([W.x(60), W.y(70)]) && trackOk,
+      { sp, span, obBox, hfBox, g, smallest, ow, none, nw, trackOk });
     // an overlap point is flagged until a human decides it (an OWNERS rect, or a port at that exact point); since Stage 3
     // every one is decided, so no tile inside two old boxes is left open
     const pen = anchorOf(72, 14), gate = anchorOf(13, 72), pal = anchorOf(157, 20), stone = anchorOf(58, 90), alone = anchorOf(140, 80), pond = anchorOf(134, 60), moor = anchorOf(170, 13);
@@ -1070,10 +1246,14 @@ resize();
       undecided.length === 0 && pen.id === 'thistledown' && pen.decided === 'owner' && !pen.overlap && pond.id === 'thistledown' && pond.decided === 'owner' && moor.id === 'gull_isle' && moor.decided === 'owner' &&
       pal.id === 'camp' && !pal.overlap && stone.id === 'stone_circle' && !stone.overlap && gate.id === 'graveyard' && !gate.overlap && alone.overlap === false && alone.decided === null,
       { undecided, pen, gate, pal, stone, alone, pond, moor });
-    // TRACKS hold today's values: the cave road ends where 02-world lays it, and the river is 39's 18 points
-    const cave = track('road_cave'), riv = track('river');
-    check(PF + "TRACKS hold today's values (the cave road from the cave mouth by the signpost to the lane outside the west gate; 18 river points from the pond to the sea)",
-      JSON.stringify(cave) === JSON.stringify([[CAVE_EXIT_X + 1, 7], [SIGN_TILE.x, SIGN_TILE.y], frame('thistledown').p(84, 32)]) && riv.length === 18 && riv[0][0] === 44 && riv[17][0] === 178, { cave, rivN: riv.length });
+    // TRACKS hold the spread's network (§5): the Cave Road from the cave mouth by the story signpost to the west gate, and
+    // the river from Miller's Pond's outflow under the two road bridges to the sea
+    const cave = track('r1_cave'), riv = TRACKS.river, has = (list, pid) => list.some(q => q[0] === 'port' && q[1] === pid);
+    const caveOk = JSON.stringify(cave[0]) === JSON.stringify([CAVE_EXIT_X + 1, 7]) && cave.some(q => q[0] === SIGN_TILE.x && q[1] === SIGN_TILE.y) && JSON.stringify(cave[cave.length - 1]) === JSON.stringify(port('thistledown.west_gate'));
+    const rivOk = riv[0][0] === 'pond' && has(riv, 'pond.outflow') && has(riv, 'old_bridge.span') && has(riv, 'goblin_road.bridge');
+    const mainOk = MAIN_ROADS.length === 6 && MAIN_ROADS.every(id => TRACKS[id] && TRACKS[id].length >= 2) && ROAD_IDS.every(id => TRACKS[id][0][0] === 'port' || TRACKS[id][0][0] === 'n' || FRAMES[TRACKS[id][0][0]]);
+    check(PF + "TRACKS hold the spread's road network (section 5: six main roads, their spurs, every end a port or a junction) and its river (Miller's Pond's outflow, under the Old Bridge and the goblin bridge, to the sea)",
+      caveOk && rivOk && mainOk, { cave, caveOk, rivOk, mainOk });
     // the strict report: a point far outside its own place is logged with where it was written, once per line (a hit count
     // for the rest). Whether the game's own entries are allowed is the runner's question (tools/headless.js and
     // tools/fingerprint.mjs read docs/spread/strict-allow.json), so this check does not ask that the game logged none.
@@ -1391,10 +1571,19 @@ function generateWorld() {
         for (let dy = -width; dy <= width; dy++) for (let dx = -width; dx <= width; dx++) if (Math.abs(dx) + Math.abs(dy) <= width && rnd() < chance) { const t = tileAt(x + dx, y + dy); if (t === T.GRASS || t === T.DIRT) setTile(x + dx, y + dy, tile); } }
     }
   };
-  road(ATLAS.track('road_cave'));                          // the cave mouth, the signpost, the lane outside the west gate
-  road(ATLAS.track('road_quarry_spur'), T.DIRT, 0, 0.8);   // quarry spur
-  road(ATLAS.track('road_wolfwood'), T.DIRT, 0, 0.6);      // path into Wolfwood
-  road(ATLAS.track('road_camp'), T.DIRT, 0, 0.8);          // east to the camp
+  // the spread's network (ATLAS.TRACKS, §5): every road a continuous dirt track, laid whole (chance 1, so it draws no dice):
+  // a main road two tiles wide (a second row below a level stretch, a second column west of a steep one), a spur or path
+  // one. Everything after this reads them as roads (39 bridges them over the river and keeps solids off them, 92 leaves
+  // the scarp open where they cross it).
+  const lay = (pts, wide) => {
+    for (let s = 0; s < pts.length - 1; s++) {
+      const [ax, ay] = pts[s], [bx, by] = pts[s + 1], steps = Math.max(1, Math.round(Math.max(Math.abs(bx - ax), Math.abs(by - ay))));
+      const level = Math.abs(bx - ax) >= Math.abs(by - ay), ox = wide && !level ? -1 : 0, oy = wide && level ? 1 : 0;
+      for (let k = 0; k <= steps; k++) { const x = Math.round(ax + (bx - ax) * k / steps), y = Math.round(ay + (by - ay) * k / steps);
+        for (const [px, py] of [[x, y], [x + ox, y + oy]]) { const t = tileAt(px, py); if (t === T.GRASS || t === T.DIRT) setTile(px, py, T.DIRT); } }
+    }
+  };
+  for (const id of ATLAS.ROAD_IDS) if (id !== 'shaft_lane' && id !== 'path_farm') lay(ATLAS.track(id), ATLAS.MAIN_ROADS.includes(id) ? 1 : 0);
   // ---- ponds ---- (Miller's Pond, and the little one south of Thistledown; each shore's wobble read in its place's OLD
   // coordinates, so the pond keeps its shape wherever its place goes)
   for (const [F, [px, py], pr] of [[AT_POND, ATLAS.port('pond.centre'), 4.5], [TD, TD.p(134, 60), 3.2]]) for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) {
@@ -2397,7 +2586,9 @@ function useAction() {
   // a wandering villager standing in front of a board, station or door does not block it
   if (npc && !(npc.wander && (SOLID.has(t) || PUSH_THROUGH.has(t)))) { talkTo(npc); return; }
   const b = buildingAt(tx, ty);
-  if (t === T.SIGN) { say("→ THISTLEDOWN, 1 mile.   → GREY QUARRY, north.   → H̶O̶L̶L̶O̶W̶F̶O̶R̶D̶ (scorched)", 'Signpost'); if (quest.stage === 4) advanceQuest(5); return; }
+  // the story's signpost (02-world's SIGN_TILE) moves the quest on; every other signpost reads its arms from the Atlas
+  if (t === T.SIGN && tx === SIGN_TILE.x && ty === SIGN_TILE.y) { say("→ THISTLEDOWN, east, 1 mile.   → GREY QUARRY, north.   → H̶O̶L̶L̶O̶W̶F̶O̶R̶D̶ (scorched), south-east over the Old Bridge.", 'Signpost'); if (quest.stage === 4) advanceQuest(5); return; }
+  if (t === T.SIGN) { say((window.ATLAS && ATLAS.signText && !window.__instance && ATLAS.signText(tx, ty)) || 'An old signpost. The words have worn away.', 'Signpost'); return; }
   if (t === T.CHEST) { if (b && b.coffin) { openPanel('coffin'); return; } if (b && b.id === 'bank') { openPanel('bank'); return; } openLootChest(tx, ty); return; }
   if (t === T.GOLDPILE) { notify("Death's gold. He is watching. Leave it."); return; }
   if (t === T.GRAVE) { say('Here lies the last knight of Hollowford. The road took him. The road takes everyone.', 'Gravestone'); return; }
@@ -2985,10 +3176,16 @@ function drawSignProp(g, tx, ty) {
   const cx = tc(tx), cy = tc(ty);
   g.fillStyle = 'rgba(0,0,0,0.25)'; g.beginPath(); g.ellipse(cx, cy + 16, 9, 4, 0, 0, 7); g.fill();
   g.fillStyle = '#6b4a2a'; g.fillRect(cx - 3, cy - 30, 6, 48);
-  for (const [oy, label, burned] of [[-42, 'THISTLEDOWN', false], [-26, 'GREY QUARRY', false], [-10, 'HOLLOWFORD', true]]) {
-    g.fillStyle = burned ? '#8a7350' : '#c9a36a'; g.beginPath(); g.moveTo(cx - 34, cy + oy - 7); g.lineTo(cx + 22, cy + oy - 7); g.lineTo(cx + 32, cy + oy + 1); g.lineTo(cx + 22, cy + oy + 9); g.lineTo(cx - 34, cy + oy + 9); g.closePath(); g.fill();
+  // the story's signpost names its three arms; a road's signpost (93-spread) names its own, each pointing its way
+  const own = typeof window.SIGN_ARMS === 'function' ? window.SIGN_ARMS(tx, ty) : null;
+  const arms = own || [[-42, 'THISTLEDOWN', false], [-26, 'GREY QUARRY', false], [-10, 'HOLLOWFORD', true]];
+  for (const [oy, label, burned, left] of arms) {
+    g.fillStyle = burned ? '#8a7350' : '#c9a36a'; g.beginPath();
+    if (left) { g.moveTo(cx + 34, cy + oy - 7); g.lineTo(cx - 22, cy + oy - 7); g.lineTo(cx - 32, cy + oy + 1); g.lineTo(cx - 22, cy + oy + 9); g.lineTo(cx + 34, cy + oy + 9); }
+    else { g.moveTo(cx - 34, cy + oy - 7); g.lineTo(cx + 22, cy + oy - 7); g.lineTo(cx + 32, cy + oy + 1); g.lineTo(cx + 22, cy + oy + 9); g.lineTo(cx - 34, cy + oy + 9); }
+    g.closePath(); g.fill();
     g.strokeStyle = '#6b4a2a'; g.lineWidth = 1.5; g.stroke();
-    g.fillStyle = '#4a2e13'; g.font = 'bold 9px sans-serif'; g.textAlign = 'center'; g.fillText(label, cx - 4, cy + oy + 4);
+    g.fillStyle = '#4a2e13'; g.font = 'bold 9px sans-serif'; g.textAlign = 'center'; g.fillText(label, left ? cx + 4 : cx - 4, cy + oy + 4);
     if (burned) { g.strokeStyle = '#3a2a1a'; g.lineWidth = 2; g.beginPath(); g.moveTo(cx - 28, cy + oy + 1); g.lineTo(cx + 20, cy + oy + 2); g.stroke(); }
   }
 }
@@ -4557,7 +4754,11 @@ window.FANGLANDS = {
       // a bronze axe at Woodcutting 1 lands 45% of swings (finishGather: 0.35 + 0.1 per axe tier) and a miss swings again. 24 swings: a false timeout is 24 misses in a row, 0.55^24 = 5.9e-7
       const r = F.untilAction(a0 === 'chop' ? 24 * (Math.ceil(player.action.need * 60) + 1) : 1, () => countItem('wood') >= 1);
       check('chop: timed swings, one log, stump left, regrows', typeof r === 'number' && countItem('wood') === 1 && tileAt(tree.x, tree.y) === T.STUMP && regrow.some(x => x.i === idx(tree.x, tree.y)) && player.skills.woodcutting.xp === 25, { steps: r, wood: countItem('wood'), tile: tileName(tileAt(tree.x, tree.y)), tree: [tree.x, tree.y], at: [+(player.x / TILE).toFixed(2), +(player.y / TILE).toFixed(2)], a0, n0, near0, hp: player.hp, action: player.action && player.action.type, n1: notice && notice.text }); }
-    { const oak = F.nearestTile([T.OAK]); F.goAdjacent(oak.x, oak.y); F.fight(3000); F.goAdjacent(oak.x, oak.y); F.press('KeyE'); F.sim(3, []); check('oak needs Woodcutting 5', !player.action && notice && /Woodcutting level 5/.test(notice.text), { notice: notice && notice.text }); }
+    // (the nearest oak a knight can walk up to: on the bigger map the nearest may stand in a copse with no open side)
+    { const px = Math.floor(player.x / TILE), py = Math.floor(player.y / TILE), oaks = [], OAK_REACH = 40;   // how far round the knight to look, in tiles (a distance, not a place)
+      for (let y = Math.max(0, py - OAK_REACH); y <= Math.min(MAP_H - 1, py + OAK_REACH); y++) for (let x = Math.max(0, px - OAK_REACH); x <= Math.min(MAP_W - 1, px + OAK_REACH); x++) if (tileAt(x, y) === T.OAK) oaks.push({ x, y, d: Math.hypot(x - px, y - py) });
+      oaks.sort((a, b) => a.d - b.d);
+      const oak = oaks.slice(0, 12).find(o => typeof F.goAdjacent(o.x, o.y) === 'number') || F.nearestTile([T.OAK]); F.fight(3000); F.goAdjacent(oak.x, oak.y); F.press('KeyE'); F.sim(3, []); check('oak needs Woodcutting 5', !player.action && notice && /Woodcutting level 5/.test(notice.text), { notice: notice && notice.text }); }
     { const tree = F.nearestTile([T.TREE]); F.goAdjacent(tree.x, tree.y); F.fight(3000); F.goAdjacent(tree.x, tree.y); F.press('KeyE'); F.untilAction(player.action && player.action.type === 'chop' ? 24 * (Math.ceil(player.action.need * 60) + 1) : 1, () => countItem('wood') >= 2); } peace(false); // the second log is timed too: a goblin's hit cancels the swing and every plank check after it fails
     topUp('wood', 2); openPanel('craft'); render(); const crafted = F.clickButton('2 Logs → 4 Planks'); closePanel();
     check('craft planks from the pack', crafted && countItem('plank') === 4 && countItem('wood') === 0, { plank: countItem('plank') });
@@ -4785,7 +4986,7 @@ window.FANGLANDS = {
     { // the signpost shows the struck-out name, not a note saying it was crossed out
       dialog.queue.length = 0; dialog.cur = null; F.tp(SIGN_TILE.x - 1, SIGN_TILE.y); F.face(SIGN_TILE.x, SIGN_TILE.y); F.press('KeyE'); F.sim(2, []);
       const txt = (dialog.cur && dialog.cur.text) || ''; const struck = 'HOLLOWFORD'.split('').map(c => c + '̶').join('');
-      check('signpost: HOLLOWFORD is struck through (U+0336 after every letter) and scorched, never "crossed out"', txt.includes('̶') && txt.includes(struck) && /scorched/.test(txt) && !/crossed out/.test(txt) && /THISTLEDOWN, 1 mile/.test(txt), { txt });
+      check('signpost: HOLLOWFORD is struck through (U+0336 after every letter) and scorched, never "crossed out"', txt.includes('̶') && txt.includes(struck) && /scorched/.test(txt) && !/crossed out/.test(txt) && /THISTLEDOWN, east, 1 mile/.test(txt), { txt });
       dialog.queue.length = 0; dialog.cur = null; }
     { // gear tiers: every new item exists with the stated stats, colour, shape, stack 1, id; recipes at the stated level; bronze in the shops; sappers can drop bombs
       const A = { bronze_helm: ['helm', 3, '#b8863a'], bronze_body: ['body', 7, '#b8863a'], bronze_legs: ['legs', 5, '#b8863a'], bronze_shield: ['shield', 4, '#b8863a'], steel_legs: ['legs', 14, '#d5d9e0'], steel_shield: ['shield', 12, '#d5d9e0'] };
@@ -4900,7 +5101,8 @@ window.FANGLANDS = {
       // patchy rather than a flat sheet, there must be open ground between it, and lava and obsidian must survive.
       check('ashfields: ash lies in patches — 25–80% of dragon country, scorch and bare dirt between, lava and obsidian kept', cover >= 0.25 && cover <= 0.8 && green > 500 && lava >= 40 && obs >= 30, { cover: +cover.toFixed(2), ash, area, openGround: green, lava, obs }); }
     { // the jungle runs south to the map edge: giant trees and ferns in the band y 140–178 at the old density
-      let trees = 0, ferns = 0, band = 0, row150 = 0; for (let y = AW.ty(140); y <= AW.ty(178); y++) for (let x = AW.tx(100); x <= AW.tx(198); x++) { band++; const t = tileAt(x, y); if (t === T.JUNGLE) { trees++; if (y === AW.ty(150)) row150++; } else if (t === T.FERN) ferns++; }
+      // (to the Sound's west shore: since the spread the Sound's deep water runs down the jungle's east side)
+      let trees = 0, ferns = 0, band = 0, row150 = 0; for (let y = AW.ty(140); y <= AW.ty(178); y++) for (let x = AW.tx(100), xe = Math.min(AW.tx(198), ATLAS.GROUNDS.sound[0] - 1); x <= xe; x++) { band++; const t = tileAt(x, y); if (t === T.JUNGLE) { trees++; if (y === AW.ty(150)) row150++; } else if (t === T.FERN) ferns++; }
       check('jungle: the biome continues south (y 140–178, x 100–198) at the same density; jungle trees stand at y 150', row150 >= 20 && trees / band > 0.3 && trees / band < 0.5 && ferns / band > 0.06 && regionAt(AW.tx(150), AW.ty(160)).name === 'The Jungle' && regionAt(...ATLAS.frame('sylvaris').p(133, 120)).name === 'Sylvaris', { row150, trees: +(trees / band).toFixed(2), ferns: +(ferns / band).toFixed(2), region: regionAt(AW.tx(150), AW.ty(160)).name }); }
     peace(false);
     for (const h of HOOKS.selfTest) h(check, F, { give, peace, openSpot, clearJunk });
@@ -7471,7 +7673,7 @@ HOOKS.selfTest.push((check, F, h) => {
     const fill = (x0, y0, x1, y1, tile) => { for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) set(x, y, tile); };
     // the goblins dragged the Barrelbeast out through the south palisade; the gap is still there
     for (let x = CMP.x(149); x <= CMP.x(151); x++) set(x, CMP.y(40), T.DIRT);
-    const ROAD = ATLAS.track('road_hollowford');   // camp gap 150,39 -> 150,50 -> 146,58 -> 141,64 -> Hollowford's north entry
+    const ROAD = ATLAS.track('r4_goblin');   // the Goblin Road: the camp's south gap, the goblin bridge, Hollowford's north entry
     carve(ROAD, 1, T.DIRT); api.road(ROAD, T.DIRT, 2, 0.25);
     // clear the town footprint, then scorch it (worst at the centre)
     for (let y = R.y0; y <= R.y1; y++) for (let x = R.x0; x <= R.x1; x++) {
@@ -7669,7 +7871,7 @@ HOOKS.selfTest.push((check, F, h) => {
       // the wrecks standing on the overworld before any of this
       const wOut = wrecks();
       // B1: the door on the camp road
-      { const road = F.bfs(...ATLAS.track('road_hollowford')[1].map(Math.round), SHED_STEP[0], SHED_STEP[1]), doorTile = tileAt(SHED_DOOR[0], SHED_DOOR[1]) === T.DUNGEON_DOOR, walls = SHED_WALL.every(([x, y]) => SOLID.has(tileAt(x, y)));
+      { const road = F.bfs(...ATLAS.track('r4_goblin')[1].map(Math.round), SHED_STEP[0], SHED_STEP[1]), doorTile = tileAt(SHED_DOOR[0], SHED_DOOR[1]) === T.DUNGEON_DOOR, walls = SHED_WALL.every(([x, y]) => SOLID.has(tileAt(x, y)));
         const rows = window.PLAYTHROUGH ? PLAYTHROUGH.instanceConnectivity().filter(r => r.instance === 'The War Shed') : [];
         const entered = enterShed(), region = player.region;
         check(P + `the War Shed door at (${SHED_DOOR}) with step (${SHED_STEP}) is reachable from the road and enters war_shed; PLAYTHROUGH.instanceConnectivity passes`,
@@ -9909,7 +10111,7 @@ PEOPLE_UI.auditPrompt = function (p) {
   const RING = SYL.rect({ x0: 126, y0: 114, x1: 166, y1: 135 }); // the wall of jungle around the city
   const GAP = (([x, y]) => ({ x, y }))(ATLAS.port('sylvaris.gap'));   // the one way in
   const TOTEM_T = SYL.pt({ x: 136, y: 114 });                   // the face in the trees, beside the gap
-  const PATH = ATLAS.track('path_jungle');                      // the dirt path down from Hollowford's south edge (141,96 -> 133,112)
+  const PATH = ATLAS.track('r3b_jungle');                       // the Jungle Path down from Hollowford's south edge to Sylvaris' gap
   // the river: its outer reaches are the jungle's (world), the last bends before the ring wall are the city's
   const RIVER_N = [...EW.pts([[177, 97], [170, 101], [163, 106]]), ...SYL.pts([[157, 110], [152, 113]])];
   const RIVER_S = [...SYL.pts([[141, 136], [130, 137]]), ...EW.pts([[116, 137], [103, 136]])];
@@ -9934,7 +10136,8 @@ PEOPLE_UI.auditPrompt = function (p) {
   {
     const wild = Math.max(0, REGIONS.findIndex(r => r.name === 'The Wilds'));
     REGIONS.splice(wild, 0, { name: 'Sylvaris', sub: 'The city in the trees', x0: CR.x0, y0: CR.y0, x1: CR.x1, y1: CR.y1 },
-      { name: 'The Jungle', sub: 'Vast, green, watching', x0: JR.x0, y0: JR.y0, x1: JR.x1, y1: JS.y1 });
+      // (the Jungle's east side ends at the Sound, the deep water the spread laid between it and the Grub Fields)
+      { name: 'The Jungle', sub: 'Vast, green, watching', x0: JR.x0, y0: JR.y0, x1: Math.min(JR.x1, ATLAS.GROUNDS.sound[0] - 1), y1: JS.y1 });
   }
 
   // ---------- items, recipes, shops ----------
@@ -10487,7 +10690,10 @@ PEOPLE_UI.auditPrompt = function (p) {
   const WRECK_BRUTES = IC.pts([[185, 47], [191, 47], [188, 53]]), WRECK_SAPPERS = IC.pts([[184, 50], [192, 50]]);
   // rocks and foam in the open sea (world, whole tiles), bar the two inside an island's box, which move with it
   const wtile = q => [Math.round(q[0]), Math.round(q[1])];
-  const SEAROCKS = [GI.p(168, 6), ...BW.pts([[170, 24], [176, 27], [186, 25], [194, 9], [196, 31], [170, 44], [173, 57], [190, 67], [180, 73], [196, 81], [168, 87], [186, 91], [178, 36], [166, 60]]).map(wtile), IC.p(193, 39), wtile(BW.p(167, 30))];
+  // (never inside Wreck Rock's reserved box plus 6: its own rock is chapter 6's, spec §4)
+  const WRECK6 = (b => [b[0] - 6, b[1] - 6, b[2] + 6, b[3] + 6])(ATLAS.box('wreck_rock'));
+  const SEAROCKS = [GI.p(168, 6), ...BW.pts([[170, 24], [176, 27], [186, 25], [194, 9], [196, 31], [170, 44], [173, 57], [190, 67], [180, 73], [196, 81], [168, 87], [186, 91], [178, 36], [166, 60]]).map(wtile), IC.p(193, 39), wtile(BW.p(167, 30))]
+    .filter(([x, y]) => !(x >= WRECK6[0] && x <= WRECK6[2] && y >= WRECK6[1] && y <= WRECK6[3]));
   const inSea = (tx, ty) => tx >= SEA.x0 && tx <= SEA.x1 && ty >= SEA.y0 && ty <= SEA.y1;
   const inRegion = (r, tx, ty) => tx >= r.x0 && tx <= r.x1 && ty >= r.y0 && ty <= r.y1;
 
@@ -10591,19 +10797,17 @@ PEOPLE_UI.auditPrompt = function (p) {
     }
     for (let y = HUT.y - 1; y <= HUT.y + HUT.h; y++) for (let x = HUT.x - 1; x <= HUT.x + HUT.w; x++) if (!isHut(x, y)) api.setTile(x, y, T.SAND); // dry ground all round the shack
     const ensureLand = (x, y, t = T.SAND) => { for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (api.tileAt(x + dx, y + dy) === T.WATER) api.setTile(x + dx, y + dy, t); };
-    // the road from Thistledown's east gate: north along the village fence, then east along y 14 to the shore
+    // the Sea Road from Thistledown's east gate to the shore (§5's R2)
     const clearable = new Set([T.GRASS, T.DIRT, T.TREE, T.OAK, T.ROCK, T.IRON, T.COAL, T.FLOWERS, T.MUSHROOM, T.STUMP, T.RUBBLE]);
-    // (the lanes are the tracks themselves, tile by tile: the lane down the fence is road_east_lane, the road east to the
-    // shore road_dock_lane; the verge is the row either side of the road east, and the column east of the fence lane's
-    // first six tiles)
+    // (the lane is the Sea Road itself, tile by tile, from Thistledown's east gate to Harl's dock (ATLAS.track('r2_sea'));
+    // the verge is the row either side of it)
     const tiles = id => { const pl = ATLAS.track(id), out = [];
       for (let s = 1; s < pl.length; s++) { const [ax, ay] = pl[s - 1], [bx, by] = pl[s], n = Math.max(1, Math.round(Math.max(Math.abs(bx - ax), Math.abs(by - ay))));
         for (let k = s === 1 ? 0 : 1; k <= n; k++) out.push([Math.round(ax + (bx - ax) * k / n), Math.round(ay + (by - ay) * k / n)]); }
       return out; };
-    const fence = tiles('road_east_lane'), east = tiles('road_dock_lane');
-    const lane = [...fence, ...east];
+    const lane = tiles('r2_sea');
     for (const [x, y] of lane) if (clearable.has(api.tileAt(x, y))) api.setTile(x, y, T.DIRT);
-    const verge = []; for (const [x, y] of east) verge.push([x, y - 1], [x, y + 1]); for (const [x, y] of fence.slice(0, 6)) verge.push([x + 1, y]);
+    const verge = []; for (const [x, y] of lane) verge.push([x, y - 1], [x, y + 1], [x - 1, y], [x + 1, y]);
     for (const [x, y] of verge) if ([T.TREE, T.OAK, T.ROCK, T.IRON, T.COAL].includes(api.tileAt(x, y))) api.setTile(x, y, T.GRASS);
     // docks and boats
     for (const k in LOC) { const L = LOC[k]; for (const [x, y] of L.dock) api.setTile(x, y, B_DOCK); api.setTile(L.boat.x, L.boat.y, B_BOAT); api.setTile(L.land.x, L.land.y, k === 'dock' ? B_DOCK : T.SAND); }
@@ -11110,7 +11314,7 @@ PEOPLE_UI.auditPrompt = function (p) {
   const BONES = [rt(DW.p(55, 113)), rt(DW.p(84, 121)), rt(DW.p(66, 128)), FL.p(44, 123), rt(DW.p(92, 111)), FL.p(38, 118), rt(DW.p(52, 136))];
   const GREEN_SPAWNS = [rt(DW.p(52, 120)), rt(DW.p(76, 118)), rt(DW.p(60, 131)), rt(DW.p(91, 124))];
   const RED_SPAWNS = [rt(DW.p(81, 135)), rt(DW.p(47, 136))];
-  const PATH = ATLAS.track('path_ash');        // Wolfwood → the Ashfields → toward the lair
+  const PATH = ATLAS.track('r6_ash');          // the Ash Road: Wolfwood → the Warden's gate → the Ashfields → the lair
   const FARM_PATH = ATLAS.track('path_farm');
   const DRAGONS = new Set(['green_dragon', 'red_dragon']);
   const DR_POTATO_PRICE = ITEMS.potato ? ITEMS.potato.value : 3, DR_POTATO_MAX = 20;   // Dunstan buys potatoes at their value, 20 per hand-in
@@ -11584,8 +11788,11 @@ PEOPLE_UI.auditPrompt = function (p) {
     const besideTile = (tx, ty) => { for (const [dx, dy] of [[0, 1], [0, -1], [-1, 0], [1, 0]]) if (inMap(tx + dx, ty + dy) && !SOLID.has(tileAt(tx + dx, ty + dy))) return { x: tx + dx, y: ty + dy }; return null; };
     h.peace(true);
     // region + path
-    { let ash = 0, lava = 0, obs = 0; for (let y = AF.y0; y <= AF.y1; y++) for (let x = AF.x0; x <= AF.x1; x++) { if (inFang(x, y)) continue; const t = tileAt(x, y); if (t === DR_ASH) ash++; else if (t === DR_LAVA) lava++; else if (t === DR_OBSIDIAN) obs++; }
-      check('dragons: The Ashfields region fills the south-west (ash, lava, obsidian), Wolfwood ends at y 95', REGIONS.some(r => r.name === 'The Ashfields') && regionAt(...rt(DW.p(60, 110))).name === 'The Ashfields' && regionAt(...WD.p(60, 94)).name === 'Wolfwood' && ash > 900 && ash < 2200 && lava >= 40 && obs >= 30, { at60_110: regionAt(...rt(DW.p(60, 110))).name, at60_94: regionAt(...WD.p(60, 94)).name, ash, lava, obs }); }
+    // (the ash is counted as a share of the box's open ground, not in tiles: the box is 3 times the ground it was before
+    // the spread. 900..2200 tiles of the old box's 3377 is 27%..65%, the bounds kept here; the old map stood at 52%)
+    { let ash = 0, lava = 0, obs = 0, ground = 0; for (let y = AF.y0; y <= AF.y1; y++) for (let x = AF.x0; x <= AF.x1; x++) { if (inFang(x, y)) continue; ground++; const t = tileAt(x, y); if (t === DR_ASH) ash++; else if (t === DR_LAVA) lava++; else if (t === DR_OBSIDIAN) obs++; }
+      const share = ash / Math.max(1, ground);
+      check('dragons: The Ashfields region fills the south-west (ash, lava, obsidian), Wolfwood ends at y 95', REGIONS.some(r => r.name === 'The Ashfields') && regionAt(...rt(DW.p(60, 110))).name === 'The Ashfields' && regionAt(...WD.p(60, 94)).name === 'Wolfwood' && share > 0.27 && share < 0.65 && lava >= 40 && obs >= 30, { at60_110: regionAt(...rt(DW.p(60, 110))).name, at60_94: regionAt(...WD.p(60, 94)).name, ash, ground, share: +share.toFixed(3), lava, obs }); }
     { const toFarm = F.bfs(...WD.p(60, 94), DUNSTAN_T.x, DUNSTAN_T.y + 1), toLair = F.bfs(...WD.p(60, 94), ...ATLAS.port('fang_lair.node'));
       check('dragons: the path from Wolfwood (60,94) reaches the farm and the approach to the lair', !!toFarm && !!toLair && tileAt(...WD.p(60, 96)) === T.DIRT, { farm: toFarm && toFarm.length, lair: toLair && toLair.length }); }
     // lava burns
@@ -15039,8 +15246,16 @@ window.PLACE_KIT = PLACE_KIT;
     const nearPath = (x, y) => { for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const t = api.tileAt(x + dx, y + dy); if (t === T.DIRT || t === T.COBBLE || t === T.SAND || t === T.WATER) return true; } return false; };
     const cands = [];
     const W = ATLAS.world;   // the scan window is open land: a world rect (the spread spec, §9.1)
+    // (not on the reclaimed Deepholm wood, which 58-underground plants itself, nor on ground the builders have staked)
+    const DH = ATLAS.box('deepholm_rock'), inDH = (x, y) => x >= DH[0] && x <= DH[2] && y >= DH[1] && y <= DH[3];
+    // (nor on the Grey Sea's west shore, which 39-worldblend wanders afterwards: its window, a world rect; a bush there can
+    // end up on a rock in a new cove)
+    const shore = (x, y) => x >= W.tx(148) && x <= W.tx(199) && y <= W.ty(99);
+    // (nor in the last six rows above the Ashfields' rim, on its pin: 92 and 93 lay the rim's rock face and its burnt
+    // fringe there afterwards, and a bush in them is walled in)
+    const rim = (x, y) => y >= Math.round(W.pin('rim', W.y(89), x));
     for (let y = W.ty(2); y <= W.ty(137); y++) for (let x = CAVE_EXIT_X + 4; x <= W.tx(197); x++) {
-      if (api.tileAt(x, y) !== T.GRASS || near.has(idx(x, y)) || NO_REGION.has(regionAt(x, y).name)) continue;
+      if (api.tileAt(x, y) !== T.GRASS || near.has(idx(x, y)) || NO_REGION.has(regionAt(x, y).name) || inDH(x, y) || ATLAS.reservedAt(x, y) || shore(x, y) || rim(x, y)) continue;
       if (Math.abs(x - SIGN_TILE.x) < 4 && Math.abs(y - SIGN_TILE.y) < 4) continue;
       if (nearBuilding(x, y) || nearPath(x, y)) continue;
       cands.push([x, y]);
@@ -17186,8 +17401,7 @@ window.PLACE_KIT = PLACE_KIT;
   // the boats' shore check (26-boats asserts this tile is sand): the Grey Sea's west edge, a world row
   const SHORE = [SEA.x0, W.ty(40)];
   // the roads every feature laid, as polylines (ATLAS.TRACKS): the river bridges them, and nothing solid is added within 2.5 tiles of them
-  const ROAD_TRACKS = ['road_cave', 'road_quarry_spur', 'road_wolfwood', 'road_camp', 'road_east_lane', 'road_dock_lane', 'road_hollowford', 'path_ash', 'path_farm', 'path_jungle', 'shaft_lane'];
-  const ROADS = ROAD_TRACKS.map(id => ATLAS.track(id));
+  const ROADS = ATLAS.ROAD_IDS.map(id => ATLAS.track(id));   // every road and path of the spread's network (§5), and the miners' lane
   // the places that must stay mutually reachable, in chain order (the repair carves along the chain): the first nine track nodes
   const NODES = ATLAS.track('nodes').slice(0, 9);
   const NODE_NAMES = ['cave exit', 'signpost', 'Thistledown gate', 'dock', 'Hollowford', 'Dunstan', 'lair approach', 'jungle path', 'quarry shaft'];
@@ -17248,10 +17462,10 @@ window.PLACE_KIT = PLACE_KIT;
     markB(PONDF.box([36, 29, 43, 44]));                    // Miller's Pond west of the stepping stones (x 43), both their landings included; the river leaves from the east shore
     markB(QF.box([45, 0, 63, 4])); markB(QF.box([59, 4, 65, 9])); markB(QF.box([52, 4, 58, 15])); // the cliff course, the wind shrine's clearing, the shaft lane and the miners' cart
     // the road to the dock and its verge, the lane down the village fence
-    // (the dock lane is the lane itself, ATLAS.track('road_dock_lane'), and every tile within 2 of it: a corridor, never a
-    // rect built from two frames' corners that the spread could turn inside out; Stage 4a replaces this lane)
+    // (the dock lane is the Sea Road's last stretch, from the Coast Path's fork to Harl's dock, ATLAS.track('r2_sea'), and
+    // every tile within 2 of it: a corridor, never a rect built from two frames' corners)
     dockLaneGuard = 0;
-    { const pl = ATLAS.track('road_dock_lane'), V = 2;
+    { const pl = ATLAS.track('r2_sea').slice(-2), V = 2;
       for (let s = 1; s < pl.length; s++) { const [ax, ay] = pl[s - 1], [bx, by] = pl[s], n = Math.max(1, Math.round(Math.max(Math.abs(bx - ax), Math.abs(by - ay))));
         for (let k = 0; k <= n; k++) { const x = Math.round(ax + (bx - ax) * k / n), y = Math.round(ay + (by - ay) * k / n); mark(x - V, y - V, x + V, y + V); dockLaneGuard++; } } }
     markB(TD.box([140, 13, 143, 33]));
@@ -17344,7 +17558,8 @@ window.PLACE_KIT = PLACE_KIT;
     // the frame each point is read in (a place's for its head in Miller's Pond and its course through the small pond and past
     // the town's corner, the world's elsewhere): a stretch between two points of one place wobbles in that place's OLD
     // coordinates, so it keeps its shape wherever the place goes, as the rest keeps the world's
-    const RIVER_F = ATLAS.TRACKS.river.map(q => q[0] === 'w' ? W : FR(q[0] === 'port' ? ATLAS.PORTS[q[1]][0] : q[0]));
+    // (a new-map point, or a port of a new place, wobbles in the stretched world's OLD coordinates, through W.ix / W.iy)
+    const RIVER_F = ATLAS.TRACKS.river.map(q => { const a = q[0] === 'port' ? ATLAS.PORTS[q[1]][0] : q[0]; return a === 'w' || a === 'n' || a === 'new' ? W : FR(a); });
     const wn = makeNoise(SEED + 2, 6), ww = makeNoise(SEED + 3, 4);
     const centres = []; let acc = 0; // distance along the route: the wobble fades in over the first tiles so the channel leaves from inside the pond
     for (let s = 0; s < RIVER.length - 1; s++) {
@@ -17932,7 +18147,7 @@ window.PLACE_KIT = PLACE_KIT;
       removeItem('blueprint_irondrill', 99); removeItem('steel_bar', 6); removeItem('coal', 4); player.dozerUp.drill = true; player.dozerUp.irondrill = true; }
     closePanel();
     // 5. driving with the upgrades: a parked bulldozer on a clear grass lane in the open fields
-    const o = h.openSpot(...ATLAS.frame('drill_field').p(58, 50));   // the drill field's flat lane (22-bulldozer's)
+    const o = h.openSpot(...ATLAS.frame('drill_field').p(52, 50));   // the drill field's flat lane (22-bulldozer's), from its west end: the tests drive a dozen tiles east along it
     const natural = [T.TREE, T.OAK, T.ROCK, T.IRON, T.COAL, T.FLOWERS, T.MUSHROOM, T.DIRT, T.STUMP, T.RUBBLE, T.SAND, T.SOIL];
     for (let yy = o.y - 1; yy <= o.y + 1; yy++) for (let xx = o.x - 2; xx <= o.x + 12; xx++) if (natural.includes(tileAt(xx, yy))) changeTile(xx, yy, T.GRASS);
     regrow = regrow.filter(r => { const tx = r.i % MAP_W, ty = Math.floor(r.i / MAP_W); return !(ty >= o.y - 1 && ty <= o.y + 1 && tx >= o.x - 2 && tx <= o.x + 12); });
@@ -22196,7 +22411,7 @@ window.SETTINGS = SETTINGS;
       const pieces = CAN_MARKS.every(([x, y]) => tileAt(x, y) === AG_MARK) && CAN_LOGS.every(([x, y]) => tileAt(x, y) === AG_LOG)
         && CAN_NETS.every(([x, y]) => tileAt(x, y) === AG_NET) && tileAt(...CAN_GAP1[0]) === AG_GAP && tileAt(...CAN_GAP2[0]) === AG_GAP;
       const reach = F.bfs(...ATLAS.port('hollowford.south'), CAN_MARKS[0][0], CAN_MARKS[0][1]);           // from the jungle path down to the start flag
-      setLv(CANOPY_LV); F.tp(ATLAS.world.tx(140), ATLAS.world.ty(102)); const walked = F.walkTo(CAN_MARKS[0][0], CAN_MARKS[0][1], 4000);
+      setLv(CANOPY_LV); F.tp(...ATLAS.track('r3b_jungle')[1].map(Math.round)); const walked = F.walkTo(CAN_MARKS[0][0], CAN_MARKS[0][1], 4000);   // from a point on the Jungle Path
       check(P + 'the Sylvaris canopy run is carved in the treetops (deck, vine rail, logs, nets, two gaps, five flags) and you can walk to it from the jungle path',
         deck === CAN_TRACK.length && rail === CAN.x1 - CAN.x0 - 1 && pieces && !!reach && typeof walked === 'number' && tileOf().tx === CAN_MARKS[0][0],
         { deck, track: CAN_TRACK.length, rail, pieces, reach: reach && reach.length, walked, at: tileOf() }); }
@@ -26404,7 +26619,7 @@ window.SETTINGS = SETTINGS;
       const push = (x, y) => { if (!inMap(x, y)) return; const i = idx(x, y); if (seen[i] || !pass(map[i])) return; seen[i] = 1; q.push(i); };
       push(...ATLAS.port('cave.mouth'));
       for (let qi = 0; qi < q.length; qi++) { const c = q[qi], x = c % MAP_W, y = (c / MAP_W) | 0; push(x + 1, y); push(x - 1, y); push(x, y + 1); push(x, y - 1); }
-      let stranded = 0; for (let y = O.y0; y <= O.y1; y++) for (let x = O.x0; x <= O.x1; x++) if (pass(map[idx(x, y)]) && !seen[idx(x, y)]) stranded++;
+      let stranded = 0; const strandedAt = []; for (let y = O.y0; y <= O.y1; y++) for (let x = O.x0; x <= O.x1; x++) if (pass(map[idx(x, y)]) && !seen[idx(x, y)]) { stranded++; strandedAt.push(x + ',' + y); }
       // the ghost of the massif: 39-worldblend's outcrops at the foot of walls that are not there any more
       let ringRock = 0, woodRock = 0;
       for (let y = O.y0 - U.RING; y <= O.y1 + U.RING; y++) for (let x = O.x0; x <= O.x1 + U.RING; x++) {
@@ -26415,7 +26630,7 @@ window.SETTINGS = SETTINGS;
       const region = regionAt(...ATLAS.frame('deepholm_rock').p(14, 83)).name, spawns = MONSTER_SPAWNS.filter(s => s.tx >= O.x0 && s.tx <= O.x1 && s.ty >= O.y0 && s.ty <= O.y1).length;
       check(P + '575 tiles of Wolfwood come back at x 2–26, y 72–94: no wall, nothing stranded, the wood as thick inside the old rectangle as it is on each side of it, the ash still drifting through its last rows, and no ring of outcrops round a rectangle of nothing',
         alien === 0 && (mix[T.WALL] || 0) === 0 && stranded === 0 && floor + solid === 575 && floor >= 500 && matches && region === 'Wolfwood' && ringRock === 0 && woodRock > 10 && spawns >= 1 && ashIn > 0 && ashOut > 0,
-        { open: floor, solid, alien, walls: mix[T.WALL] || 0, stranded, region, spawnsBack: spawns, ringRock, ringChecked: U.stats().ring, ringSoftened: U.stats().softened, woodRock,
+        { open: floor, solid, alien, walls: mix[T.WALL] || 0, stranded, strandedAt: strandedAt.slice(0, 8), region, spawnsBack: spawns, ringRock, ringChecked: U.stats().ring, ringSoftened: U.stats().softened, woodRock,
           woodInside: { west: +westIn.toFixed(3), east: +eastIn.toFixed(3) }, woodBeside: { west: +westOut.toFixed(3), east: +eastOut.toFixed(3) }, ashDrift: { inside: ashIn, beside: ashOut, laid: U.stats().ash } }); }
 
     // ---- save and reload while you are down there ----
@@ -31320,7 +31535,8 @@ HOOKS.selfTest.push((check, F, h) => {
     const fresh = (x, y) => api.tileAt(x, y) === T.GRASS && open(x, y);
     // the quarry floor is worked dirt, not grass: a fresh face is cut straight into it
     lay(SEAM.quarryFloor, 2, (x, y) => (api.tileAt(x, y) === T.DIRT || api.tileAt(x, y) === T.GRASS) && clearOfShaft(x, y) && open(x, y), OR_BLACKIRON, 'blackiron');
-    lay(SEAM.hills, 3, (x, y) => fresh(x, y) && regionAt(x, y).name !== 'Thistledown', OR_BLACKIRON, 'blackiron');
+    // (never on ground the builders have staked: Beacon Hills and the Skypier lie in the hills since the spread)
+    lay(SEAM.hills, 3, (x, y) => fresh(x, y) && regionAt(x, y).name !== 'Thistledown' && !ATLAS.reservedAt(x, y), OR_BLACKIRON, 'blackiron');
     lay(SEAM.wolfwood, 4, (x, y) => fresh(x, y) && regionAt(x, y).name === 'Wolfwood', OR_SUNSTONE, 'sunstone');
     lay(SEAM.farshore, 3, (x, y) => fresh(x, y) && regionAt(x, y).name === 'The Far Shore', OR_STORMSTONE, 'stormstone');
   });
@@ -31419,7 +31635,7 @@ HOOKS.selfTest.push((check, F, h) => {
       for (let i = 0; i < spots.length; i++) { const s = sides[i]; if (!s) continue; if (!F.bfs(t.anchor[0], t.anchor[1], s[0], s[1])) unreached.push(spots[i].join(',')); }
       check(P + `${t.key}: rocks stand on the map (${t.key === 'blackiron' ? 'Grey Quarry and the hills north of Thistledown' : t.key === 'sunstone' ? 'Wolfwood' : 'the Far Shore'}), each with a side to stand on, each walkable from ${t.anchor.join(',')}`,
         spots.length >= 10 && placed.length === spots.length && walled.length === 0 && unreached.length === 0,
-        { rocks: spots.length, standing: placed.length, regions, noSide: walled, unreachable: unreached, anchor: t.anchor });
+        { rocks: spots.length, standing: placed.length, notStanding: spots.filter(([x, y]) => tileAt(x, y) !== t.tile).map(([x, y]) => `${x},${y} ${tileName(tileAt(x, y))}`), regions, noSide: walled, unreachable: unreached, anchor: t.anchor });
     }
     // blackiron comes from two different countries, and no new rock was ever laid in a corridor
     { const rs = [...new Set(SPOTS.blackiron.map(([x, y]) => regionAt(x, y).name))].sort();
@@ -54758,7 +54974,11 @@ const KNIGHTGEAR = (() => {
       { const back = keep(), hurt0 = player.hurtT, dT0 = player.deadT, seen = [], _dh = drawHuman, r = {};
         try {
           // beside a townsperson, so the frame has looks without gear in it too
-          const tp = NPCS.find(n => !n.ghost), o = tp ? h.openSpot(Math.floor(tp.px / TILE) + 1, Math.floor(tp.py / TILE)) : h.openSpot(ATLAS.world.tx(40), ATLAS.world.ty(20));
+          // (an open tile a step or two from her, so she is in the frame: on the bigger map the nearest open strip of grass
+          // outside the town can be out of a 1000 x 700 view)
+          const tp = NPCS.find(n => !n.ghost), ntx = tp ? Math.floor(tp.px / TILE) : 0, nty = tp ? Math.floor(tp.py / TILE) : 0;
+          let o = null; if (tp) for (let r = 1; r <= 3 && !o; r++) for (let dy = -r; dy <= r && !o; dy++) for (let dx = -r; dx <= r && !o; dx++) { const x = ntx + dx, y = nty + dy; if (!SOLID.has(tileAt(x, y)) && !PUSH_THROUGH.has(tileAt(x, y)) && !collides(tc(x), tc(y), 13, 'player')) o = { x, y }; }
+          if (!o) o = tp ? h.openSpot(ntx + 1, nty) : h.openSpot(ATLAS.world.tx(40), ATLAS.world.ty(20));
           F.tp(o.x, o.y); player.mech = null; player.action = null; player.attackT = 0; F.step([]);
           Object.assign(player.equip, { helm: 'iron_helm', body: 'iron_body', legs: 'iron_legs', shield: 'iron_shield', weapon: 'iron_sword' });
           drawHuman = function (g, e, l) { const a = STATS.live; try { return _dh(g, e, l); } finally { seen.push({ e, knight: !!(l && l.gear), live: STATS.live - a }); } };
@@ -62763,7 +62983,7 @@ const MOUNT_LOOK = (() => {
     {
       const Tn = n => (n in T ? T[n] : -1);
       const FERN = Tn('FERN'), JUNGLE = Tn('JUNGLE');
-      const OUT_GROUND = new Set([T.GRASS, T.FLOWERS, T.MUSHROOM, FERN].filter(v => v >= 0));
+      const OUT_GROUND = new Set([T.GRASS, T.FLOWERS, T.MUSHROOM, FERN, T.DIRT].filter(v => v >= 0));   // (bare dirt too: since the spread a patch of the base world's dirt can lie in the band, and left green it held the outline straight)
       const OUT_TREE = new Set([T.TREE, T.OAK, JUNGLE].filter(v => v >= 0));
       const GREEN_BACK = new Set([T.GRASS, T.FLOWERS, T.MUSHROOM, T.DIRT]);
       const E = tally.edge = { dust: 0, scree: 0, scrub: 0, dry: 0, green: 0, bush: 0, snag: 0, boulder: 0, tree: 0, deadTree: 0, outside: 0 };
@@ -62796,7 +63016,7 @@ const MOUNT_LOOK = (() => {
         if (!inside && OUT_TREE.has(t)) {
           // a tree in the dry ground dies where it stands: solid for solid
           if (to !== null && to !== RC_DRYGRASS) { set(x, y, RC_SNAG); E.deadTree++; E.outside++; }
-          else if (to === RC_DRYGRASS && hash(x, y, 4) < 0.55) { set(x, y, RC_SNAG); E.deadTree++; E.outside++; }
+          else if (to === RC_DRYGRASS) { set(x, y, RC_SNAG); E.deadTree++; E.outside++; }   // (every one: since the spread the band's outer grass holds the stretched land's own trees, and a living one there held the outline's edge straight)
           continue;
         }
         if (to === null) {
@@ -64826,7 +65046,7 @@ const MOUNT_LOOK = (() => {
   function drawGround(g, c) {
     const cx0 = Math.max(0, Math.floor(c.x / (CH * TILE))), cx1 = Math.min(Math.ceil(W / CH) - 1, Math.floor((c.x + VW) / (CH * TILE)));
     const cy0 = Math.max(0, Math.floor(c.y / (CH * TILE))), cy1 = Math.min(Math.ceil(H / CH) - 1, Math.floor((c.y + VH) / (CH * TILE)));
-    chunkMax = Math.max(chunkMax, (cx1 - cx0 + 1) * (cy1 - cy0 + 1) + 6);
+    chunkMax = Math.max(chunkMax, Math.max(0, cx1 - cx0 + 1) * Math.max(0, cy1 - cy0 + 1) + 6);   // (a view wholly past the city's edge, a camera still on the bigger overworld, shows no chunk: two negative spans never multiply into a cap)
     for (let cy = cy0; cy <= cy1; cy++) for (let cx = cx0; cx <= cx1; cx++) { const ch = groundChunk(cx, cy); if (!ch.c.width) continue; g.drawImage(ch.c, cx * CH * TILE, cy * CH * TILE, CH * TILE, CH * TILE); STATS.chunks++; }
   }
   // the balustrade of a stone bridge (a gold rail on white posts) or the ropes of a rope one, on every side over open sky
@@ -70031,16 +70251,19 @@ const MOUNT_LOOK = (() => {
   for (let i = 0; i < REGIONS.length; i++) { const r = REGIONS[i]; if (!(r.name in BOX)) BOX[r.name] = { x0: r.x0, y0: r.y0, x1: r.x1, y1: r.y1 }; }
   const inBox = (b, x, y) => x >= b.x0 && x <= b.x1 && y >= b.y0 && y <= b.y1;
   const edgeIn = (b, x, y) => Math.min(x - b.x0, b.x1 - x, y - b.y0, b.y1 - y);  // inward distance to the box border, negative outside
+  // the same in the frame's OLD tiles: a ground's box is the stretched world's, so its border's wobble is measured in old
+  // tiles too and the outline stretches with the land (a place's frame is a translation: exactly edgeIn)
+  const edgeInF = (F, b, x, y) => Math.min(F.ix(x) - F.ix(b.x0), F.ix(b.x1) - F.ix(x), F.iy(y) - F.iy(b.y0), F.iy(b.y1) - F.iy(y));
 
   // a blob: the box border wanders in and out by `amp`; `grow` only ever lets it wander out
   // (F: the frame the outline's noise is read in: W for the grounds, the place's own frame for an enclave)
   const blob = (name, amp, seed, cell, grow, F = W) => { const w = wob(seed, cell || 7); const b = BOX[name];
-    return (x, y) => { const d = edgeIn(b, x, y), n = w(F.ix(x), F.iy(y)); return d + (grow ? Math.max(0, n) : n) * amp >= 0; }; };
+    return (x, y) => { const d = edgeInF(F, b, x, y), n = w(F.ix(x), F.iy(y)); return d + (grow ? Math.max(0, n) : n) * amp >= 0; }; };
   // the same, but for one pair of sides only: the seam curves own the other pair
   const bandX = (name, amp, seed, cell, grow) => { const w = wob(seed, cell || 9); const b = BOX[name];
-    return (x, y) => { const d = Math.min(x - b.x0, b.x1 - x), n = w(W.ix(x), W.iy(y)); return d + (grow ? Math.max(0, n) : n) * amp >= 0; }; };
+    return (x, y) => { const d = Math.min(W.ix(x) - W.ix(b.x0), W.ix(b.x1) - W.ix(x)), n = w(W.ix(x), W.iy(y)); return d + (grow ? Math.max(0, n) : n) * amp >= 0; }; };
   const bandS = (name, amp, seed, cell, grow) => { const w = wob(seed, cell || 9); const b = BOX[name];   // the south side alone
-    return (x, y) => { const d = b.y1 - y, n = w(W.ix(x), W.iy(y)); return d + (grow ? Math.max(0, n) : n) * amp >= 0; }; };
+    return (x, y) => { const d = W.iy(b.y1) - W.iy(y), n = w(W.ix(x), W.iy(y)); return d + (grow ? Math.max(0, n) : n) * amp >= 0; }; };
   // a lobe (a headland the region throws out) and a bite (a bay something else cuts into it), both ellipses; the centre
   // and radii are OLD coordinates of the frame F, and (x, y) the new tile asked about
   const near = (x, y, cx, cy, rx, ry) => ((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2 <= 1;
@@ -70061,9 +70284,12 @@ const MOUNT_LOOK = (() => {
   // The Jungle's east edge wanders in as well as out. It used to grow only, out over the bottom-right dead
   // space; the Redcut (90-canyon) stands there now and red rock is not jungle, so the eastern edge frays
   // into the jungle's own box instead. Only the east: the west band is masked off (a tile deeper than the
-  // band's reach from the east edge is jungle whenever the south band says so, exactly as before).
-  { const jg = bandS('The Jungle', 6, SEED + 14, 12, true); const je = bandX('The Jungle', 20, SEED + 15, 9, false); const jb = BOX['The Jungle'];
-    put('The Jungle', (x, y) => x >= wallX(y) && (x > W.x(161) ? y >= jb.y0 : y > sWJ(x)) && (((x <= jb.x1 - 21 || je(x, y)) && jg(x, y) && !lobe(W, x, y, W.ix(jb.x1 + 1), 150, 13, 16)) || lobe(W, x, y, 108, 90, 7, 8) || lobe(HFF, x, y, 156, 90, 8, 7)), 'ne'); }   // and a bay bitten out of the east side, where the red rock country begins
+  // band's reach from the east edge is jungle whenever the south band says so, exactly as before). Since the spread
+  // the east edge is the Sound's shore and the band reaches 30 old tiles in (it was 20): the Jungle is 2.4 times the
+  // ground it was, the enclaves that used to bend its outline (Sylvaris, the canopy) are not, and at 20 the outline
+  // stood within 11% of its box.
+  { const jg = bandS('The Jungle', 6, SEED + 14, 12, true); const je = bandX('The Jungle', 30, SEED + 15, 9, false); const jb = BOX['The Jungle'];
+    put('The Jungle', (x, y) => x >= wallX(y) && (x > W.x(161) ? y >= jb.y0 : y > sWJ(x)) && (((W.ix(jb.x1) - W.ix(x) >= 31 || je(x, y)) && jg(x, y) && !lobe(W, x, y, W.ix(jb.x1 + 1), 150, 13, 16)) || lobe(W, x, y, 108, 90, 7, 8) || lobe(HFF, x, y, 156, 90, 8, 7)), 'ne'); }   // and a bay bitten out of the east side, where the red rock country begins
 
   // the enclaves: a blob each, inside the ground that carries them
   { const gq = blob('Grey Quarry', 7, SEED + 21, 5, true, QF);
@@ -70194,8 +70420,8 @@ const MOUNT_LOOK = (() => {
   // region (34-food's berry bushes, 62-ores' seams, 39-worldblend's copses) generates the world it has
   // always generated, and this file only ever changes what came after it.
   const N4 = [[1, 0], [-1, 0], [0, 1], [0, -1]], N8 = [...N4, [1, 1], [-1, 1], [1, -1], [-1, -1]];
-  // the roads every feature laid, as polylines: ATLAS.TRACKS (the same eleven 39-worldblend reads)
-  const ROADS = ['road_cave', 'road_quarry_spur', 'road_wolfwood', 'road_camp', 'road_east_lane', 'road_dock_lane', 'road_hollowford', 'path_ash', 'path_farm', 'path_jungle', 'shaft_lane'].map(id => ATLAS.track(id));
+  // the roads every feature laid, as polylines: ATLAS.TRACKS (the spread's network, the same 39-worldblend reads)
+  const ROADS = ATLAS.ROAD_IDS.map(id => ATLAS.track(id));
   const segDist = (px, py, ax, ay, bx, by) => { const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy || 1; const t = clamp(((px - ax) * dx + (py - ay) * dy) / l2, 0, 1); return Math.hypot(px - (ax + dx * t), py - (ay + dy * t)); };
   // the ground a region wears. Only tiles that changed owner are rewritten, and only from this list.
   const PLAIN = new Set([T.GRASS, T.DIRT, T.TREE, T.OAK, T.FLOWERS, T.MUSHROOM, ASH, SCORCH, FERN, JUNGLE, DEADTREE].filter(v => v >= 0));
@@ -70268,10 +70494,10 @@ const MOUNT_LOOK = (() => {
     markB(PONDF.box([36, 29, 43, 44]));                    // Miller's Pond west of the stepping stones, both their landings
     markB(QF.box([45, 0, 63, 4])); markB(QF.box([59, 4, 65, 9])); markB(QF.box([52, 4, 58, 15])); // the cliff course, the wind shrine, the shaft lane, the miners' cart
     // the road to the dock and the lane down the village fence
-    // (the dock lane is the lane itself, ATLAS.track('road_dock_lane'), and every tile within 2 of it: a corridor, never a
-    // rect built from two frames' corners that the spread could turn inside out; Stage 4a replaces this lane)
+    // (the dock lane is the Sea Road's last stretch, from the Coast Path's fork to Harl's dock, ATLAS.track('r2_sea'), and
+    // every tile within 2 of it: a corridor, never a rect built from two frames' corners)
     dockLaneGuard = 0;
-    { const pl = ATLAS.track('road_dock_lane'), V = 2;
+    { const pl = ATLAS.track('r2_sea').slice(-2), V = 2;
       for (let s = 1; s < pl.length; s++) { const [ax, ay] = pl[s - 1], [bx, by] = pl[s], n = Math.max(1, Math.round(Math.max(Math.abs(bx - ax), Math.abs(by - ay))));
         for (let k = 0; k <= n; k++) { const x = Math.round(ax + (bx - ax) * k / n), y = Math.round(ay + (by - ay) * k / n); mark(x - V, y - V, x + V, y + V); dockLaneGuard++; } } }
     markB(TD.box([140, 13, 143, 33]));
@@ -70483,7 +70709,7 @@ const MOUNT_LOOK = (() => {
         if (served(x, y)) continue;
         // dig out through this file's own rock until the digging meets ground the knight can reach
         const from = [[x, y]], seenD = new Set([y * MAP_W + x]); let cut = null;
-        for (let qi = 0; qi < from.length && !cut && qi < 400; qi++) {
+        for (let qi = 0; qi < from.length && !cut && qi < Math.max(MAP_W, MAP_H); qi++) {   // the dig queue's cap: the map's longer side (spec §12)
           const [cx, cy] = from[qi];
           for (const [dx, dy] of N4) { const nx = cx + dx, ny = cy + dy, ni = ny * MAP_W + nx;
             if (!inMap(nx, ny) || seenD.has(ni) || side(nx, ny) !== side(x, y)) continue;
@@ -70593,6 +70819,9 @@ const MOUNT_LOOK = (() => {
       // above and below (where the face is two tiles thick there, or a tree stands against it, the cut goes through, up
       // to two tiles each way); only a scarp that misses the port falls back to the middle measured climb
       const [px, py] = port('graveyard.steps'), solidAt = (x, y) => inMap(x, y) && SOLID.has(at(x, y)) && !PUSH_THROUGH.has(at(x, y)) && !buildingAt(x, y);
+      // (a tree or a rock the face runs into at the port is the face there: on the spread's map the seal's face at the
+      // graveyard meets a tree on the port's own tile, with cliff either side of it)
+      if (at(px, py) !== CLIFF && (TREES.has(at(px, py)) || at(px, py) === T.ROCK) && (at(px - 1, py) === CLIFF || at(px + 1, py) === CLIFF)) set(px, py, CLIFF);
       if (at(px, py) === CLIFF) {
         for (const dir of [-1, 1]) for (let k = 1; k <= 2 && solidAt(px, py + dir * k); k++) set(px, py + dir * k, T.GRASS);
         set(px, py, STEPS); S.stairs.push({ x: px, y: py, tile: tileName(STEPS), lv: STEPS_LV });
@@ -70798,7 +71027,9 @@ const MOUNT_LOOK = (() => {
         const f = Math.floor(WS.seams.sWA(x));
         if (regionAt(x, f).name !== 'Wolfwood' || regionAt(x, f + 1).name !== 'The Ashfields') continue;
         for (let d = 1; d <= 3; d++) { inN++; if (tiles[idx(x, f + d)] === ASH) ashIn++; }
-        for (let d = 3; d <= 6; d++) { outN++; if (tiles[idx(x, rimRow(x) - d)] === ASH) ashOut++; }
+        // (three to six OLD rows above the rim, through the rim's pin: 39-worldblend's drift reaches old rows 92..94, which the
+        // spread stretched over new rows 143..147, so six new rows up is still inside it)
+        for (let d = 3; d <= 6; d++) { outN++; if (tiles[idx(x, Math.round(W.pin('rim', W.y(95 - d), x)))] === ASH) ashOut++; }
       }
       const wood = woodT / Math.max(1, woodN), field = fieldT / Math.max(1, fieldN), ash = ashIn / Math.max(1, inN), green = ashOut / Math.max(1, outN);
       check(P + 'the ground changes where the name changes: wood on the Wolfwood side of the line and open field on the other, ash below the Ashfields rim and none of it six rows above',
@@ -71066,7 +71297,7 @@ const MOUNT_LOOK = (() => {
     const GATES = new Set([LAIR_GATE, WARDEN_GATE, Tn('CRYPT_BARS'), Tn('SCARP_STEPS'), Tn('DUNGEON_DOOR')].filter(v => v >= 0));
     const ROADISH = new Set([T.COBBLE, T.PLANK, BRIDGE, DOCK, T.SOIL, T.CROP, T.WATER].filter(v => v >= 0));
     // the tracks 27-dragons trod through the ash (Wolfwood -> the farm -> the lair): nothing solid within 2.5 tiles of them
-    const TRACKS = [ATLAS.track('path_ash'), ATLAS.track('path_farm')];   // ATLAS.TRACKS
+    const TRACKS = [ATLAS.track('r6_ash'), ATLAS.track('path_farm'), ATLAS.track('r6a_shrine')];   // ATLAS.TRACKS: the Ash Road, the farm path and the shrine spur
     const segDist = (px, py, ax, ay, bx, by) => { const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy || 1; const q = clamp(((px - ax) * dx + (py - ay) * dy) / l2, 0, 1); return Math.hypot(px - (ax + dx * q), py - (ay + dy * q)); };
     const nearTrack = (x, y) => TRACKS.some(pl => pl.some((p, k) => k > 0 && segDist(x, y, pl[k - 1][0], pl[k - 1][1], p[0], p[1]) <= 2.5));
 
@@ -71110,9 +71341,12 @@ const MOUNT_LOOK = (() => {
     markB(TOWER.box([91, 77, 99, 85]));                           // the watchtower
     for (const b of BUILDINGS) mark(b.x - 2, b.y - 2, b.x + b.w + 1, b.y + b.h + 1);
     for (const n of NPCS) mark(n.x - 2, n.y - 2, n.x + 2, n.y + 2);
-    for (const s of MONSTER_SPAWNS) mark(s.tx - 2, s.ty - 2, s.tx + 2, s.ty + 2);
+    // (a spawn's ring is kept apart: nothing is laid there, but a living tree in it may still be charred, solid for solid)
+    const spawnRing = new Uint8Array(W * H);
+    for (const s of MONSTER_SPAWNS) for (let y = Math.max(0, s.ty - 2); y <= Math.min(H - 1, s.ty + 2); y++) for (let x = Math.max(0, s.tx - 2); x <= Math.min(W - 1, s.tx + 2); x++) spawnRing[I(x, y)] = 1;
     if (window.PROGRESSION && PROGRESSION.CROSSINGS) for (const c of PROGRESSION.CROSSINGS) { mark(c.a.x - 2, c.a.y - 2, c.a.x + 2, c.a.y + 2); mark(c.b.x - 2, c.b.y - 2, c.b.x + 2, c.b.y + 2); }
-    const free = (x, y) => x > 0 && y > 0 && x < W - 1 && y < H - 1 && !hard[I(x, y)] && !buildingAt(x, y);
+    const free = (x, y) => x > 0 && y > 0 && x < W - 1 && y < H - 1 && !hard[I(x, y)] && !spawnRing[I(x, y)] && !buildingAt(x, y);
+    const freeToChar = (x, y) => x > 0 && y > 0 && x < W - 1 && y < H - 1 && !hard[I(x, y)] && !buildingAt(x, y);
 
     // ---- a rock or a dead tree may stand on open ground only where it cuts nothing ----
     const open = t => !SOLID.has(t) || PUSH_THROUGH.has(t) || GATES.has(t) || WALK_OVER.has(t);
@@ -71390,9 +71624,10 @@ const MOUNT_LOOK = (() => {
           continue;
         }
         // (east of the jungle's wall step 1f already burns the jungle to its own wandering depth, which its check holds to)
-        if (!free(x, y) || d > 3.6 || x > wallX(y)) continue;
+        if (!freeToChar(x, y) || d > 3.6 || x > wallX(y)) continue;
         const burn = d <= 1.5 ? 1 : d <= 2.5 ? 0.7 : 0.35;
         if (TREES.has(t) && hsh(x, y, 700) < burn) { set(x, y, CHAR); band[i] = 1; big[i] = t === JUNGLE ? 1 : 0; S.nearGrey++; }
+        else if (!free(x, y)) continue;
         // (grass above the rim is left as it is: 39-worldblend holds that ash and grass both still stand in rows 93-99,
         // and the ragged fronts drawn over it already carry the ash into it)
         else if (GREEN.has(t) && d <= 1 && y > rimRow(x)) { set(x, y, ow(PICK, x, y) < 0.5 ? CINDERS : SINGED); band[i] = 1; S.greySinged++; }
@@ -71404,7 +71639,10 @@ const MOUNT_LOOK = (() => {
     // but a burnt giant on every tile of it read as a fence. A share of it is a heap of volcanic rock instead, and the
     // rest is drawn with more room to lean (see drawCharTree). Solid for solid.
     S.wallRock = 0;
-    for (let y = AW.ty(96); y <= AW.ty(138); y++) { const wx = wallX(y); if (at(wx, y) === CHAR && hsh(wx, y, 710) < 0.24) { set(wx, y, CRAG); band[I(wx, y)] = 1; S.wallRock++; } }
+    // (a living tree beside a new heap of rock is charred with it, solid for solid: the rock is grey ground, and 1h's
+    // "no living green right against the grey" ran before it)
+    for (let y = AW.ty(96); y <= AW.ty(138); y++) { const wx = wallX(y); if (at(wx, y) === CHAR && hsh(wx, y, 710) < 0.24) { set(wx, y, CRAG); band[I(wx, y)] = 1; S.wallRock++;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const nx = wx + dx, ny = y + dy; if ((dx || dy) && inMap(nx, ny) && TREES.has(at(nx, ny)) && freeToChar(nx, ny)) { set(nx, ny, CHAR); band[I(nx, ny)] = 1; } } } }
 
     // ---- 1g. nothing walled off ----
     // The local test in `canStand` keeps the open tiles round a new rock joined, but it cannot see that the tile it
@@ -71817,17 +72055,21 @@ const MOUNT_LOOK = (() => {
       check(P + "the lair's east and south faces are ragged crags (3+ different depths, some on the south), its walls and gate unchanged, the approach open and walkable to the gate", reach.size >= 3 && south >= 4 && walls && approach && !!path,
         { depths: [...reach].sort(), south, walls, approach, path: path && path.length, crags: S.crags }); }
     // 5. the rim is not one ruled line: its top climbs and falls, and no long stretch keeps both top and foot level
-    { const tops = [], rows = new Set(); let run = 0, longest = 0, at = null, prev = null, solid95 = 0;
+    // (a level stretch is measured in the OLD map's tiles, W.ix: the rim's wobble is old-map noise stretched with the land,
+    // so 4 old tiles that keep their level stand 6 or 7 new tiles wide since the spread, and that is the same ridge. The
+    // bound is 6.5 old tiles, not 6: a run is whole new columns, and the stretch's rounding makes the old map's longest
+    // (6) ten new columns, 6.17 old tiles)
+    { const tops = [], rows = new Set(); let run = 0, longest = 0, at = null, prev = null, solid95 = 0, runX = 0;
       for (let x = AW.tx(1); x <= rimX1(); x++) {
         const row = rimRow(x);
         if (!(x >= WARD.x(59) && x <= WARD.x(61)) && SOLID.has(tileAt(x, row))) solid95++;   // (59-61: the warden's gate, which the story opens)
         if (x >= WARD.x(54) && x <= WARD.x(66) || tileAt(x, row) !== RIM) { prev = null; continue; }
         let top = row, foot = row; while (tileAt(x, top - 1) === RIM) top--; while (tileAt(x, foot + 1) === RIM) foot++;
         tops.push(top); rows.add(top);
-        const k = top + ',' + foot; if (k === prev) { run++; if (run > longest) { longest = run; at = x; } } else run = 1; prev = k;
+        const k = top + ',' + foot; if (k === prev) { run = AW.ix(x + 1) - AW.ix(runX); if (run > longest) { longest = +run.toFixed(2); at = x; } } else { run = 1; runX = x; } prev = k;
       }
-      check(P + "the Ashfields' rim is a ridge, not a ruled line: its top stands on 3+ different rows and no stretch longer than 6 tiles keeps its top and its foot level; row 95 is still solid all along (the warden's gate the one way through)",
-        rows.size >= 3 && longest <= 6 && S.crest >= 40 && solid95 === rimX1() - AW.tx(1) + 1 - (WARD.x(61) - WARD.x(59) + 1), { topRows: [...rows].sort(), longestLevelStretch: longest, endingAtX: at, crestTiles: S.crest, solidOnRow95: solid95 }); }
+      check(P + "the Ashfields' rim is a ridge, not a ruled line: its top stands on 3+ different rows and no stretch longer than 6.5 old tiles keeps its top and its foot level; row 95 is still solid all along (the warden's gate the one way through)",
+        rows.size >= 3 && longest <= 6.5 && S.crest >= 40 && solid95 === rimX1() - AW.tx(1) + 1 - (WARD.x(61) - WARD.x(59) + 1), { topRows: [...rows].sort(), longestLevelStretch: longest, endingAtX: at, crestTiles: S.crest, solidOnRow95: solid95 }); }
     // 6. where the living jungle begins wanders from row to row along x 100
     { const GREENISH = new Set([T.GRASS, T.FLOWERS, T.MUSHROOM, FERN, T.TREE, T.OAK, JUNGLE].filter(v => v >= 0));
       const first = []; for (let y = AW.ty(100); y <= AW.ty(156); y++) { const wx = wallX(y); let x = wx + 1; while (x < wx + 25 && !GREENISH.has(tileAt(x, y))) x++; first.push(x); }
@@ -71848,18 +72090,362 @@ const MOUNT_LOOK = (() => {
       check(P + 'no grass, fern or dry grass below the rim anywhere in the Ashfields box, and no living tree inside its outline', green.length === 0 && trees.length === 0,
         { green: green.slice(0, 10), greenCount: green.length, livingTrees: trees.slice(0, 10), livingTreeCount: trees.length, burntSeam: S.seam, charredInside: S.deepTrees }); }
     // 9. no living tree right against the grey anywhere round the burnt country (the warden's guarded ground at the gate
-    // left as it is), the map's tree border burnt where it runs beside burnt ground, and nothing this pass stood on open
+    // and Dunstan's farm, which the pass guards, left as they are), the map's tree border burnt where it runs beside burnt ground, and nothing this pass stood on open
     // ground left anything walled off (step 1g's count of what it gave back is reported)
     { const GREY = new Set([ASH, SCORCH, CRAG].filter(v => v >= 0)), LIVE = new Set([T.TREE, T.OAK, JUNGLE].filter(v => v >= 0)), BURNT = new Set([ASH, SCORCH, CRAG, CINDERS, CHAR, DEADTREE, SINGED, T.WALL].filter(v => v >= 0));
       const near = [], border = [];
-      const inB = (b, x, y) => x >= b[0] && x <= b[2] && y >= b[1] && y <= b[3], cb = CIRCLE.box([53, 83, 68, 89]), wb = WARD.box([53, 90, 68, 106]);   // the warden's guarded ground (as marked)
+      const inB = (b, x, y) => x >= b[0] && x <= b[2] && y >= b[1] && y <= b[3], cb = CIRCLE.box([53, 83, 68, 89]), wb = WARD.box([53, 90, 68, 106]), fb = WARD.box([58, 96, 79, 107]);   // the warden's guarded ground and Dunstan's farm (as marked)
       for (let y = AW.ty(84); y <= AW.ty(172); y++) for (let x = AW.tx(1); x <= wallX(y); x++) {
-        if (inB(cb, x, y) || inB(wb, x, y) || !LIVE.has(tileAt(x, y))) continue;
+        if (inB(cb, x, y) || inB(wb, x, y) || inB(fb, x, y) || !LIVE.has(tileAt(x, y))) continue;
         let n = 0; for (const [dx, dy] of N8) if (GREY.has(tileAt(x + dx, y + dy))) n++;
         if (n) near.push(x + ',' + y); }
       for (let y = AF_BOX.y0; y <= AF_BOX.y1; y++) if (y >= afTop(0) && LIVE.has(tileAt(0, y)) && BURNT.has(tileAt(1, y))) border.push(y);
       check(P + 'no living tree stands against ash or scorch round the burnt country, and the tree border beside the lair and the ash is burnt too', near.length === 0 && border.length === 0 && S.borderCharred >= 30,
         { treesAgainstGrey: near.slice(0, 10), count: near.length, greenBorderRows: border.slice(0, 10), borderCharred: S.borderCharred, burntNearGrey: S.nearGrey, rockGivenBack: S.unwalled, givenBackAt: S.unwalledAt }); }
+  });
+}
+
+// ---- src/93-spread.js ----
+// ============================================================================
+// THE GREAT SPREAD'S NEW GROUND (Stage 4a of the spread spec, ~/.fanglands/work/spread/spec.md §4, §5, §13)
+// src/93-spread.js
+//
+// The overworld is 400 x 280 now. Every old place moved rigidly to its new spot (src/01-atlas.js), the land between
+// stretched, and the roads and the river were laid anew (ATLAS.TRACKS, laid by 02-world). This file adds what the move
+// itself needs on top of that, and nothing the later stages build:
+//
+//   - the new places as REGIONS boxes, ahead of every ground, so each has its name on the map and in the banner;
+//     the Sound, the Grub Fields and the Ash Wastes as grounds;
+//   - one new tile, PROP, whose kind lives in a side table (PROPS): builders' STAKES round every reserved box, a
+//     PLAQUE in each ("Builders' stakes. The Glasshouse is coming."), and BUOYS round Wreck Rock out in the Grey Sea;
+//   - the water that keeps the east ferry-only: the Sound (x 303..311, the Grey Sea's south shore to the map's foot)
+//     and the east sea along the map's east edge;
+//   - Castle Brightwater's ring: a cliff all round, with no gap (the blimp is its only way in, chapter 10);
+//   - a signpost (the old SIGN tile) beside every road node; 06-systems reads its words from ATLAS.signText;
+//   - placeAction refuses a reserved box and a main road with the tile either side ("Builders have staked this ground.").
+//
+// Feature file: registers through HOOKS and wraps placeAction (as 54-graves and 63-house do); no core file edits.
+// Its world pass runs after 92-worldshape and 93-ashedge (file order), so the land it stakes is the finished land, and
+// before 96-atlas builds the Atlas, so the stakes, the cliffs and the water are in FIXED_SOLID and the grid.
+// It uses no dice: every stake, plaque and signpost stands where the boxes and the roads say.
+// ============================================================================
+{
+  const A = ATLAS, G = A.GROUNDS;
+  const Tn = n => (n in T ? T[n] : -1);
+  // (not solid: a peg and a string, a little board, a float; nothing a knight is walled in by, and a road's verge stays open)
+  // The tile is made when the first world is generated, after every file has loaded and added its own tiles, so it takes
+  // the first free id (245) and no later file's tile id moves.
+  let PROP = -1;
+  // idx -> { kind: 'stake' | 'plaque' | 'buoy', place, under }: what each PROP cell is, and the ground drawn beneath it
+  const PROPS = new Map();
+  const SP = window.SPREAD_GROUND = { PROP, PROPS, signs: [], stats: {} };
+  const ensureProp = () => { if (PROP < 0) { PROP = addTile('PROP', { solid: false, tex: 'grass', mini: '#d9a35b' }); SP.PROP = PROP; INTERESTING_TILES.add(PROP); } return PROP; };
+  const inB = (b, x, y) => x >= b[0] && x <= b[2] && y >= b[1] && y <= b[3];
+
+  // ---------- the new places' names (§4, ADDENDUM A) ----------
+  // [anchor id, the name on the map, the plaque's place name]
+  const NAMES = {
+    old_bridge: ['The Old Bridge', 'The Old Bridge'], millbrook: ['Millbrook', 'Millbrook'], saltmere: ['Saltmere', 'Saltmere'],
+    crossroads_inn: ['The Crossroads Inn', 'The Crossroads Inn'], beacon_hills: ['Beacon Hills', 'Beacon Hills'], hunters_lodge: ["Hunters' Lodge", "The Hunters' Lodge"],
+    outpost_north: ['North Goblin Outpost', 'A goblin outpost'], outpost_south: ['South Goblin Outpost', 'A goblin outpost'], bandit_hills: ['Bandit Hills', 'The Bandit Hills'],
+    skypier: ['Skypier', 'The Skypier'], wreck_rock: ['Wreck Rock', 'Wreck Rock'], brightwater: ['Castle Brightwater', 'Castle Brightwater'],
+    ash_wastes: ['The Ash Wastes', null], sylvaris_growth: [null, null], alchemy: ['The Glasshouse', 'The Glasshouse'], necromancy: ['The Old Barrow', 'The Old Barrow'],
+  };
+  const PLAQUE = {
+    ash_wastes: "Builders' stakes. The Ash Wastes are not open yet.",
+    sylvaris_growth: "Builders' stakes. Sylvaris is growing.",
+    blood_portal: "Builders' stakes. Something will open here one day.",
+  };
+  const plaqueText = id => PLAQUE[id] || (NAMES[id] && NAMES[id][1] ? `Builders' stakes. ${NAMES[id][1]} is coming.` : "Builders' stakes.");
+  SP.plaqueText = plaqueText;
+
+  // ---------- REGIONS ----------
+  // the new places first of all (each a box, ahead of every ground and of the Grey Sea round Wreck Rock); the Sound ahead
+  // of the Jungle (whose box runs under it); the Grub Fields and the Ash Wastes just ahead of the Wilds (after the Redcut,
+  // whose box lies inside the Grub Fields'). `atlas` keeps each one's Atlas id its anchor's.
+  { const SUB = 'Builders have staked this ground';
+    const boxes = A.reserved().filter(r => NAMES[r.id] && NAMES[r.id][0] && r.id !== 'ash_wastes')
+      .map(r => ({ name: NAMES[r.id][0], sub: SUB, atlas: r.id, x0: r.box[0], y0: r.box[1], x1: r.box[2], y1: r.box[3] }));
+    REGIONS.splice(0, 0, ...boxes);
+    const jungle = REGIONS.findIndex(r => r.name === 'The Jungle');
+    REGIONS.splice(jungle < 0 ? REGIONS.length - 1 : jungle, 0, { name: 'The Sound', sub: 'Deep water. Only the ferry crosses', atlas: 'sound', x0: G.sound[0], y0: G.sound[1], x1: G.sound[2], y1: G.sound[3] });
+    const wild = REGIONS.findIndex(r => r.name === 'The Wilds'), aw = A.box('ash_wastes');
+    REGIONS.splice(wild < 0 ? REGIONS.length - 1 : wild, 0,
+      { name: 'The Grub Fields', sub: 'Scrub between Grubmarket and the Redcut', atlas: 'grub_fields', x0: G.grub_fields[0], y0: G.grub_fields[1], x1: G.grub_fields[2], y1: G.grub_fields[3] },
+      { name: 'The Ash Wastes', sub: 'Not open yet', atlas: 'ash_wastes', x0: aw[0], y0: aw[1], x1: aw[2], y1: aw[3] });
+  }
+
+  // ---------- the pass ----------
+  const N4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+  // the Sound and the east sea are laid FIRST of all the world passes too (and again in the pass below, which runs after
+  // the coast and the jungle are drawn): every pass between sees the east cut off by water, as it is, so none of them
+  // (39's reach repair, 92's walled-off check) counts the Grub Fields or the Far Shore as walkable from the mainland
+  const water = api => { for (const b of [G.sound, G.east_sea]) for (let y = Math.max(0, b[1]); y <= Math.min(MAP_H - 1, b[3]); y++) for (let x = Math.max(0, b[0]); x <= Math.min(MAP_W - 1, b[2]); x++) if (api.tileAt(x, y) !== T.WATER) api.setTile(x, y, T.WATER); };
+  HOOKS.world.unshift((rnd0, api) => { ensureProp(); water(api); });
+  HOOKS.world.push((rnd0, api) => {
+    const set = api.setTile, at = api.tileAt;
+    PROPS.clear(); SP.signs = []; ARMS.clear();
+    const S = SP.stats = { sea: 0, sound: 0, cliff: 0, stakes: {}, plaques: {}, buoys: 0, signs: 0, moved: [], skipped: [] };
+    const WATER = T.WATER, CLIFF = Tn('CLIFF'), SAND = T.SAND;
+    // the roads' centre lines: nothing of this file's stands within 2 tiles of one (a stake or a sign by the road, not on it)
+    const roadD = new Float32Array(MAP_W * MAP_H).fill(99);
+    const segD = (px, py, ax, ay, bx, by) => { const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy || 1, t = clamp(((px - ax) * dx + (py - ay) * dy) / l2, 0, 1); return Math.hypot(px - ax - t * dx, py - ay - t * dy); };
+    for (const id of A.ROAD_IDS) { const pl = A.track(id);
+      for (let k = 1; k < pl.length; k++) { const [ax, ay] = pl[k - 1], [bx, by] = pl[k];
+        for (let y = Math.max(0, Math.floor(Math.min(ay, by) - 3)); y <= Math.min(MAP_H - 1, Math.ceil(Math.max(ay, by) + 3)); y++)
+          for (let x = Math.max(0, Math.floor(Math.min(ax, bx) - 3)); x <= Math.min(MAP_W - 1, Math.ceil(Math.max(ax, bx) + 3)); x++) { const d = segD(x, y, ax, ay, bx, by), i = y * MAP_W + x; if (d < roadD[i]) roadD[i] = d; } } }
+    const near = new Uint8Array(MAP_W * MAP_H);   // a person, a spawn, a door: one tile all round stays as it is
+    const mark = (x, y, r) => { for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) if (inMap(x + dx, y + dy)) near[(y + dy) * MAP_W + x + dx] = 1; };
+    for (const n of NPCS) mark(n.x, n.y, 1);
+    for (const s of MONSTER_SPAWNS) mark(s.tx, s.ty, 1);
+    for (const id in A.PORTS) { const p = A.port(id); if (p) mark(Math.round(p[0]), Math.round(p[1]), 0); }
+    const OPEN = t => !SOLID.has(t) && !PUSH_THROUGH.has(t) && t !== WATER;
+    const KEEP = new Set([T.COBBLE, T.FLOOR, T.SOIL, T.CROP, T.DOOR, T.GATE, Tn('BRIDGE'), Tn('DOCK'), T.SIGN].filter(v => v >= 0));
+    // ground a stake or a sign may stand on: open, not built, not by a person or a road, with three open sides
+    const standable = (x, y, clear) => inMap(x, y) && x > 0 && y > 0 && x < MAP_W - 1 && y < MAP_H - 1 && OPEN(at(x, y)) && !KEEP.has(at(x, y)) && !buildingAt(x, y) &&
+      !near[y * MAP_W + x] && roadD[y * MAP_W + x] > clear && N4.filter(([dx, dy]) => OPEN(at(x + dx, y + dy))).length >= 3;
+    const prop = (x, y, kind, place) => { const i = y * MAP_W + x; PROPS.set(i, { kind, place, under: at(x, y) }); set(x, y, PROP); };
+
+    // ---- 1. the water that keeps the east ferry-only, and the east sea ----
+    const flood = (b, key) => { for (let y = Math.max(0, b[1]); y <= Math.min(MAP_H - 1, b[3]); y++) for (let x = Math.max(0, b[0]); x <= Math.min(MAP_W - 1, b[2]); x++) if (at(x, y) !== WATER) { set(x, y, WATER); S[key]++; } };
+    flood(G.sound, 'sound'); flood(G.east_sea, 'sea');
+    // a sandy shore where the land meets the new water (soft ground only)
+    for (const b of [G.sound, G.east_sea]) for (let y = Math.max(1, b[1]); y <= Math.min(MAP_H - 2, b[3]); y++) for (const x of [b[0] - 1, b[2] + 1]) {
+      if (!inMap(x, y)) continue; const t = at(x, y); if (t === T.GRASS || t === T.FLOWERS || t === T.MUSHROOM || t === Tn('FERN') || t === T.DIRT) set(x, y, SAND); }
+    // nothing wakes in the water: a spawn the new sea covered moves to the nearest dry open ground
+    for (const s of MONSTER_SPAWNS) {
+      if (at(s.tx, s.ty) !== WATER || MONSTER_DEFS[s.type].human) continue;
+      let best = null;
+      for (let r = 1; r <= 16 && !best; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue; const x = s.tx + dx, y = s.ty + dy;
+        if (!inMap(x, y) || !OPEN(at(x, y)) || buildingAt(x, y) || inB(G.sound, x, y) || inB(G.east_sea, x, y)) continue;
+        const d = Math.hypot(dx, dy); if (!best || d < best.d) best = { x, y, d }; }
+      if (best) { S.moved.push([s.type, s.tx, s.ty, best.x, best.y]); s.movedFrom = s.movedFrom || [s.tx, s.ty]; s.tx = best.x; s.ty = best.y; }
+    }
+
+    // ---- 2. Castle Brightwater: a cliff ring one tile inside its box, no gap; sand between it and the east sea ----
+    if (CLIFF >= 0) { const b = A.box('brightwater'), r = [b[0] + 1, b[1] + 1, b[2] - 1, b[3] - 1];
+      for (let y = r[1]; y <= r[3]; y++) for (let x = r[0]; x <= r[2]; x++) {
+        const edge = x === r[0] || x === r[2] || y === r[1] || y === r[3];
+        if (edge) { set(x, y, CLIFF); S.cliff++; } else if (SOLID.has(at(x, y)) && at(x, y) !== T.TREE && at(x, y) !== T.OAK) set(x, y, T.GRASS); }
+      for (let y = b[1]; y <= b[3]; y++) if (at(b[2], y) !== WATER) set(b[2], y, SAND); }
+
+    // ---- 3. stakes round every reserved box, a plaque in each, buoys round Wreck Rock ----
+    for (const { id, box: b } of A.reserved()) {
+      if (id === 'wreck_rock') {   // out in the Grey Sea: a buoy at each corner, a plaque buoy at the rock's own port
+        for (const [x, y] of [[b[0], b[1]], [b[2], b[1]], [b[0], b[3]], [b[2], b[3]]]) if (at(x, y) === WATER) { prop(x, y, 'buoy', id); S.buoys++; }
+        const [px, py] = A.port('wreck_rock.rock'); if (at(px, py) === WATER) { prop(px, py, 'plaque', id); S.plaques[id] = 1; }
+        continue;
+      }
+      // the perimeter, one stake every fourth tile (corners always); the Ash Wastes' edges on the map's border are the
+      // border's, so only its north and east sides take stakes
+      const ring = [];
+      for (let x = b[0]; x <= b[2]; x++) ring.push([x, b[1]], [x, b[3]]);
+      for (let y = b[1] + 1; y < b[3]; y++) ring.push([b[0], y], [b[2], y]);
+      let n = 0;
+      for (const [x, y] of ring) {
+        const top = y === b[1] || y === b[3], side = x === b[0] || x === b[2];
+        if (!((top && side) || (top && (x - b[0]) % 4 === 0) || (side && (y - b[1]) % 4 === 0))) continue;
+        if (!standable(x, y, 2)) continue;
+        prop(x, y, 'stake', id); n++;
+      }
+      S.stakes[id] = n;
+      // the plaque: at the place's door port when it has one, else on its own ground nearest the road that serves it
+      const door = A.port(id + '.door'), cand = [];
+      if (door && standable(door[0], door[1], 1.5)) cand.push([door[0], door[1], 0]);
+      else { let best = null;
+        for (let y = b[1]; y <= b[3]; y++) for (let x = b[0]; x <= b[2]; x++) { if (!standable(x, y, 2)) continue; const d = roadD[y * MAP_W + x]; if (!best || d < best[2]) best = [x, y, d]; }
+        if (best) cand.push(best); }
+      if (cand.length) { prop(cand[0][0], cand[0][1], 'plaque', id); S.plaques[id] = 1; } else S.skipped.push('no ground for ' + id + "'s plaque");
+    }
+    // the blood portals' keep-clear rings (§4): a stake at each corner of the ring of 3, the plaque at the port. Not
+    // Thistledown's: its north lawn is 95-thistledown's own ground, painted and repainted from the capital's quest state,
+    // and nothing of this file's may stand among the city's things (Stage 7 lays that portal itself)
+    for (const pid of Object.keys(A.PORTS).filter(k => /\.blood_portal$/.test(k) && k !== 'thistledown.blood_portal')) {
+      const [px, py] = A.port(pid).map(Math.round); let n = 0;
+      for (const [dx, dy] of [[-3, -3], [3, -3], [-3, 3], [3, 3]]) if (standable(px + dx, py + dy, 1.5)) { prop(px + dx, py + dy, 'stake', 'blood_portal'); n++; }
+      if (OPEN(at(px, py)) && !KEEP.has(at(px, py)) && !buildingAt(px, py)) { prop(px, py, 'plaque', 'blood_portal'); S.plaques[pid] = 1; } else S.skipped.push('the port ' + pid + ' is not open ground');
+      S.stakes[pid] = n;
+    }
+
+    // ---- 3b. every ore rock and berry bush still has a side a knight can walk to ----
+    // On the bigger map the land round a seam is new (the quarry's south-west corner lost the old spur road that kept its
+    // rock spill back, and 92's quarry ground turned that corner's dirt to rock), so a blackiron rock can end up walled in
+    // by plain rock. Where one has no open side the knight can reach, the fewest plain rocks and trees between it and
+    // reached ground give way (never an ore, a cliff, a building or anything within 3 rows of the Wolfwood scarp).
+    if (window.ORES) {
+      const pass = t => !SOLID.has(t) || PUSH_THROUGH.has(t) || t === Tn('WARDEN_GATE') || t === Tn('LAIR_GATE') || t === Tn('CRYPT_BARS') || t === Tn('SCARP_STEPS');
+      const DIG = new Set([T.ROCK, T.IRON, T.COAL, T.TREE, T.OAK].filter(v => v >= 0)), sGW = window.WORLDSHAPE && WORLDSHAPE.seams && WORLDSHAPE.seams.sGW;
+      // (walked from each metal's own anchor, as 62-ores' check walks it: the cave mouth, or the Far Shore's landing)
+      const reach = from => { const seen = new Uint8Array(MAP_W * MAP_H), q = []; const push = (x, y) => { if (!inMap(x, y)) return; const i = y * MAP_W + x; if (seen[i] || !pass(at(x, y))) return; seen[i] = 1; q.push(i); };
+        push(...from); for (let k = 0; k < q.length; k++) { const c = q[k], x = c % MAP_W, y = (c / MAP_W) | 0; for (const [dx, dy] of N4) push(x + dx, y + dy); } return seen; };
+      // (and every berry bush: 39's copses can close round one on the new land)
+      const SPOTS = Object.assign({}, ORES.SPOTS), BUSH = Tn('BERRY_BUSH');
+      if (BUSH >= 0) { SPOTS.berry = []; for (let i = 0; i < MAP_W * MAP_H; i++) if (map[i] === BUSH) SPOTS.berry.push([i % MAP_W, (i / MAP_W) | 0]); }
+      let seen = null, seenKey = null; S.oreDug = [];
+      for (const key in SPOTS) for (const [ox, oy] of SPOTS[key]) {
+        const tier = ORES.BY_KEY[key], from = tier && tier.anchor ? tier.anchor : A.port('cave.mouth');
+        if (!seen || seenKey !== key) { seen = reach(from); seenKey = key; }
+        if (N4.some(([dx, dy]) => inMap(ox + dx, oy + dy) && seen[(oy + dy) * MAP_W + ox + dx])) continue;
+        const prev = new Map(), q = [[ox, oy]]; prev.set(oy * MAP_W + ox, -1); let end = null;
+        for (let k = 0; k < q.length && !end && k < 4000; k++) { const [x, y] = q[k];
+          for (const [dx, dy] of N4) { const nx = x + dx, ny = y + dy, ni = ny * MAP_W + nx; if (!inMap(nx, ny) || prev.has(ni) || Math.hypot(nx - ox, ny - oy) > 12) continue;
+            const t = at(nx, ny); if (sGW && Math.abs(ny - sGW(nx)) <= 3) continue;
+            if (seen[ni]) { prev.set(ni, y * MAP_W + x); end = ni; break; }
+            if (pass(t) || (DIG.has(t) && !buildingAt(nx, ny))) { prev.set(ni, y * MAP_W + x); q.push([nx, ny]); } } }
+        if (end === null) { S.skipped.push('no dig frees the ' + key + ' rock at ' + ox + ',' + oy); continue; }
+        for (let c = prev.get(end); c !== -1 && c !== oy * MAP_W + ox; c = prev.get(c)) { const x = c % MAP_W, y = (c / MAP_W) | 0; if (DIG.has(at(x, y))) { set(x, y, T.DIRT); S.oreDug.push([x, y]); } }
+        seen = null;
+      }
+    }
+
+    // ---- 4. a signpost beside every road node (§5): the old SIGN tile, two to six tiles off the node, off the road ----
+    // (a post never cuts a way: the open ground round it, walked round the eight tiles about it, is one piece, so every
+    // open side of it still reaches every other without it)
+    const RING8 = [[-1, -1], [0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0]];
+    const simple = (x, y) => { const o = RING8.map(([dx, dy]) => OPEN(at(x + dx, y + dy)));
+      let runs = 0; for (let k = 0; k < 8; k++) if (o[k] && !o[(k + 7) % 8]) runs++;
+      return runs === 1 || (runs === 0 && o.every(Boolean)); };
+    for (const q of A.SIGNPOSTS) {
+      const [nx, ny] = A.pointOf(q.at).map(Math.round);
+      if (nx === SIGN_TILE.x && ny === SIGN_TILE.y) continue;   // the story's own signpost (02-world)
+      let best = null;
+      if (q.sign) { const [sx, sy] = A.pointOf(q.sign).map(Math.round); if (standable(sx, sy, 1.9) && simple(sx, sy)) best = { x: sx, y: sy, d: 0 }; }
+      for (let r = 2; r <= 6 && !best; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue; const x = nx + dx, y = ny + dy;
+        if (!standable(x, y, 1.9) || A.reservedAt(x, y) && PROPS.has(y * MAP_W + x) || !simple(x, y)) continue;
+        // and a knight can stand beside it on the road side
+        if (!N4.some(([ex, ey]) => roadD[(y + ey) * MAP_W + x + ex] <= 2.5 && OPEN(at(x + ex, y + ey)))) continue;
+        const d = Math.hypot(dx, dy); if (!best || d < best.d) best = { x, y, d };
+      }
+      if (!best) { S.skipped.push('no ground for the signpost at ' + nx + ',' + ny); continue; }
+      set(best.x, best.y, T.SIGN); SP.signs.push([best.x, best.y, nx, ny]); S.signs++;
+    }
+  });
+
+  // ---------- what a road's signpost shows on its arms (08-draw's drawSignProp asks) ----------
+  // up to three arms, each a short name pointing left (west-ish) or right; the story's own signpost keeps its arms
+  const ARMS = new Map();
+  const SHORT = { 'CROSSROADS INN': 'INN', "WARDEN'S GATE": 'WARDEN', 'OLD SIGNPOST': 'SIGNPOST', "HUNTERS' LODGE": 'LODGE', 'GOBLIN OUTPOST': 'OUTPOST', 'BANDIT HILLS': 'BANDITS' };   // (an arm holds about 12 letters)
+  window.SIGN_ARMS = (tx, ty) => {
+    if (window.__instance || (tx === SIGN_TILE.x && ty === SIGN_TILE.y)) return null;
+    const i = ty * MAP_W + tx; if (ARMS.has(i)) return ARMS.get(i);
+    const sign = SP.signs.find(q => q[0] === tx && q[1] === ty); let arms = null;
+    if (sign) { const legs = A.signArms(tx, ty), seen = new Set(); arms = [];
+      for (const l of legs) { const w0 = l.to.replace(/\s*\(.*\)$/, '').replace(/^the /i, '').toUpperCase(), word = SHORT[w0] || w0.slice(0, 12); if (seen.has(word) || arms.length >= 3) continue; seen.add(word);
+        arms.push([-42 + arms.length * 16, word, false, /west/.test(l.dir)]); }
+      if (!arms.length) arms = null; }
+    ARMS.set(i, arms); return arms;
+  };
+
+  // ---------- what a stake, a plaque, a buoy and a signpost say ----------
+  HOOKS.use.push((t, tx, ty) => {
+    if (t !== PROP || window.__instance) return false;
+    const p = PROPS.get(ty * MAP_W + tx); if (!p) return false;
+    say(p.kind === 'buoy' ? 'A buoy, tied to a builders\' line. ' + plaqueText(p.place) : plaqueText(p.place), 'Builders');
+    return true;
+  });
+  // nothing is built on staked ground or on a main road (the road and the tile either side of it)
+  { const _placeAction = placeAction;
+    placeAction = function (id) {
+      if (!window.__instance && !player.dead && !player.mech) {
+        const { tx, ty } = frontTile(player, 40);
+        if (inMap(tx, ty) && (A.reservedAt(tx, ty) || A.onMainRoad(tx, ty))) { notify('Builders have staked this ground.'); return; }
+      }
+      return _placeAction.apply(this, arguments);
+    }; }
+
+  // ---------- drawing: the ground beneath, then the stake, the plaque or the buoy ----------
+  HOOKS.draw.push((g, items) => {
+    if (window.__instance) return;
+    const x0 = Math.max(0, Math.floor(cam.x / TILE) - 1), x1 = Math.min(MAP_W - 1, Math.ceil((cam.x + VW) / TILE) + 1);
+    const y0 = Math.max(0, Math.floor(cam.y / TILE) - 1), y1 = Math.min(MAP_H - 1, Math.ceil((cam.y + VH) / TILE) + 1);
+    for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) {
+      const i = idx(tx, ty); if (map[i] !== PROP) continue;
+      const p = PROPS.get(i); if (!p) continue;
+      const px = tx * TILE, py = ty * TILE, v = variant[i] % 3;
+      items.push({ y: -1e9 + 1, draw: () => { const img = tex[TEX_NAME[p.under] + v]; if (img) g.drawImage(img, px, py, TILE, TILE); } });
+      items.push({ y: py + TILE - 4, draw: () => drawProp(g, px, py, p.kind) });
+    }
+  });
+  function drawProp(g, px, py, kind) {
+    const cx = px + TILE / 2, base = py + TILE - 8;
+    if (kind === 'buoy') {   // a red and white float on the water, its line slack
+      g.fillStyle = 'rgba(0,0,0,0.25)'; g.beginPath(); g.ellipse(cx, base + 2, 11, 4, 0, 0, 7); g.fill();
+      g.fillStyle = '#d9483b'; g.beginPath(); g.arc(cx, base - 6, 9, Math.PI, 0); g.fill();
+      g.fillStyle = '#f2efe6'; g.fillRect(cx - 9, base - 6, 18, 5);
+      g.fillStyle = '#3a2a1a'; g.fillRect(cx - 1, base - 22, 2, 9);
+      return;
+    }
+    if (kind === 'plaque') {   // a small board on two legs
+      g.fillStyle = 'rgba(0,0,0,0.25)'; g.beginPath(); g.ellipse(cx, base + 3, 14, 4, 0, 0, 7); g.fill();
+      g.fillStyle = '#6b4a2a'; g.fillRect(cx - 11, base - 14, 3, 17); g.fillRect(cx + 8, base - 14, 3, 17);
+      g.fillStyle = '#c9a36a'; g.fillRect(cx - 15, base - 30, 30, 18);
+      g.strokeStyle = '#6b4a2a'; g.lineWidth = 2; g.strokeRect(cx - 15, base - 30, 30, 18);
+      g.fillStyle = '#5a3d26'; for (let k = 0; k < 3; k++) g.fillRect(cx - 10, base - 26 + k * 5, 20 - k * 4, 2);
+      return;
+    }
+    // a builders' stake: a pale peg with an orange ribbon
+    g.fillStyle = 'rgba(0,0,0,0.25)'; g.beginPath(); g.ellipse(cx, base + 3, 7, 3, 0, 0, 7); g.fill();
+    g.fillStyle = '#d8c39a'; g.fillRect(cx - 2, base - 20, 4, 23);
+    g.fillStyle = '#8a7550'; g.fillRect(cx - 2, base - 20, 4, 3);
+    g.fillStyle = '#e8873a'; g.beginPath(); g.moveTo(cx + 2, base - 18); g.lineTo(cx + 12, base - 15); g.lineTo(cx + 2, base - 12); g.closePath(); g.fill();
+  }
+
+  // ---------- self-tests ----------
+  HOOKS.selfTest.push((check, F, h) => {
+    const P = 'spread: ', S = SP.stats;
+    // every reserved place is staked, with a plaque that says what is coming
+    const res = A.reserved(), unstaked = res.filter(r => r.id !== 'wreck_rock' && !(S.stakes[r.id] > 0)).map(r => r.id), noPlaque = res.filter(r => !S.plaques[r.id]).map(r => r.id);
+    const plaques = [...PROPS.entries()].filter(([, p]) => p.kind === 'plaque');
+    const glass = plaques.find(([, p]) => p.place === 'alchemy'), barrow = plaques.find(([, p]) => p.place === 'necromancy');
+    check(P + "every reserved place has builders' stakes round it and a plaque (the Glasshouse's says \"Builders' stakes. The Glasshouse is coming.\", the Old Barrow's \"... The Old Barrow is coming.\"), and Wreck Rock's buoys float in the Grey Sea",
+      !unstaked.length && !noPlaque.length && !!glass && !!barrow && plaqueText('alchemy') === "Builders' stakes. The Glasshouse is coming." && plaqueText('necromancy') === "Builders' stakes. The Old Barrow is coming." && S.buoys >= 4,
+      { unstaked, noPlaque, stakes: S.stakes, buoys: S.buoys, skipped: S.skipped });
+    // E on a plaque reads it
+    { const [i] = glass || []; let said = null;
+      if (i !== undefined) { const x = i % MAP_W, y = (i / MAP_W) | 0, spot = [[0, 1], [0, -1], [1, 0], [-1, 0]].map(([dx, dy]) => [x + dx, y + dy]).find(([sx, sy]) => !SOLID.has(tileAt(sx, sy)));
+        if (spot) { dialog.queue.length = 0; advanceDialog(); F.tp(spot[0], spot[1]); F.face(x, y); F.press('KeyE'); F.sim(2, []);
+          const d = [dialog.cur, ...dialog.queue].find(q => q && q.who === 'Builders'); said = d ? d.text : null; dialog.queue.length = 0; advanceDialog(); } }
+      check(P + "E on the Glasshouse plaque reads \"Builders' stakes. The Glasshouse is coming.\"", said === "Builders' stakes. The Glasshouse is coming.", { said }); }
+    // nothing is built on staked ground or on a main road; beside the road it is
+    { const traps = () => countItem('goblin_trap'); h.give('goblin_trap', 3); h.peace(true);
+      const b = A.box('alchemy'), cx = Math.round((b[0] + b[2]) / 2), cy = Math.round((b[1] + b[3]) / 2);
+      // (a goblin trap: the one thing a knight may still set down in the shared world; planks and walls go on his island)
+      const tryAt = (x, y) => { F.tp(x, y + 1); player.facing = { x: 0, y: -1 }; notice = null; const n0 = traps(); placeAction('goblin_trap'); const placed = traps() < n0; if (placed && tileAt(x, y) === T.TRAP) changeTile(x, y, T.GRASS); return { placed, notice: notice && notice.text }; };
+      const inBox = tryAt(cx, cy);
+      const road = A.track('r1_cave'), [rx, ry] = road[2].map(Math.round), onRoad = tryAt(rx, ry);
+      // three tiles off the Cave Road, on open grass, is anyone's
+      let off = null; for (let d = 4; d <= 9 && !off; d++) for (const [ox, oy] of [[0, d], [0, -d], [d, 0], [-d, 0]]) { const x = rx + ox, y = ry + oy; if (!off && tileAt(x, y) === T.GRASS && tileAt(x, y + 1) === T.GRASS && !A.onMainRoad(x, y) && !A.reservedAt(x, y)) off = [x, y]; }
+      const free = off ? tryAt(off[0], off[1]) : null;
+      h.peace(false);
+      check(P + "placeAction refuses inside a reserved box and on a main road, the road and one tile either side (\"Builders have staked this ground.\"), and places three tiles off the road",
+        !inBox.placed && inBox.notice === 'Builders have staked this ground.' && !onRoad.placed && onRoad.notice === 'Builders have staked this ground.' && !!free && free.placed, { inBox, onRoad, free, at: [cx, cy, rx, ry, off] }); }
+    // the east is ferry-only: the Sound and the east sea are water from end to end, and no tile east of the strait is
+    // reached on foot from the cave mouth (bridges, gates and doors open; the ferry is a boat)
+    { let dry = 0; for (const b of [G.sound, G.east_sea]) for (let y = b[1]; y <= b[3]; y++) for (let x = b[0]; x <= b[2]; x++) if (tileAt(x, y) !== T.WATER) dry++;
+      const seen = new Uint8Array(MAP_W * MAP_H), q = [], pass = t => !SOLID.has(t) || PUSH_THROUGH.has(t) || t === Tn('WARDEN_GATE') || t === Tn('LAIR_GATE') || t === Tn('CRYPT_BARS');
+      const push = (x, y) => { if (!inMap(x, y)) return; const i = y * MAP_W + x; if (seen[i] || !pass(tileAt(x, y))) return; seen[i] = 1; q.push(i); };
+      push(...A.port('cave.mouth')); for (let k = 0; k < q.length; k++) { const c = q[k], x = c % MAP_W, y = (c / MAP_W) | 0; for (const [dx, dy] of N4) push(x + dx, y + dy); }
+      let east = 0, eastAt = null; for (let y = 0; y < MAP_H; y++) for (let x = G.grub_fields[0]; x < MAP_W; x++) if (seen[y * MAP_W + x]) { east++; if (!eastAt) eastAt = [x, y]; }
+      check(P + 'the Sound (x 303..311, y 140..279) and the east sea (x 392..399) are water end to end, and nothing east of the Sound (x 312 on) is reached on foot from the cave mouth', dry === 0 && east === 0, { dry, east, eastAt }); }
+    // Castle Brightwater: no way in on foot (its landing is not reached from outside its ring)
+    { const b = A.box('brightwater'), L = A.port('brightwater.landing'), outside = [b[0] - 1, Math.round((b[1] + b[3]) / 2)];
+      const path = F.bfs(outside[0], outside[1], L[0], L[1]), ring = (() => { let n = 0; for (let y = b[1] + 1; y <= b[3] - 1; y++) for (let x = b[0] + 1; x <= b[2] - 1; x++) if ((x === b[0] + 1 || x === b[2] - 1 || y === b[1] + 1 || y === b[3] - 1) && tileAt(x, y) !== Tn('CLIFF')) n++; return n; })();
+      check(P + "Castle Brightwater is ringed by cliff with no gap: its landing is not reached on foot from the Grub Fields", !path && ring === 0, { path: path && path.length, gaps: ring }); }
+    // a signpost by every road node, readable from the road; its words name the roads' places
+    { const want = A.SIGNPOSTS.filter(q => { const p = A.pointOf(q.at); return !(Math.round(p[0]) === SIGN_TILE.x && Math.round(p[1]) === SIGN_TILE.y); }).length, bad = SP.signs.filter(([x, y]) => tileAt(x, y) !== T.SIGN), fork = SP.signs.find(([, , nx, ny]) => { const p = A.pointOf(A.SIGNPOSTS[0].at); return nx === p[0] && ny === p[1]; });
+      const words = fork ? A.signText(fork[0], fork[1]) : null;
+      check(P + "a signpost stands beside every road node (" + want + " besides the story's), and the Mill Lane fork's names Millbrook, Thistledown and the cave",
+        SP.signs.length === want && !bad.length && !!words && /Millbrook/.test(words) && /Thistledown/.test(words) && /cave/.test(words), { signs: SP.signs.length, want, bad, words, skipped: S.skipped }); }
+    // the road network is laid whole: each main road's centre line is open ground (a bridge, a gate or a door counts) from
+    // end to end, bar the story signpost, the gates' own tiles and Hollowford's ruins
+    { const gaps = {}, OKT = new Set([T.SIGN, Tn('WARDEN_GATE'), Tn('LAIR_GATE'), T.GATE, T.DOOR].filter(v => v >= 0)), hf = A.box('hollowford');
+      for (const id of A.MAIN_ROADS) { const pl = A.track(id);
+        for (let k = 1; k < pl.length; k++) { const [ax, ay] = pl[k - 1], [bx, by] = pl[k], n = Math.max(1, Math.round(Math.max(Math.abs(bx - ax), Math.abs(by - ay))));
+          for (let s = 0; s <= n; s++) { const x = Math.round(ax + (bx - ax) * s / n), y = Math.round(ay + (by - ay) * s / n), t = tileAt(x, y);
+            if (inB(hf, x, y) || OKT.has(t) || !SOLID.has(t) || PUSH_THROUGH.has(t)) continue; (gaps[id] = gaps[id] || []).push(x + ',' + y + ' ' + tileName(t)); } } }
+      check(P + 'every main road is open from end to end (its centre line: no tree, rock, fence or wall on it, Hollowford\'s ruins and the gates aside)', !Object.keys(gaps).length, { gaps: Object.fromEntries(Object.entries(gaps).map(([k, v]) => [k, v.slice(0, 6)])) }); }
   });
 }
 
@@ -75149,7 +75735,7 @@ const MOUNT_LOOK = (() => {
     const giveBack = () => { while (borrowed.length) { const b = borrowed.pop(); setTile(b.tx, b.ty, b.t); if (b.had) mapDiffs.set(idx(b.tx, b.ty), b.d); else mapDiffs.delete(idx(b.tx, b.ty)); } };
     const keep = { x: player.x, y: player.y, quest: JSON.stringify(quest), inv: player.inv.map(s => s ? { ...s } : null), horse: player.horse ? JSON.parse(JSON.stringify(player.horse)) : player.horse,
       mech: player.mech, r: player.r, speed: player.speed, day: player.dayTime, region: player.region, cityV: player.cityV, visited: player.visitedVillage, bed: player.bedSpawn, home: player.home, bank: player.bank.map(s => ({ ...s })) };
-    const onFoot = () => { player.mech = null; player.r = 13; player.speed = 175; player.action = null; };
+    const onFoot = () => { player.mech = null; player.r = 13; player.speed = 175; player.action = null; }; const heroAway = () => { const c = player.companion, id = c && c.id; if (id) c.id = null; return () => { if (id) c.id = id; }; }; // a hero who follows can stand in front and take the E
     const setCoins = n => { while (coins() > 0) payCoins(coins()); if (n > 0) h.give('coins', n); };
     // villagers who wander, and monsters, out of the way of the checks (put back at the end)
     const npcKeep = NPCS.map(n => ({ n, px: n.px, py: n.py, wanderT: n.wanderT }));
@@ -75392,7 +75978,7 @@ const MOUNT_LOOK = (() => {
         { bad: bad.slice(0, 6), groups: groups.length, loneProps: loneProps.map(g => g.key), loneHedges, walked, tapLine, west, plaques, first, lampsLive }); }
 
     // ---- C10b. a tap on a town thing near one of the town's people answers as the thing, from every side it can be reached ----
-    { leave(); onFoot(); drain(); const wrong = []; let tried = 0;
+    { leave(); onFoot(); drain(); const back = heroAway(); const wrong = []; let tried = 0;
       const stay = STAYERS();
       for (let y = TOWN.y0; y <= TOWN.y1; y++) for (let x = TOWN.x0; x <= TOWN.x1; x++) {
         const t = tileAt(x, y), k = kindAt(x, y);
@@ -75407,7 +75993,7 @@ const MOUNT_LOOK = (() => {
           if (!d0 || d0.who !== want[0]) wrong.push([x, y, k, sx, sy, d0 ? d0.who : null]);
         }
       }
-      drain(); tapCancel('manual');
+      drain(); tapCancel('manual'); back();
       check(P + 'C10b a tap on a stall, a bench, a hedge, a lamp or a statue beside one of the town\'s people answers as the thing from every side it can be reached (the sellers too: E still talks over a counter)',
         tried >= 20 && !wrong.length, { tried, wrong: wrong.slice(0, 8) }); }
 
@@ -75436,7 +76022,7 @@ const MOUNT_LOOK = (() => {
         lone >= 20 && sent >= 20 && scenery && !!hedgeMid && Object.values(viaTap).length === 3 && Object.values(viaTap).every(Boolean), { lone, sent, stuck, viaTap }); }
 
     // ---- C11. the coin toss ----
-    { drain(); clearFolk(...TD.p(111, 33), 8); clearMonsters(...TD.p(111, 33), 6); onFoot(); F.tp(...TD.p(111, 33)); F.face(...TD.p(111, 34)); setCoins(5); const q = Q(); q.tossArmed = 0; const t0 = q.tossed;
+    { drain(); clearFolk(...TD.p(111, 33), 8); clearMonsters(...TD.p(111, 33), 6); onFoot(); const back = heroAway(); F.tp(...TD.p(111, 33)); F.face(...TD.p(111, 34)); setCoins(5); const q = Q(); q.tossArmed = 0; const t0 = q.tossed;
       F.press('KeyE'); const l1 = texts()[0], c1 = coins(); drain();
       F.sim(30, []); F.press('KeyE'); const l2 = texts()[0], c2 = coins(), t2 = q.tossed; drain();
       setCoins(0); F.sim(10, []); F.press('KeyE'); const l3 = texts()[0], c3 = coins(), t3 = q.tossed; drain();
@@ -75444,7 +76030,7 @@ const MOUNT_LOOK = (() => {
       setCoins(2); F.sim(400, []); F.press('KeyE'); const l4 = texts()[0], c4 = coins(); drain();
       // E five times running on a keyboard (it does not turn the page): one line on the page at a time, the newest toss
       setCoins(5); q.tossArmed = 0; const t5 = q.tossed; for (let k = 0; k < 5; k++) { F.press('KeyE'); F.sim(6, []); }
-      const page = texts(), c5 = coins(), quick = page.length === 1 && page[0] === TOSS[(q.tossed - 1) % 6] && q.tossed === t5 + 4 && c5 === 1; drain();
+      const page = texts(), c5 = coins(), quick = page.length === 1 && page[0] === TOSS[(q.tossed - 1) % 6] && q.tossed === t5 + 4 && c5 === 1; drain(); back();
       check(P + 'C11 the coin toss: one E gives the line and spends nothing; a second E within 6 s costs exactly 1 coin and counts the toss; with no coins it says so and nothing changes; after 6 s E gives the first line again; E pressed five times running shows one line, the newest toss, never a stack',
         /^The Great Fountain\. People toss a coin/.test(l1 || '') && c1 === 5 && l2 === TOSS[t0 % 6] && c2 === 4 && t2 === t0 + 1 && l3 === 'You have no coins to toss.' && c3 === 0 && t3 === t2 && /^The Great Fountain\. People toss/.test(l4 || '') && c4 === 2 && quick,
         { l1, c1, l2, c2, tossed: [t0, t2, t3], l3, c3, l4, c4, page, c5 }); }
@@ -75947,14 +76533,17 @@ const MOUNT_LOOK = (() => {
       const ringShown = !!tap.marker && marks.some(i => i.y === -1e9 + 1);
       tapCancel('manual');
       // the Bell Tower rises over the north wall: a knight on the grass behind it, outside, sees through it
-      clearMonsters(...TD.p(112, 12), 6); F.tp(...TD.p(112, 12)); F.step([]); const open = !SOLID.has(tileAt(...TD.p(112, 12))) && Math.floor(player.y / TILE) === TD.y(12);
+      // (an open tile of that row behind the tower's own two columns, 111 and 112: the ground outside the wall is the open
+      // land's, and a tree may stand on one of them)
+      const behind = [TD.p(112, 12), TD.p(111, 12)].find(([x, y]) => !SOLID.has(tileAt(x, y))) || TD.p(112, 12);
+      clearMonsters(...behind, 6); F.tp(...behind); F.step([]); const open = !SOLID.has(tileAt(...behind)) && Math.floor(player.y / TILE) === TD.y(12);
       STATS.record = true; render(); STATS.record = false; const bellA = STATS.bellAlpha;
       F.tp(...TD.p(112, 33)); F.step([]); render(); const bellFront = STATS.bellAlpha;
       // a friend online on that grass is seen through it by a knight standing in front of the tower (73-players' REMOTE)
       let friendA = null, alone = null;
       if (window.PLAYERS && PLAYERS.remote) {
         F.tp(...TD.p(112, 19)); F.step([]); render(); alone = STATS.bellAlpha;
-        PLAYERS.remote.__bellTest = { n: '__bellTest', map: PLAYERS.mapId(), x: tc(TD.x(112)), y: tc(TD.y(12)), shown: { x: tc(TD.x(112)), y: tc(TD.y(12)) }, dead: false, r: 13 };
+        PLAYERS.remote.__bellTest = { n: '__bellTest', map: PLAYERS.mapId(), x: tc(behind[0]), y: tc(behind[1]), shown: { x: tc(behind[0]), y: tc(behind[1]) }, dead: false, r: 13 };
         try { KN.t = NaN; render(); friendA = STATS.bellAlpha; } finally { delete PLAYERS.remote.__bellTest; KN.t = NaN; }
       }
       check(P + 'C25 the city\'s ground sorts under every other ground mark: a tap to walk on the paving shows its ring and dots (nothing sorts under the ground); a knight on the grass behind the Bell Tower, outside the north wall, sees it drawn see-through (and from the fountain it is solid); a friend online on that grass makes it see-through for a knight in front of it',
@@ -76109,7 +76698,7 @@ const MOUNT_LOOK = (() => {
     // names: every region and instance has its place, every rule matches one, every id is plain
     const I = INSTANCES, ids = I.list(), instNames = new Set(ids.map(id => I.get(id).name));
     const regs = REGIONS.filter(r => !instNames.has(r.name));
-    const noRegion = regs.filter(r => { const p = A.get(A.slug(r.name)); return !p || p.name !== r.name || p.sub !== (r.sub || '') || p.kind !== 'region'; }).map(r => r.name);
+    const noRegion = regs.filter(r => { const p = A.get(r.atlas || A.slug(r.name)); return !p || p.name !== r.name || p.sub !== (r.sub || '') || p.kind !== 'region'; }).map(r => r.name);
     const noInst = ids.filter(id => { const p = A.get(id); return !p || p.kind !== 'instance' || p.name !== I.get(id).name || p.map !== id; });
     const badIds = A.places.filter(p => !/^[a-z0-9_]{1,40}$/.test(p.id)).map(p => p.id);
     check(P + 'every REGIONS name and every instance id has a place with its own name, every rule matches a place, every id is plain', !noRegion.length && !noInst.length && !badIds.length && !A.problems().length && A.places.length === regs.length + ids.length + A.RULES.filter(r => r.kind === 'area' || r.kind === 'reserved').length, { noRegion, noInst, badIds, problems: A.problems(), places: A.places.length });

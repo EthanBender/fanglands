@@ -77,8 +77,8 @@ async function main() {
   const click = (g, key) => { run(g, 'render()'); return g.FANGLANDS.clickButton(key); };
   const drawnCrackers = g => run(g, '(() => { render(); const items = []; for (const hk of HOOKS.draw) hk(ctx, items, cam); const cr = items.filter(it => it.cracker); for (const it of cr) it.draw(); return cr.map(it => it.cracker).sort(); })()');
   const ids = g => g.PARTY.live().map(c => c.id).sort();
-  // a 9 x 9 patch of grass, out of the village, so a spread of 4 always finds its ten tiles
-  const openSpot = (cx, cy) => run(A, `(() => { for (let r = 0; r < 40; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) { const x = ${cx} + dx, y = ${cy} + dy; let ok = inMap(x - 5, y - 5) && inMap(x + 5, y + 5); for (let yy = y - 4; yy <= y + 4 && ok; yy++) for (let xx = x - 4; xx <= x + 4 && ok; xx++) if (tileAt(xx, yy) !== T.GRASS) ok = false; if (ok && !inVillageBounds(tc(x), tc(y))) return { x, y }; } return null; })()`);
+  // a 9 x 9 patch of grass, out of the village, so a spread of 4 always finds its ten tiles (within 90 tiles: the spread's roads and lanes cross the old meadow)
+  const openSpot = (cx, cy) => run(A, `(() => { for (let r = 0; r < 90; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) { const x = ${cx} + dx, y = ${cy} + dy; let ok = inMap(x - 5, y - 5) && inMap(x + 5, y + 5); for (let yy = y - 4; yy <= y + 4 && ok; yy++) for (let xx = x - 4; xx <= x + 4 && ok; xx++) if (tileAt(xx, yy) !== T.GRASS) ok = false; if (ok && !inVillageBounds(tc(x), tc(y))) return { x, y }; } return null; })()`);
   // stand a knight on a cracker (a few px off its centre, so it is the nearest one by far) and face it
   const standOn = (g, c, dx) => { const p = g.FANGLANDS.player; p.x = c.tx * 48 + 24 + dx; p.y = c.ty * 48 + 24; p.facing = { x: dx < 0 ? 1 : -1, y: 0 }; p.action = null; };
 

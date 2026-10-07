@@ -31,7 +31,7 @@
   const RING = SYL.rect({ x0: 126, y0: 114, x1: 166, y1: 135 }); // the wall of jungle around the city
   const GAP = (([x, y]) => ({ x, y }))(ATLAS.port('sylvaris.gap'));   // the one way in
   const TOTEM_T = SYL.pt({ x: 136, y: 114 });                   // the face in the trees, beside the gap
-  const PATH = ATLAS.track('path_jungle');                      // the dirt path down from Hollowford's south edge (141,96 -> 133,112)
+  const PATH = ATLAS.track('r3b_jungle');                       // the Jungle Path down from Hollowford's south edge to Sylvaris' gap
   // the river: its outer reaches are the jungle's (world), the last bends before the ring wall are the city's
   const RIVER_N = [...EW.pts([[177, 97], [170, 101], [163, 106]]), ...SYL.pts([[157, 110], [152, 113]])];
   const RIVER_S = [...SYL.pts([[141, 136], [130, 137]]), ...EW.pts([[116, 137], [103, 136]])];
@@ -56,7 +56,8 @@
   {
     const wild = Math.max(0, REGIONS.findIndex(r => r.name === 'The Wilds'));
     REGIONS.splice(wild, 0, { name: 'Sylvaris', sub: 'The city in the trees', x0: CR.x0, y0: CR.y0, x1: CR.x1, y1: CR.y1 },
-      { name: 'The Jungle', sub: 'Vast, green, watching', x0: JR.x0, y0: JR.y0, x1: JR.x1, y1: JS.y1 });
+      // (the Jungle's east side ends at the Sound, the deep water the spread laid between it and the Grub Fields)
+      { name: 'The Jungle', sub: 'Vast, green, watching', x0: JR.x0, y0: JR.y0, x1: Math.min(JR.x1, ATLAS.GROUNDS.sound[0] - 1), y1: JS.y1 });
   }
 
   // ---------- items, recipes, shops ----------

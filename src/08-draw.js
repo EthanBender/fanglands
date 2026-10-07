@@ -182,10 +182,16 @@ function drawSignProp(g, tx, ty) {
   const cx = tc(tx), cy = tc(ty);
   g.fillStyle = 'rgba(0,0,0,0.25)'; g.beginPath(); g.ellipse(cx, cy + 16, 9, 4, 0, 0, 7); g.fill();
   g.fillStyle = '#6b4a2a'; g.fillRect(cx - 3, cy - 30, 6, 48);
-  for (const [oy, label, burned] of [[-42, 'THISTLEDOWN', false], [-26, 'GREY QUARRY', false], [-10, 'HOLLOWFORD', true]]) {
-    g.fillStyle = burned ? '#8a7350' : '#c9a36a'; g.beginPath(); g.moveTo(cx - 34, cy + oy - 7); g.lineTo(cx + 22, cy + oy - 7); g.lineTo(cx + 32, cy + oy + 1); g.lineTo(cx + 22, cy + oy + 9); g.lineTo(cx - 34, cy + oy + 9); g.closePath(); g.fill();
+  // the story's signpost names its three arms; a road's signpost (93-spread) names its own, each pointing its way
+  const own = typeof window.SIGN_ARMS === 'function' ? window.SIGN_ARMS(tx, ty) : null;
+  const arms = own || [[-42, 'THISTLEDOWN', false], [-26, 'GREY QUARRY', false], [-10, 'HOLLOWFORD', true]];
+  for (const [oy, label, burned, left] of arms) {
+    g.fillStyle = burned ? '#8a7350' : '#c9a36a'; g.beginPath();
+    if (left) { g.moveTo(cx + 34, cy + oy - 7); g.lineTo(cx - 22, cy + oy - 7); g.lineTo(cx - 32, cy + oy + 1); g.lineTo(cx - 22, cy + oy + 9); g.lineTo(cx + 34, cy + oy + 9); }
+    else { g.moveTo(cx - 34, cy + oy - 7); g.lineTo(cx + 22, cy + oy - 7); g.lineTo(cx + 32, cy + oy + 1); g.lineTo(cx + 22, cy + oy + 9); g.lineTo(cx - 34, cy + oy + 9); }
+    g.closePath(); g.fill();
     g.strokeStyle = '#6b4a2a'; g.lineWidth = 1.5; g.stroke();
-    g.fillStyle = '#4a2e13'; g.font = 'bold 9px sans-serif'; g.textAlign = 'center'; g.fillText(label, cx - 4, cy + oy + 4);
+    g.fillStyle = '#4a2e13'; g.font = 'bold 9px sans-serif'; g.textAlign = 'center'; g.fillText(label, left ? cx + 4 : cx - 4, cy + oy + 4);
     if (burned) { g.strokeStyle = '#3a2a1a'; g.lineWidth = 2; g.beginPath(); g.moveTo(cx - 28, cy + oy + 1); g.lineTo(cx + 20, cy + oy + 2); g.stroke(); }
   }
 }

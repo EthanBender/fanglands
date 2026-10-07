@@ -35,8 +35,7 @@
   // the boats' shore check (26-boats asserts this tile is sand): the Grey Sea's west edge, a world row
   const SHORE = [SEA.x0, W.ty(40)];
   // the roads every feature laid, as polylines (ATLAS.TRACKS): the river bridges them, and nothing solid is added within 2.5 tiles of them
-  const ROAD_TRACKS = ['road_cave', 'road_quarry_spur', 'road_wolfwood', 'road_camp', 'road_east_lane', 'road_dock_lane', 'road_hollowford', 'path_ash', 'path_farm', 'path_jungle', 'shaft_lane'];
-  const ROADS = ROAD_TRACKS.map(id => ATLAS.track(id));
+  const ROADS = ATLAS.ROAD_IDS.map(id => ATLAS.track(id));   // every road and path of the spread's network (§5), and the miners' lane
   // the places that must stay mutually reachable, in chain order (the repair carves along the chain): the first nine track nodes
   const NODES = ATLAS.track('nodes').slice(0, 9);
   const NODE_NAMES = ['cave exit', 'signpost', 'Thistledown gate', 'dock', 'Hollowford', 'Dunstan', 'lair approach', 'jungle path', 'quarry shaft'];
@@ -97,10 +96,10 @@
     markB(PONDF.box([36, 29, 43, 44]));                    // Miller's Pond west of the stepping stones (x 43), both their landings included; the river leaves from the east shore
     markB(QF.box([45, 0, 63, 4])); markB(QF.box([59, 4, 65, 9])); markB(QF.box([52, 4, 58, 15])); // the cliff course, the wind shrine's clearing, the shaft lane and the miners' cart
     // the road to the dock and its verge, the lane down the village fence
-    // (the dock lane is the lane itself, ATLAS.track('road_dock_lane'), and every tile within 2 of it: a corridor, never a
-    // rect built from two frames' corners that the spread could turn inside out; Stage 4a replaces this lane)
+    // (the dock lane is the Sea Road's last stretch, from the Coast Path's fork to Harl's dock, ATLAS.track('r2_sea'), and
+    // every tile within 2 of it: a corridor, never a rect built from two frames' corners)
     dockLaneGuard = 0;
-    { const pl = ATLAS.track('road_dock_lane'), V = 2;
+    { const pl = ATLAS.track('r2_sea').slice(-2), V = 2;
       for (let s = 1; s < pl.length; s++) { const [ax, ay] = pl[s - 1], [bx, by] = pl[s], n = Math.max(1, Math.round(Math.max(Math.abs(bx - ax), Math.abs(by - ay))));
         for (let k = 0; k <= n; k++) { const x = Math.round(ax + (bx - ax) * k / n), y = Math.round(ay + (by - ay) * k / n); mark(x - V, y - V, x + V, y + V); dockLaneGuard++; } } }
     markB(TD.box([140, 13, 143, 33]));
@@ -193,7 +192,8 @@
     // the frame each point is read in (a place's for its head in Miller's Pond and its course through the small pond and past
     // the town's corner, the world's elsewhere): a stretch between two points of one place wobbles in that place's OLD
     // coordinates, so it keeps its shape wherever the place goes, as the rest keeps the world's
-    const RIVER_F = ATLAS.TRACKS.river.map(q => q[0] === 'w' ? W : FR(q[0] === 'port' ? ATLAS.PORTS[q[1]][0] : q[0]));
+    // (a new-map point, or a port of a new place, wobbles in the stretched world's OLD coordinates, through W.ix / W.iy)
+    const RIVER_F = ATLAS.TRACKS.river.map(q => { const a = q[0] === 'port' ? ATLAS.PORTS[q[1]][0] : q[0]; return a === 'w' || a === 'n' || a === 'new' ? W : FR(a); });
     const wn = makeNoise(SEED + 2, 6), ww = makeNoise(SEED + 3, 4);
     const centres = []; let acc = 0; // distance along the route: the wobble fades in over the first tiles so the channel leaves from inside the pond
     for (let s = 0; s < RIVER.length - 1; s++) {

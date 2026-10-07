@@ -588,7 +588,7 @@
     const fill = (x0, y0, x1, y1, tile) => { for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) set(x, y, tile); };
     // the goblins dragged the Barrelbeast out through the south palisade; the gap is still there
     for (let x = CMP.x(149); x <= CMP.x(151); x++) set(x, CMP.y(40), T.DIRT);
-    const ROAD = ATLAS.track('road_hollowford');   // camp gap 150,39 -> 150,50 -> 146,58 -> 141,64 -> Hollowford's north entry
+    const ROAD = ATLAS.track('r4_goblin');   // the Goblin Road: the camp's south gap, the goblin bridge, Hollowford's north entry
     carve(ROAD, 1, T.DIRT); api.road(ROAD, T.DIRT, 2, 0.25);
     // clear the town footprint, then scorch it (worst at the centre)
     for (let y = R.y0; y <= R.y1; y++) for (let x = R.x0; x <= R.x1; x++) {
@@ -786,7 +786,7 @@
       // the wrecks standing on the overworld before any of this
       const wOut = wrecks();
       // B1: the door on the camp road
-      { const road = F.bfs(...ATLAS.track('road_hollowford')[1].map(Math.round), SHED_STEP[0], SHED_STEP[1]), doorTile = tileAt(SHED_DOOR[0], SHED_DOOR[1]) === T.DUNGEON_DOOR, walls = SHED_WALL.every(([x, y]) => SOLID.has(tileAt(x, y)));
+      { const road = F.bfs(...ATLAS.track('r4_goblin')[1].map(Math.round), SHED_STEP[0], SHED_STEP[1]), doorTile = tileAt(SHED_DOOR[0], SHED_DOOR[1]) === T.DUNGEON_DOOR, walls = SHED_WALL.every(([x, y]) => SOLID.has(tileAt(x, y)));
         const rows = window.PLAYTHROUGH ? PLAYTHROUGH.instanceConnectivity().filter(r => r.instance === 'The War Shed') : [];
         const entered = enterShed(), region = player.region;
         check(P + `the War Shed door at (${SHED_DOOR}) with step (${SHED_STEP}) is reachable from the road and enters war_shed; PLAYTHROUGH.instanceConnectivity passes`,

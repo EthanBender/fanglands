@@ -94,8 +94,16 @@
     const nearPath = (x, y) => { for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const t = api.tileAt(x + dx, y + dy); if (t === T.DIRT || t === T.COBBLE || t === T.SAND || t === T.WATER) return true; } return false; };
     const cands = [];
     const W = ATLAS.world;   // the scan window is open land: a world rect (the spread spec, §9.1)
+    // (not on the reclaimed Deepholm wood, which 58-underground plants itself, nor on ground the builders have staked)
+    const DH = ATLAS.box('deepholm_rock'), inDH = (x, y) => x >= DH[0] && x <= DH[2] && y >= DH[1] && y <= DH[3];
+    // (nor on the Grey Sea's west shore, which 39-worldblend wanders afterwards: its window, a world rect; a bush there can
+    // end up on a rock in a new cove)
+    const shore = (x, y) => x >= W.tx(148) && x <= W.tx(199) && y <= W.ty(99);
+    // (nor in the last six rows above the Ashfields' rim, on its pin: 92 and 93 lay the rim's rock face and its burnt
+    // fringe there afterwards, and a bush in them is walled in)
+    const rim = (x, y) => y >= Math.round(W.pin('rim', W.y(89), x));
     for (let y = W.ty(2); y <= W.ty(137); y++) for (let x = CAVE_EXIT_X + 4; x <= W.tx(197); x++) {
-      if (api.tileAt(x, y) !== T.GRASS || near.has(idx(x, y)) || NO_REGION.has(regionAt(x, y).name)) continue;
+      if (api.tileAt(x, y) !== T.GRASS || near.has(idx(x, y)) || NO_REGION.has(regionAt(x, y).name) || inDH(x, y) || ATLAS.reservedAt(x, y) || shore(x, y) || rim(x, y)) continue;
       if (Math.abs(x - SIGN_TILE.x) < 4 && Math.abs(y - SIGN_TILE.y) < 4) continue;
       if (nearBuilding(x, y) || nearPath(x, y)) continue;
       cands.push([x, y]);

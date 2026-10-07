@@ -205,7 +205,7 @@
       const push = (x, y) => { if (!inMap(x, y)) return; const i = idx(x, y); if (seen[i] || !pass(map[i])) return; seen[i] = 1; q.push(i); };
       push(...ATLAS.port('cave.mouth'));
       for (let qi = 0; qi < q.length; qi++) { const c = q[qi], x = c % MAP_W, y = (c / MAP_W) | 0; push(x + 1, y); push(x - 1, y); push(x, y + 1); push(x, y - 1); }
-      let stranded = 0; for (let y = O.y0; y <= O.y1; y++) for (let x = O.x0; x <= O.x1; x++) if (pass(map[idx(x, y)]) && !seen[idx(x, y)]) stranded++;
+      let stranded = 0; const strandedAt = []; for (let y = O.y0; y <= O.y1; y++) for (let x = O.x0; x <= O.x1; x++) if (pass(map[idx(x, y)]) && !seen[idx(x, y)]) { stranded++; strandedAt.push(x + ',' + y); }
       // the ghost of the massif: 39-worldblend's outcrops at the foot of walls that are not there any more
       let ringRock = 0, woodRock = 0;
       for (let y = O.y0 - U.RING; y <= O.y1 + U.RING; y++) for (let x = O.x0; x <= O.x1 + U.RING; x++) {
@@ -216,7 +216,7 @@
       const region = regionAt(...ATLAS.frame('deepholm_rock').p(14, 83)).name, spawns = MONSTER_SPAWNS.filter(s => s.tx >= O.x0 && s.tx <= O.x1 && s.ty >= O.y0 && s.ty <= O.y1).length;
       check(P + '575 tiles of Wolfwood come back at x 2–26, y 72–94: no wall, nothing stranded, the wood as thick inside the old rectangle as it is on each side of it, the ash still drifting through its last rows, and no ring of outcrops round a rectangle of nothing',
         alien === 0 && (mix[T.WALL] || 0) === 0 && stranded === 0 && floor + solid === 575 && floor >= 500 && matches && region === 'Wolfwood' && ringRock === 0 && woodRock > 10 && spawns >= 1 && ashIn > 0 && ashOut > 0,
-        { open: floor, solid, alien, walls: mix[T.WALL] || 0, stranded, region, spawnsBack: spawns, ringRock, ringChecked: U.stats().ring, ringSoftened: U.stats().softened, woodRock,
+        { open: floor, solid, alien, walls: mix[T.WALL] || 0, stranded, strandedAt: strandedAt.slice(0, 8), region, spawnsBack: spawns, ringRock, ringChecked: U.stats().ring, ringSoftened: U.stats().softened, woodRock,
           woodInside: { west: +westIn.toFixed(3), east: +eastIn.toFixed(3) }, woodBeside: { west: +westOut.toFixed(3), east: +eastOut.toFixed(3) }, ashDrift: { inside: ashIn, beside: ashOut, laid: U.stats().ash } }); }
 
     // ---- save and reload while you are down there ----

@@ -1112,7 +1112,7 @@
   function drawGround(g, c) {
     const cx0 = Math.max(0, Math.floor(c.x / (CH * TILE))), cx1 = Math.min(Math.ceil(W / CH) - 1, Math.floor((c.x + VW) / (CH * TILE)));
     const cy0 = Math.max(0, Math.floor(c.y / (CH * TILE))), cy1 = Math.min(Math.ceil(H / CH) - 1, Math.floor((c.y + VH) / (CH * TILE)));
-    chunkMax = Math.max(chunkMax, (cx1 - cx0 + 1) * (cy1 - cy0 + 1) + 6);
+    chunkMax = Math.max(chunkMax, Math.max(0, cx1 - cx0 + 1) * Math.max(0, cy1 - cy0 + 1) + 6);   // (a view wholly past the city's edge, a camera still on the bigger overworld, shows no chunk: two negative spans never multiply into a cap)
     for (let cy = cy0; cy <= cy1; cy++) for (let cx = cx0; cx <= cx1; cx++) { const ch = groundChunk(cx, cy); if (!ch.c.width) continue; g.drawImage(ch.c, cx * CH * TILE, cy * CH * TILE, CH * TILE, CH * TILE); STATS.chunks++; }
   }
   // the balustrade of a stone bridge (a gold rail on white posts) or the ropes of a rope one, on every side over open sky

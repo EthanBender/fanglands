@@ -145,7 +145,7 @@
     const GATES = new Set([LAIR_GATE, WARDEN_GATE, Tn('CRYPT_BARS'), Tn('SCARP_STEPS'), Tn('DUNGEON_DOOR')].filter(v => v >= 0));
     const ROADISH = new Set([T.COBBLE, T.PLANK, BRIDGE, DOCK, T.SOIL, T.CROP, T.WATER].filter(v => v >= 0));
     // the tracks 27-dragons trod through the ash (Wolfwood -> the farm -> the lair): nothing solid within 2.5 tiles of them
-    const TRACKS = [ATLAS.track('path_ash'), ATLAS.track('path_farm')];   // ATLAS.TRACKS
+    const TRACKS = [ATLAS.track('r6_ash'), ATLAS.track('path_farm'), ATLAS.track('r6a_shrine')];   // ATLAS.TRACKS: the Ash Road, the farm path and the shrine spur
     const segDist = (px, py, ax, ay, bx, by) => { const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy || 1; const q = clamp(((px - ax) * dx + (py - ay) * dy) / l2, 0, 1); return Math.hypot(px - (ax + dx * q), py - (ay + dy * q)); };
     const nearTrack = (x, y) => TRACKS.some(pl => pl.some((p, k) => k > 0 && segDist(x, y, pl[k - 1][0], pl[k - 1][1], p[0], p[1]) <= 2.5));
 
@@ -189,9 +189,12 @@
     markB(TOWER.box([91, 77, 99, 85]));                           // the watchtower
     for (const b of BUILDINGS) mark(b.x - 2, b.y - 2, b.x + b.w + 1, b.y + b.h + 1);
     for (const n of NPCS) mark(n.x - 2, n.y - 2, n.x + 2, n.y + 2);
-    for (const s of MONSTER_SPAWNS) mark(s.tx - 2, s.ty - 2, s.tx + 2, s.ty + 2);
+    // (a spawn's ring is kept apart: nothing is laid there, but a living tree in it may still be charred, solid for solid)
+    const spawnRing = new Uint8Array(W * H);
+    for (const s of MONSTER_SPAWNS) for (let y = Math.max(0, s.ty - 2); y <= Math.min(H - 1, s.ty + 2); y++) for (let x = Math.max(0, s.tx - 2); x <= Math.min(W - 1, s.tx + 2); x++) spawnRing[I(x, y)] = 1;
     if (window.PROGRESSION && PROGRESSION.CROSSINGS) for (const c of PROGRESSION.CROSSINGS) { mark(c.a.x - 2, c.a.y - 2, c.a.x + 2, c.a.y + 2); mark(c.b.x - 2, c.b.y - 2, c.b.x + 2, c.b.y + 2); }
-    const free = (x, y) => x > 0 && y > 0 && x < W - 1 && y < H - 1 && !hard[I(x, y)] && !buildingAt(x, y);
+    const free = (x, y) => x > 0 && y > 0 && x < W - 1 && y < H - 1 && !hard[I(x, y)] && !spawnRing[I(x, y)] && !buildingAt(x, y);
+    const freeToChar = (x, y) => x > 0 && y > 0 && x < W - 1 && y < H - 1 && !hard[I(x, y)] && !buildingAt(x, y);
 
     // ---- a rock or a dead tree may stand on open ground only where it cuts nothing ----
     const open = t => !SOLID.has(t) || PUSH_THROUGH.has(t) || GATES.has(t) || WALK_OVER.has(t);
@@ -469,9 +472,10 @@
           continue;
         }
         // (east of the jungle's wall step 1f already burns the jungle to its own wandering depth, which its check holds to)
-        if (!free(x, y) || d > 3.6 || x > wallX(y)) continue;
+        if (!freeToChar(x, y) || d > 3.6 || x > wallX(y)) continue;
         const burn = d <= 1.5 ? 1 : d <= 2.5 ? 0.7 : 0.35;
         if (TREES.has(t) && hsh(x, y, 700) < burn) { set(x, y, CHAR); band[i] = 1; big[i] = t === JUNGLE ? 1 : 0; S.nearGrey++; }
+        else if (!free(x, y)) continue;
         // (grass above the rim is left as it is: 39-worldblend holds that ash and grass both still stand in rows 93-99,
         // and the ragged fronts drawn over it already carry the ash into it)
         else if (GREEN.has(t) && d <= 1 && y > rimRow(x)) { set(x, y, ow(PICK, x, y) < 0.5 ? CINDERS : SINGED); band[i] = 1; S.greySinged++; }
@@ -483,7 +487,10 @@
     // but a burnt giant on every tile of it read as a fence. A share of it is a heap of volcanic rock instead, and the
     // rest is drawn with more room to lean (see drawCharTree). Solid for solid.
     S.wallRock = 0;
-    for (let y = AW.ty(96); y <= AW.ty(138); y++) { const wx = wallX(y); if (at(wx, y) === CHAR && hsh(wx, y, 710) < 0.24) { set(wx, y, CRAG); band[I(wx, y)] = 1; S.wallRock++; } }
+    // (a living tree beside a new heap of rock is charred with it, solid for solid: the rock is grey ground, and 1h's
+    // "no living green right against the grey" ran before it)
+    for (let y = AW.ty(96); y <= AW.ty(138); y++) { const wx = wallX(y); if (at(wx, y) === CHAR && hsh(wx, y, 710) < 0.24) { set(wx, y, CRAG); band[I(wx, y)] = 1; S.wallRock++;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const nx = wx + dx, ny = y + dy; if ((dx || dy) && inMap(nx, ny) && TREES.has(at(nx, ny)) && freeToChar(nx, ny)) { set(nx, ny, CHAR); band[I(nx, ny)] = 1; } } } }
 
     // ---- 1g. nothing walled off ----
     // The local test in `canStand` keeps the open tiles round a new rock joined, but it cannot see that the tile it
@@ -896,17 +903,21 @@
       check(P + "the lair's east and south faces are ragged crags (3+ different depths, some on the south), its walls and gate unchanged, the approach open and walkable to the gate", reach.size >= 3 && south >= 4 && walls && approach && !!path,
         { depths: [...reach].sort(), south, walls, approach, path: path && path.length, crags: S.crags }); }
     // 5. the rim is not one ruled line: its top climbs and falls, and no long stretch keeps both top and foot level
-    { const tops = [], rows = new Set(); let run = 0, longest = 0, at = null, prev = null, solid95 = 0;
+    // (a level stretch is measured in the OLD map's tiles, W.ix: the rim's wobble is old-map noise stretched with the land,
+    // so 4 old tiles that keep their level stand 6 or 7 new tiles wide since the spread, and that is the same ridge. The
+    // bound is 6.5 old tiles, not 6: a run is whole new columns, and the stretch's rounding makes the old map's longest
+    // (6) ten new columns, 6.17 old tiles)
+    { const tops = [], rows = new Set(); let run = 0, longest = 0, at = null, prev = null, solid95 = 0, runX = 0;
       for (let x = AW.tx(1); x <= rimX1(); x++) {
         const row = rimRow(x);
         if (!(x >= WARD.x(59) && x <= WARD.x(61)) && SOLID.has(tileAt(x, row))) solid95++;   // (59-61: the warden's gate, which the story opens)
         if (x >= WARD.x(54) && x <= WARD.x(66) || tileAt(x, row) !== RIM) { prev = null; continue; }
         let top = row, foot = row; while (tileAt(x, top - 1) === RIM) top--; while (tileAt(x, foot + 1) === RIM) foot++;
         tops.push(top); rows.add(top);
-        const k = top + ',' + foot; if (k === prev) { run++; if (run > longest) { longest = run; at = x; } } else run = 1; prev = k;
+        const k = top + ',' + foot; if (k === prev) { run = AW.ix(x + 1) - AW.ix(runX); if (run > longest) { longest = +run.toFixed(2); at = x; } } else { run = 1; runX = x; } prev = k;
       }
-      check(P + "the Ashfields' rim is a ridge, not a ruled line: its top stands on 3+ different rows and no stretch longer than 6 tiles keeps its top and its foot level; row 95 is still solid all along (the warden's gate the one way through)",
-        rows.size >= 3 && longest <= 6 && S.crest >= 40 && solid95 === rimX1() - AW.tx(1) + 1 - (WARD.x(61) - WARD.x(59) + 1), { topRows: [...rows].sort(), longestLevelStretch: longest, endingAtX: at, crestTiles: S.crest, solidOnRow95: solid95 }); }
+      check(P + "the Ashfields' rim is a ridge, not a ruled line: its top stands on 3+ different rows and no stretch longer than 6.5 old tiles keeps its top and its foot level; row 95 is still solid all along (the warden's gate the one way through)",
+        rows.size >= 3 && longest <= 6.5 && S.crest >= 40 && solid95 === rimX1() - AW.tx(1) + 1 - (WARD.x(61) - WARD.x(59) + 1), { topRows: [...rows].sort(), longestLevelStretch: longest, endingAtX: at, crestTiles: S.crest, solidOnRow95: solid95 }); }
     // 6. where the living jungle begins wanders from row to row along x 100
     { const GREENISH = new Set([T.GRASS, T.FLOWERS, T.MUSHROOM, FERN, T.TREE, T.OAK, JUNGLE].filter(v => v >= 0));
       const first = []; for (let y = AW.ty(100); y <= AW.ty(156); y++) { const wx = wallX(y); let x = wx + 1; while (x < wx + 25 && !GREENISH.has(tileAt(x, y))) x++; first.push(x); }
@@ -927,13 +938,13 @@
       check(P + 'no grass, fern or dry grass below the rim anywhere in the Ashfields box, and no living tree inside its outline', green.length === 0 && trees.length === 0,
         { green: green.slice(0, 10), greenCount: green.length, livingTrees: trees.slice(0, 10), livingTreeCount: trees.length, burntSeam: S.seam, charredInside: S.deepTrees }); }
     // 9. no living tree right against the grey anywhere round the burnt country (the warden's guarded ground at the gate
-    // left as it is), the map's tree border burnt where it runs beside burnt ground, and nothing this pass stood on open
+    // and Dunstan's farm, which the pass guards, left as they are), the map's tree border burnt where it runs beside burnt ground, and nothing this pass stood on open
     // ground left anything walled off (step 1g's count of what it gave back is reported)
     { const GREY = new Set([ASH, SCORCH, CRAG].filter(v => v >= 0)), LIVE = new Set([T.TREE, T.OAK, JUNGLE].filter(v => v >= 0)), BURNT = new Set([ASH, SCORCH, CRAG, CINDERS, CHAR, DEADTREE, SINGED, T.WALL].filter(v => v >= 0));
       const near = [], border = [];
-      const inB = (b, x, y) => x >= b[0] && x <= b[2] && y >= b[1] && y <= b[3], cb = CIRCLE.box([53, 83, 68, 89]), wb = WARD.box([53, 90, 68, 106]);   // the warden's guarded ground (as marked)
+      const inB = (b, x, y) => x >= b[0] && x <= b[2] && y >= b[1] && y <= b[3], cb = CIRCLE.box([53, 83, 68, 89]), wb = WARD.box([53, 90, 68, 106]), fb = WARD.box([58, 96, 79, 107]);   // the warden's guarded ground and Dunstan's farm (as marked)
       for (let y = AW.ty(84); y <= AW.ty(172); y++) for (let x = AW.tx(1); x <= wallX(y); x++) {
-        if (inB(cb, x, y) || inB(wb, x, y) || !LIVE.has(tileAt(x, y))) continue;
+        if (inB(cb, x, y) || inB(wb, x, y) || inB(fb, x, y) || !LIVE.has(tileAt(x, y))) continue;
         let n = 0; for (const [dx, dy] of N8) if (GREY.has(tileAt(x + dx, y + dy))) n++;
         if (n) near.push(x + ',' + y); }
       for (let y = AF_BOX.y0; y <= AF_BOX.y1; y++) if (y >= afTop(0) && LIVE.has(tileAt(0, y)) && BURNT.has(tileAt(1, y))) border.push(y);

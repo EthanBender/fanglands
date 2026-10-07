@@ -52,6 +52,134 @@ and 02-world (221 literals converted, 75 refused for the hand pass) built and ga
 with 0 strict entries. A deliberate `ATLAS.frame('wren').p(200, 150)` added at the end of 57-townwall was reported as
 `src/57-townwall.js:72: wren point 200,150` and failed `--diff`.
 
+## Stage 4a: THE MOVE (feat/spread)
+
+The overworld is 400 x 280. One commit on feat/spread (from master d523504) moves every place to its section-2
+top-left, stretches the land between, lays the roads and the river anew and stakes the new places. Nothing here is
+deployed: the test world is held by the owner (`~/.fanglands/test-world.hold`).
+
+**What moved and how** (`src/01-atlas.js`):
+- `MAP_W, MAP_H = 400, 280` (`src/00-core.js`); every anchor's `at` is its `to`; `ATLAS.WORLD` is section 3's stretch,
+  `xs = [[0,0],[1,1],[162,262],[200,318],[259,399]]`, `ys = [[0,0],[1,1],[179,279]]`. The `[1,1]` breakpoints are the
+  builder's: the first column and row inside the tree border stay put, so every pass that runs "from the first column"
+  (`W.tx(1)`: the rim, the scarp, the dither) still starts at 1. Without them `W.tx(1)` is 2 and column 1 is a walk round
+  the scarp's west end (found: the Wolfwood was reached from the cave with every bridge shut).
+- `ATLAS_V` 2; `export()` carries `anchors` (each place's box on this map, a reserved place's plan box) and `ports`.
+- `TRACKS` is section 5's network (six main roads `r1_cave`, `r2_sea`, `r3_long`, `r4_goblin`, `r5_wolfwood`,
+  `r6_ash`; spurs `r1a_quarry`, `r1b_beacon`, `r1c_mill`, `spur_camp_gap`, `r2a_skypier`, `spur_glasshouse`, `r3b_jungle`,
+  `spur_canopy`, `r4a_saltmere`, `r4b_coast`, `spur_barrow`, `r6a_shrine`, `path_farm`, `r7_drovers`, `r8_bandit`; the
+  miners' `shaft_lane`), its points ports, place points or new-map points `['n', x, y]`; and the river, from inside
+  Miller's Pond out by its east shore (`pond.outflow`), south-east past Millbrook's bend, east along the scarp under the
+  two road bridges (`old_bridge.span` 136,93 and `goblin_road.bridge` 228,92) to the Grey Sea below Saltmere. 02-world
+  lays every road as continuous dirt at chance 1 (a main road two wide, a spur one); 39 bridges them over the river, 92
+  leaves the scarp open where they cross it, 26-boats clears the Sea Road's verge, 20 widens the Goblin Road, 25 trods
+  the Jungle Path, 27 and 93 keep the Ash Road clear.
+- `GROUNDS` (new): the Sound, the east sea, the Grub Fields. `SIGNPOSTS` (new): every road node with three or more arms,
+  and the Lodge and Millbrook. `ATLAS.signText(x, y)`, `reserved()`, `reservedAt(x, y)`, `onMainRoad(x, y)`, `pointOf(q)`.
+- A REGIONS entry may name its Atlas id (`atlas: 'brightwater'`), where its name would slug to another.
+
+**The new ground** (`src/93-spread.js`, after 92 and 93-ashedge, before 96-atlas builds the Atlas): every new and
+reserved place is a REGIONS box ahead of every ground (the Old Bridge, Millbrook, Saltmere, the Crossroads Inn, Beacon
+Hills, the Hunters' Lodge, the North and South Goblin Outposts, the Bandit Hills, the Skypier, Wreck Rock, Castle
+Brightwater, the Glasshouse, the Old Barrow), and the Sound, the Grub Fields and the Ash Wastes are grounds. One tile is
+spent, `PROP` (id 245), not solid; its kind lives in a side table (`SPREAD_GROUND.PROPS`): builders' stakes every fourth
+tile round each reserved box, a plaque in each ("Builders' stakes. The Glasshouse is coming."), four buoys and a plaque
+round Wreck Rock, stakes at the corners of the blood portals' rings of 3 (Hollowford's and the Far Shore's; Thistledown's
+north lawn is 95-thistledown's own ground, rebuilt from quest state, and waits for Stage 7). The Sound and the east sea
+are laid first of all the world passes and again at the end. Castle Brightwater is a cliff ring with no gap. A signpost
+(the old SIGN tile) stands beside every node, off the road, where it cuts no way; E on it reads `ATLAS.signText`
+("→ Millbrook (builders at work), south-west."). `placeAction` refuses a reserved box and a main road with a tile either
+side: "Builders have staked this ground."
+
+**Where the routes and boxes differ from the spec's sketch, and why** (spec §1: "any trip is tuned by moving one anchor
+or one TRACK point"):
+- R1 runs east along row 7-8 first: §5's straight line from the cave mouth crossed Death's House 1 (cave 25..30 x 10..14).
+- R1c (Mill Lane) runs west round Miller's Pond: the river leaves by the east shore, where §5 put the lane, and Mill Lane
+  has no bridge.
+- R2 passes the camp's west field and goes north round the palisade (§5's line from the gap to the shore lane crossed
+  the palisade); a spur leads into the west gap (node 228,48). R2a (the Skypier spur) is laid now, so the Skypier's
+  stakes are joined.
+- R3 leaves the west lane at 141,70 for 131,82, passing the Glasshouse plot (6 tiles), then the Old Bridge; the bridge's
+  south end is 138,99, not 140,98: the watchtower's ruin stands on 141..145 x 97..101.
+- R4 leaves the camp by its south palisade gap (camp 150,39), east of the War Shed, and passes the outposts' stakes
+  beside their boxes (10 tiles off the north one, 4 off the south one), not through §4's `*.road` ports inside them;
+  R4a forks at 232,80; R4b runs inland (250,52) to the Sea Road at 246,30.
+- R5 passes the step below Wren's door (the hut's wall is not the road's) and runs between the graveyard and the
+  Deepholm rock.
+- The Sound is x 303..311 (nine wide, as §1), not 312..320: 90-canyon's red country reaches 14 tiles west of the
+  Redcut's rim, to x 313, and the Sound drowned it (the Redcut's ragged west edge ran straight for 7 rows).
+- Castle Brightwater's box ends at x 391, not 392: ADDENDUM C keeps x 392..399 for the east sea.
+
+**Checks that read the old map's scale, re-read for the new one** (each with its reason, in the check's own comment):
+- 27-dragons, the Ashfields' ash as a share of the box's open ground (27%..65%, the old 900..2200 tiles of 3377): the box
+  is three times the ground it was.
+- 93-ashedge, the rim's longest level stretch in old tiles (W.ix), bounded at 6.5: the stretch's rounding makes the old
+  map's longest (6) ten new columns, 6.17 old tiles. 92-worldshape, the ash "six rows above the rim" read in old rows
+  through the rim's pin. 11-main, the jungle's density measured to the Sound's west shore.
+- 92-worldshape, the four grounds' outline bands measured in old tiles (they stretch with the land) and the Jungle's east
+  band 30 old tiles deep (was 20): the Jungle is 2.4 times the ground, its enclaves are not, and at 20 its outline stood
+  within 11% of its box (the check asks 12%).
+- Spots a check stood a knight on that the new land moved: the nearest reachable oak (11-main), the canopy walk from a
+  point on the Jungle Path (48-agility2), a tile beside Marta for the knight's frame (82-knightgear), the drill field's
+  west end for the dozer's lane (40-dozerup), the open tile behind the Bell Tower (95 C25), mmo-sim-party's 9 x 9 meadow
+  within 90 tiles.
+- Land the new map made that a check rightly refused, fixed in the land: berry bushes off the Deepholm wood, the staked
+  ground, the Grey Sea's shore and the rim's last rows (34-food); ore rocks and bushes a copse walled in freed (93-spread);
+  hills blackiron off staked ground (62-ores); the Redcut's dry band takes bare dirt and kills every tree in its dry grass
+  (90-canyon); a tree in a spawn's ring beside the ash is charred too, solid for solid (93-ashedge); the scarp's steps cut
+  through a tree on the port (92-worldshape); 91-cloudkingdom's chunk cap no longer multiplies two negative spans (a
+  camera still on the bigger overworld).
+- 93-ashedge's tree check exempts Dunstan's farm, which its burn pass guards (as it already exempted the warden's ground).
+
+**The fingerprint after the spread.** `docs/spread/baseline-fingerprint.json` is this map's now (fingerprint
+1f0660e902cbd111, made from the 4a build): Stages 4b on diff against it, and each later stage's FOOTPRINT proof starts
+from it. The Stage 0-3 proof ("nothing visible changed") no longer applies: 4a is the visible change.
+
+**The jiggle after the spread.** With this tree at 400 x 280 and every place at its `to`, `tools/jiggle.mjs` refuses the
+per-anchor and x1.1 passes (they rehearse the old map: run them on the Stage 3 tree) and `--spread-only` reads the other
+way round: its base and controls are the tree before the move (`JIGGLE_BASE_REF`, default d523504, cached as before),
+built at 400 x 280 with nothing moved, and its moved build is this tree as it stands. What the move adds on purpose is
+counted apart, not red: the new places' REGIONS corners (new in the moved build), a builders' stake (PROP) or a road's
+signpost (SIGN) on a place's open ground, and inside the Redcut its own re-rolled dressing (90-canyon shuffles its salt
+seams with its own stream over candidates that read the land round its box, so other seams are picked on the new land
+and its fallen blocks, pocket fill and ledges follow them: the spec's known re-roll, a mined seam being dropped by the
+save migration, section 10 class e). The giants' gap pin reaches any open tile four rows south of Hollowford's exit
+within 6 of its column (the Jungle Path bends away from the column since the spread).
+
+**Proved on the 4a build** (6 Oct 2026): `./build.sh` (literals gate 137 files, 0 bare); `node tools/headless.js` ALL
+1350 PASS; `--play` ALL 1351 PASS (the bot to stage 16 with nothing forced, the Fang dead); `node --test online/test/`
+295 pass; atlas-drift; build-sim `--strip --reads`; mmo-sim, `--room`, `--sim`; dom-keys; mmo-sim-admin; mmo-sim-party;
+mmo-sim-world; sim-suite ALL 28 PASS; fingerprint `--diff` identical to the baseline; `tools/jiggle.mjs --spread-only --spread-gate` all green (transport and plate
+hold, every pin holds). 95's C10b and C11 send a following hero away while they press E (a hero who follows can stand in
+front of the knight after a teleport and take the E; the playthrough leaves one following).
+
+**Walk-clock on this map, for 4b** (the bot's walk at a knight's foot speed, seconds; the spec's windows):
+
+| Trip | Now | Window |
+| --- | --- | --- |
+| cave mouth to the square | 46 | in |
+| square to Hollowford | 35 | 45..62 (short) |
+| square to the dock | 30 | in |
+| square to the Warden's gate | 39 | 45..65 (short) |
+| square to Old Wren | 48 | 50..70 (short) |
+| Hollowford to Sylvaris | 29 | in |
+| cave mouth to the Fang's lair | 84 | 100..135 (short) |
+
+Four trips are short: Stage 4b tunes them by moving a TRACK point or an anchor (spec section 1), not here.
+
+**ADDENDUM A's plots** (for the Fangland session):
+- **Alchemy, the Glasshouse:** box 110..125 x 71..82 (16 x 12), port `alchemy.door` 125,78, a spur from the Long Road
+  at 134,78. Goblin Fields, on the dry ground east of the river's bend below Miller's Pond (the river is 5 to 8 tiles
+  west of it), 6 tiles from the Long Road. Centre 117.5,76.5: 26.9 from the Old Bridge, 32.3 from Millbrook, 35 from the
+  Lodge, 46.5 from the pond. (The drill field, an unnamed machine lane like the signpost, is 12.5 away; §2's own plan
+  puts the drill field and the signpost 24.2 apart, so the unnamed lanes are not in the spacing set.)
+- **Necromancy, the Old Barrow:** box 66..81 x 106..119 (16 x 14), port `necromancy.door` 73,119, a spur from the
+  Wolfwood Road at 73,121 (the road runs 2 tiles south of the box). In the west of the Wolfwood, below the scarp. Centre
+  73.5,112.5: 25.4 from Old Wren, 26.5 from the stone circle, 30.2 from Millbrook, 32.6 from the Lodge. Nearer the
+  graveyard and the crypt cannot pass the spacing test: the graveyard, the Deepholm rock and Wren's hut sit within 25 of
+  every Wolfwood tile west of x 60 that the scarp and the rim leave room for; the Barrow is 53 tiles (about 15 s) east
+  of the crypt along the Wolfwood Road.
+
 ## Proving "nothing visible changed" (spec §9.4)
 
 ```

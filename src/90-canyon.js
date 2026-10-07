@@ -515,7 +515,7 @@
     {
       const Tn = n => (n in T ? T[n] : -1);
       const FERN = Tn('FERN'), JUNGLE = Tn('JUNGLE');
-      const OUT_GROUND = new Set([T.GRASS, T.FLOWERS, T.MUSHROOM, FERN].filter(v => v >= 0));
+      const OUT_GROUND = new Set([T.GRASS, T.FLOWERS, T.MUSHROOM, FERN, T.DIRT].filter(v => v >= 0));   // (bare dirt too: since the spread a patch of the base world's dirt can lie in the band, and left green it held the outline straight)
       const OUT_TREE = new Set([T.TREE, T.OAK, JUNGLE].filter(v => v >= 0));
       const GREEN_BACK = new Set([T.GRASS, T.FLOWERS, T.MUSHROOM, T.DIRT]);
       const E = tally.edge = { dust: 0, scree: 0, scrub: 0, dry: 0, green: 0, bush: 0, snag: 0, boulder: 0, tree: 0, deadTree: 0, outside: 0 };
@@ -548,7 +548,7 @@
         if (!inside && OUT_TREE.has(t)) {
           // a tree in the dry ground dies where it stands: solid for solid
           if (to !== null && to !== RC_DRYGRASS) { set(x, y, RC_SNAG); E.deadTree++; E.outside++; }
-          else if (to === RC_DRYGRASS && hash(x, y, 4) < 0.55) { set(x, y, RC_SNAG); E.deadTree++; E.outside++; }
+          else if (to === RC_DRYGRASS) { set(x, y, RC_SNAG); E.deadTree++; E.outside++; }   // (every one: since the spread the band's outer grass holds the stretched land's own trees, and a living one there held the outline's edge straight)
           continue;
         }
         if (to === null) {

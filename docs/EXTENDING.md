@@ -410,10 +410,14 @@ never edit it by hand. `83-townsfolk.js` is the glue.
 
 ## Coordinates: frames, ports and the world
 
-The overworld is going to grow from 260x180 to 400x280 (the Great Spread; spec in `~/.fanglands/work/spread/spec.md`,
-artefacts and tools in `docs/spread/`). Places move rigidly to new spots and the land between them stretches, so a bare
-map number like `112` will be wrong after the move. Every overworld position is written as a read of the Atlas
-(`src/01-atlas.js`), never as a bare literal:
+The overworld grew from 260x180 to 400x280 (the Great Spread, Stage 4a; spec in `~/.fanglands/work/spread/spec.md`,
+artefacts and tools in `docs/spread/`). Every old place moved rigidly to its new spot and the land between them
+stretched, so a bare map number like `112` is wrong: the old square at 112,33 stands at 169,52 now. Every overworld
+position is written as a read of the Atlas (`src/01-atlas.js`), never as a bare literal. The numbers you write in a
+frame are still the OLD map's (the frame adds the place's offset); a new place's ports, the road network
+(`ATLAS.TRACKS`, its points `['n', x, y]`) and the new grounds (`ATLAS.GROUNDS`) are written in the new map's own
+numbers. Since 4a: `ATLAS.box(id)` of a reserved place is its plan box, `ATLAS.reservedAt(x, y)` and
+`ATLAS.onMainRoad(x, y)` say where nothing may be built, and `ATLAS.signText(x, y)` is what a road's signpost says.
 
 - **A place's own point** goes through its frame: `const TD = ATLAS.frame('thistledown'); TD.p(112, 33)` gives `[x, y]`,
   `TD.x(112)` / `TD.y(33)` one axis, `TD.pt({ x, y, ... })`, `TD.pts(list)`, `TD.rect({ x0, y0, x1, y1 })`,
