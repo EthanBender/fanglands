@@ -47,7 +47,8 @@ CREATE TABLE IF NOT EXISTS trades (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTE
 CREATE INDEX IF NOT EXISTS trades_by_a ON trades (a_lc, a_ack);
 CREATE INDEX IF NOT EXISTS trades_by_b ON trades (b_lc, b_ack);
 CREATE TABLE IF NOT EXISTS logins (id INTEGER PRIMARY KEY AUTOINCREMENT, name_lc TEXT NOT NULL, started INTEGER NOT NULL, seen INTEGER NOT NULL, ended INTEGER);
-CREATE INDEX IF NOT EXISTS logins_by_name ON logins (name_lc, id)
+CREATE INDEX IF NOT EXISTS logins_by_name ON logins (name_lc, id);
+CREATE TABLE IF NOT EXISTS save_worlds (name_lc TEXT NOT NULL, world INTEGER NOT NULL, json TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (name_lc, world))
 `;
 
 // The columns accounts gained for admins. Added with ALTER TABLE ... ADD COLUMN, which never rewrites a row:

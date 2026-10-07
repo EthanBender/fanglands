@@ -387,6 +387,9 @@ export class World {
     // the pin's restore do not come through here on purpose: a restored old save migrates on its next load.
     const stored = this.storedWorldV(s.name_lc);
     if (stored >= 2 && worldVOf(value) < stored) throw oops(409, 'stale_world', 'stale_world');
+    // the knight's first save of a newer world: his last save of the old one is kept apart (save_worlds), out of reach of
+    // SAVES_KEPT, so the parent page can still go back to it after any amount of play (the spread's rollback)
+    if (stored >= 1 && worldVOf(value) > stored) this.keepWorld(s.name_lc, stored);
     const ver = this.storeSave(s.name_lc, text);
     return json({ at: ver.at, ver: ver.ver });
   }
@@ -416,6 +419,12 @@ export class World {
       let v = null; try { v = JSON.parse(r.json); } catch (e2) { }
       return worldVOf(v);
     }
+  }
+
+  // the newest stored save, kept as the knight's last save of `world` (the first one kept stays: a rollback to it and a
+  // second migration never write over it)
+  keepWorld(lc, world) {
+    this.sql.exec('INSERT OR IGNORE INTO save_worlds (name_lc, world, json, at) SELECT name_lc, ?, json, at FROM saves WHERE name_lc = ? ORDER BY ver DESC LIMIT 1', world, lc);
   }
 
   storeSave(lc, text) {
@@ -697,6 +706,8 @@ export class World {
       // an admin's pinned backup (from before Unlock everything) comes first
       const pin = this.row('SELECT at, LENGTH(json) AS bytes FROM save_pins WHERE name_lc = ?', a.name_lc);
       if (pin) list.unshift({ ver: 'pin', at: pin.at, bytes: pin.bytes });
+      // the last save of each older world (kept when the knight's first save of a newer world came in), last
+      for (const r of this.rows('SELECT world, at, LENGTH(json) AS bytes FROM save_worlds WHERE name_lc = ? ORDER BY world DESC', a.name_lc)) list.push({ ver: 'world' + r.world, world: r.world, at: r.at, bytes: r.bytes });
       return json(list);
     }
     if (call === 'rollback' && post) {
@@ -704,9 +715,11 @@ export class World {
       // a pin rolled back to is kept, so it can be used again
       const b = await readJson(req);
       const a = this.account(b.name);
-      const pinned = b.ver === 'pin';
-      const r = pinned ? this.row('SELECT json FROM save_pins WHERE name_lc = ?', a.name_lc) : this.row('SELECT json FROM saves WHERE name_lc = ? AND ver = ?', a.name_lc, parseInt(b.ver, 10) || 0);
-      if (!r) throw pinned ? oops(404, 'there is no pinned backup', 'nopin') : oops(404, 'no save with that version', 'nope');
+      const pinned = b.ver === 'pin', kept = /^world(\d+)$/.exec(String(b.ver));
+      const r = pinned ? this.row('SELECT json FROM save_pins WHERE name_lc = ?', a.name_lc)
+        : kept ? this.row('SELECT json FROM save_worlds WHERE name_lc = ? AND world = ?', a.name_lc, +kept[1])
+          : this.row('SELECT json FROM saves WHERE name_lc = ? AND ver = ?', a.name_lc, parseInt(b.ver, 10) || 0);
+      if (!r) throw pinned ? oops(404, 'there is no pinned backup', 'nopin') : kept ? oops(404, 'no save kept from that world', 'nope') : oops(404, 'no save with that version', 'nope');
       const ver = this.storeSave(a.name_lc, r.json);
       return json({ ok: true, ver: ver.ver, at: ver.at });
     }

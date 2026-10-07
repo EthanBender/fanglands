@@ -266,6 +266,12 @@
               line.className = 'pin';
               line.textContent = 'Backup from before Unlock everything — ' + when(s.at) + ' — ' + kb(s.bytes) + ' ';
               line.appendChild(button('Go back to this one', async () => { if (!confirm('Make the backup from before Unlock everything the current save for ' + a.name + '? The backup stays, so you can do this again.')) return; try { await api('POST', '/api/admin/rollback', { name: a.name, ver: 'pin' }); say(a.name + ' is back to the backup from before Unlock everything.'); box.remove(); await loadAccounts(); } catch (e) { say(e.message, true); } }));
+            } else if (/^world\d+$/.test(String(s.ver))) {
+              // the last save from an older world, kept when the knight's first save of the new world came in (the Great
+              // Spread: world 1 is the old map); going back to it keeps it, and the game moves it into the new world again
+              line.className = 'pin';
+              line.textContent = 'Last save from world ' + s.world + (s.world === 1 ? ' (the old map, before the Great Spread)' : '') + ' — ' + when(s.at) + ' — ' + kb(s.bytes) + ' ';
+              line.appendChild(button('Go back to this one', async () => { if (!confirm('Make the last save from world ' + s.world + ' the current save for ' + a.name + '? It stays kept, so you can do this again. On the new game it moves into the new world again when ' + a.name + ' next plays.')) return; try { await api('POST', '/api/admin/rollback', { name: a.name, ver: s.ver }); say(a.name + ' is back to the last save from world ' + s.world + '.'); box.remove(); await loadAccounts(); } catch (e) { say(e.message, true); } }));
             } else {
               line.textContent = 'Version ' + s.ver + ' — ' + when(s.at) + ' — ' + kb(s.bytes) + (first ? ' (the one in use)' : ' ');
               if (!first) line.appendChild(button('Go back to this one', async () => { if (!confirm('Make version ' + s.ver + ' the current save for ' + a.name + '?')) return; try { await api('POST', '/api/admin/rollback', { name: a.name, ver: s.ver }); say('Rolled ' + a.name + ' back to version ' + s.ver + '.'); box.remove(); await loadAccounts(); } catch (e) { say(e.message, true); } }));
