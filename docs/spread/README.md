@@ -9,7 +9,7 @@ make and read. Nothing here is loaded by the game.
 | `inventory.json` | `node tools/literals.mjs --inventory` | Every bare coordinate-shaped literal in src/ and tools/, with file, line, column, the literal and its guessed anchor; `held` names the peer branch of a held file, `outsideHeld` counts the rest (0 from Stage 3 on). |
 | `converted.json` | by hand, one file per Stage 1-3 commit | The files converted (or proved to hold no position), one per commit. Since Stage 3 the gate is repo-wide, so this is the record of what was done, not the list the gate reads; but the record must be whole: the gate fails a file that reads overworld positions from the Atlas (`ATLAS.frame`, `.port`, `.world`, `.box`, `.track`) and is not listed (the Atlas's own `literals.mjs` and `frame-codemod.mjs` excepted). |
 | `held.json` | by hand (Stage 3 on) | Files an open peer branch is editing (`{ file, branch, reason }`): the repo-wide gate lets their bare literals wait until that branch merges, says so on every build, and names one that has none left. |
-| `literals-allow.json` | by hand | Literals the gate lets through (instance-local and UI numbers), each with a reason. An entry with a `literal` is pinned by `decl` (the const, function or property it sits in) or `line`; an unpinned one matches nothing and fails the gate, and so does an entry with neither (the whole file): every exemption is pinned. |
+| `literals-allow.json` | by hand | Literals the gate lets through (instance-local and UI numbers), each with a reason. An entry with a `literal` is pinned by `decl` (the const, function or property it sits in), `context` (text that must stand on the literal's own line, spaces ignored: for a literal in an unnamed hook or test) or `line`; an unpinned one matches nothing and fails the gate. Every exemption names what it lets through: the gate refuses an entry with no literal (the whole file, a whole line or a whole context), bar a `decl` alone that names exactly ONE declaration in its file (01-atlas's own tables); a decl-only pin whose name is declared twice (a property of the same name elsewhere) is refused. Prefer `decl` or `context` to `line` in a file a peer branch edits: a line pin moves under a peer's edit above it, and the merge fails the gate. |
 | `strict-allow.json` | by hand (Stage 1 on) | Frame points the strict report may log (relative geometry, such as the rim notch), each with a reason. |
 
 ## The tools (Stage 0)
@@ -28,9 +28,18 @@ in an update hook, a quest handler, draw code or a test is caught, not only one 
 `fingerprint.mjs --diff` reads the same report for load-time points. The in-game self-test checks only that logging
 works; whether an entry is allowed is the runners' question.
 
-`build.sh` runs `literals.mjs --gate` after the syntax check. Since Stage 3 the gate is REPO-WIDE: every file of src/ and
-tools/ (131 today) must hold 0 bare coordinates outside `literals-allow.json`, whether `converted.json` names it or not;
-only a file in `held.json` may wait for its peer branch.
+`build.sh` runs `literals.mjs --gate` after the syntax check. Since Stage 3 the gate is REPO-WIDE: every file of
+src/[0-9]*.js and the top level of tools/ (`tools/*.js`, `tools/*.mjs`; 136 files on 6 Oct 2026) must hold 0 bare
+coordinates outside `literals-allow.json`, whether `converted.json` names it or not; only a file in `held.json` may wait
+for its peer branch.
+
+**What the gate does NOT read** (and so may still hold overworld tile numbers): `online/src/` (the World's server code),
+`online/test/` (its tests; `admin.test.mjs` stands a party at map tiles, for example), `tools/sim-bench/` and `tests/`.
+The server and its tests are Stage 4d's (spec §11: the contract written into docs/ONLINE.md, atlas.test and move.test
+there); the builder of 4d converts them, or brings them under the gate, before the spread ships. A new tool belongs at
+the top of `tools/`, where the gate reads it. A peer branch that adds a tool standing a knight on the overworld must
+wrap its spots before it merges after the spread (feat/teacher-view's `tools/teacher-browser.mjs` holds 14 bare spots
+at line 117 on 6 Oct: wrap them in frames, or list the file in `held.json` until it is converted).
 
 **The tools** (ADDENDUM A.2) are read like the game: a tool file is named `tools/<file>` in `converted.json` and the
 allow list. In a tool the counter also reads game code handed to a game as text (`R(A, \`FANGLANDS.tp(24, 37)\`)`,
@@ -63,7 +72,7 @@ asserts that every quest-made tile kind is at its frame-mapped cell.
 
 ## The jiggle (Stage 3, spec §9.5): the spread rehearsed
 
-`node tools/jiggle.mjs [--jobs=4] [--only=pond,camp] [--plan] [--anchors-only | --world-only]` makes scratch builds in
+`node tools/jiggle.mjs [--jobs=4] [--only=pond,camp] [--plan] [--anchors-only | --world-only | --spread-only] [--no-spread] [--spread-gate]` makes scratch builds in
 `~/.fanglands/work/spread/jiggle/` (never committed) and writes `report.json` there. The tool's header says exactly what it
 checks; in short:
 
@@ -82,7 +91,16 @@ checks; in short:
   the jungle's and the Ashfields' own ground, which section 2 calls world, tiles the controls re-roll, and tiles within 2 of
   a world seam that crosses the box, of which the run reports how many match anyway).
 - **Every anchor together with WORLD x1.1** (MAP 286x198): the suite, mmo-sim and dom-keys, every place's facts moved by
-  its shift, and the seam pins: the rim gate open, the giants' gap open, the graveyard's steps cut in the scarp.
+  its shift, and the seam pins: the rim gate open, the giants' gap open, the graveyard's steps cut in the scarp
+  (SCARP_STEPS at the port `graveyard.steps`, open ground above and below; until the second review a plain CLIFF at the
+  port passed, while the steps stood elsewhere).
+- **The real spread** (since the second review): every anchor at its section-2 `to`, MAP 400x280, WORLD per section 3.
+  The passes above move an overlapping pair as one (Thistledown and Hollowford, the camp, the dock and Gull Isle, the
+  warden and the stone circle, the Far Shore and the Redcut) and give the x1.1 world one shift per group, so a literal
+  framed in the wrong member of a pair never shows there; here every place moves by its own shift. Against its own base
+  at 400x280 (nothing moved) and two controls: the suites, every place's facts by its own shift, each place's plate and
+  the seam pins. It rehearses Stage 4a, which still has work of its own there, so it is printed and kept in
+  `report.json` but counted in the exit code only with `--spread-gate`.
 
 Run of 6 Oct 2026 on spread/s2 (master 3b6d6b4 merged), 7198 s with 4 jobs: **all green**. The run before it found one
 literal the count could not see (75-coop's test held the summoning circle as the string `'[18,117,4]'`), red when The
@@ -113,6 +131,32 @@ Fang's lair moved and in the x1.1 world; fixed in 6ea7332 and proved at identity
 The seam tiles that do not match lie where a world seam crosses a box and stays with the stretched land while the place
 moves (Hollowford's top rows under the scarp and the river, the warden's row 95 on the rim's taper, two shore tiles by the
 dock): section 2's world, not a place's literal.
+
+**Run of 6 Oct 2026, evening (after the second review; this branch at f5c17c9, then 01fb84d).** The review found the
+x1.1 pins proof false (the steps stood at 39,68, not at the port, and a plain CLIFF at the port passed) and the pairs
+never moved apart. With the seam pins carried by the port's frame (4b86aea), the steps cut at the port (b369770,
+b6b6f23), the stricter steps check and the real-spread pass (f5c17c9):
+
+- the full run at f5c17c9, 9073 s with 4 jobs: every per-anchor move green but the graveyard's (+3,-2: the port on the
+  lower row of a two-row face, the steps with cliff above them); fixed in b6b6f23 (the cut goes through) and re-run
+  green at 01fb84d (`--only=graveyard`, 1202 s: transport 5/1340/0/0, plate 2/2, 0 new fails). The x1.1 world was red on
+  `aerie2`'s updraft notice: the steps at their port 13,71 sat beside the Aerie's Crown stone and the overworld's steps
+  hint fired inside the instance; fixed in 01fb84d (the hint waits outside instances) and re-run green (`--world-only`,
+  522 s: pins hold, the steps at the port, transport 1276 moved / 0 red, 0 new fails, two luck-bound and two
+  area-proportional as before). The other moves do not touch the steps (the graveyard stays put and its port's
+  neighbours are open), so their f5c17c9 results stand.
+- **the real spread** (`--spread-only` at 01fb84d, 1758 s): pins hold (rim gate open in 3 steps, giants' gap in 7, the
+  steps at the port 21,102 in the scarp), transport 1276 moved / 23 kept / 0 red, mmo-sim and dom-keys green. Still red,
+  for Stage 4a/4b: plate 8854/8895, the 41 being the Redcut's salt seams and fallen blocks (90-canyon shuffles its seam
+  candidates with its own stream after drawing from it for the canyon's edge, so a different land round the box picks
+  other seams: 4c's migration must not assume a mined seam keeps its cell); and 5 suite checks new against the 400x280
+  base: the river (`blend`, laid anew in 4a), stormstone 11 of 12 standing, the fallen knight's frame with no townsfolk
+  drawn (`knight gear`), the Jungle's outline too square (`worldshape`), and the rim's level stretch of 7 tiles
+  (`ashedge`, a 4-tile run at x1.62).
+
+Before this review's fixes the real spread failed 36 checks (the review's scratch build); after them 16: the 5 above,
+the Atlas's 4 identity tests (by design), 2 area-proportional, 1 that does not hold over the re-rolls, and 4 that fail on
+the 400x280 base or its controls too.
 
 ## The fingerprint is sensitive (Stage 0 proof, 3 Oct 2026, baseline master e24001a)
 
@@ -162,13 +206,17 @@ up 9 tiles apart). So a tile inside two or more boxes has a place only when it i
 such tile and `frame-codemod` refuses it, and also refuses any line whose literals name two places. The in-game
 `ATLAS.anchorOf` flags it (`overlap: true`).
 
-| Overlap | Old tiles | Decided | Open question |
-|---|---|---|---|
-| quarry / thistledown | 70..72 x 12..16 | the cow pen 72..80 x 14..21 is thistledown (OWNERS; spec section 2 lists the pens under thistledown) | the rest of the strip (70..72 x 12..13, 70..71 x 14..16) |
-| dock / gull_isle | 168..171 x 8..20 | Gull Isle's mooring 170..171 x 12..14 is gull_isle (OWNERS; the spec author's decision, Stage 2): 26-boats `LOC.gull` (boat 170,13, lantern 171,12, planks 171..172 x 12..14, Harl 172,13, landing 173,13) moves as one with the isle; the port `dock.boat2` became `gull_isle.boat` | the rest of the strip |
-| dock / camp | 156..161 x 17..20 | none | which place owns this corner |
-| thistledown / hollowford | 120..141 x 59..61 | the south pond and its shore 128..140 x 59..61 is thistledown (OWNERS; the spec author's decision, Stage 2: 02-world draws it in Thistledown's frame) | the rest of the strip (120..127 x 59..61, 141 x 59..61) |
-| graveyard / deepholm_rock | 6..19 x 72..73 | the gate 13,72 is graveyard (the port `graveyard.gate`) | the rest of the strip |
-| wren / deepholm_rock | 25..26 x 73..83 | none | which place owns this strip |
-| warden / stone_circle | 54..66 x 90..92 | the gate 60,96 and post 60,95 lie outside it; nothing decided | which place owns this strip |
+Every overlap tile is decided (6 Oct 2026; the Stage 3 decisions by the built structure each tile is part of, each
+OWNERS rect with its one-line reason in `src/01-atlas.js`). A probe over every tile inside two or more boxes finds none
+undecided.
+
+| Overlap | Old tiles | Decided |
+|---|---|---|
+| quarry / thistledown | 70..72 x 12..16 | the cow pen 72..80 x 14..21 is thistledown (OWNERS; spec section 2 lists the pens under thistledown); the open grass north and west of it (70..72 x 12..13, 70..71 x 14..16) is thistledown too: nothing of the quarry's is built south of row 12 |
+| dock / gull_isle | 168..171 x 8..20 | Gull Isle's mooring 170..171 x 12..14 is gull_isle (OWNERS; the spec author's decision, Stage 2): 26-boats `LOC.gull` (boat 170,13, lantern 171,12, planks 171..172 x 12..14, Harl 172,13, landing 173,13) moves as one with the isle; the port `dock.boat2` became `gull_isle.boat`. The water of the channel: x 168..169 is the dock's (off its end, where its own boat lies), x 170..171 gull_isle's (the mooring's columns) |
+| dock / camp | 156..161 x 17..20 | 156..159 is the camp's (the palisade's north wall, PALISADE 156..158,20, drawn in its frame, and its corner); 160..161 the dock's (the shore east of the palisade's end, inside the dock's keep-clear) |
+| thistledown / hollowford | 120..141 x 59..61 | all thistledown: the south pond and its shore 128..140 (OWNERS; the spec author's decision, Stage 2: 02-world draws it in Thistledown's frame), the river and the scarp's foot west of it (120..127) and the grass east of it (141), on the town's side of the river; Hollowford's ruins start at row 69 |
+| graveyard / deepholm_rock | 6..19 x 72..73 | row 72 is the graveyard's (its gate row, the port `graveyard.gate` 13,72, inside its keep-clear); row 73 deepholm_rock's (the first row of the reclaimed Deepholm wood) |
+| wren / deepholm_rock | 25..26 x 73..83 | deepholm_rock's: the east edge of the reclaimed wood (58-underground's rectangle to x 26), west of Old Wren's hut and yard |
+| warden / stone_circle | 54..66 x 90..92 | rows 90..91 are the stone circle's (its south stones 58,90 and 62,90 and the clear ground round it); row 92 the warden's (the open row above its tree line and notch, inside its keep-clear) |
 
