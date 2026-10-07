@@ -5115,7 +5115,8 @@ window.FANGLANDS = {
       // the owner's call: no grass in the Ashfields (56-ashfields burns what was left), so the ground between the
       // ash is scorch and bare dirt now rather than green. The intent of the check is unchanged: ash must be
       // patchy rather than a flat sheet, there must be open ground between it, and lava and obsidian must survive.
-      check('ashfields: ash lies in patches — 25–80% of dragon country, scorch and bare dirt between, lava and obsidian kept', cover >= 0.25 && cover <= 0.8 && green > 500 && lava >= 40 && obs >= 30, { cover: +cover.toFixed(2), ash, area, openGround: green, lava, obs }); }
+      check('ashfields: ash lies in patches — 25–80% of dragon country, scorch and bare dirt between, lava and obsidian kept', cover >= 0.25 && cover <= 0.8 && green > area * 0.155 && lava >= area * 0.0124 && obs >= area * 0.0093,   // (4b re-baseline: the old 500 / 40 / 30 tiles of 3234 as shares: dragon country is 3x the tiles at the spread)
+        { cover: +cover.toFixed(2), ash, area, openGround: green, lava, obs }); }
     { // the jungle runs south to the map edge: giant trees and ferns in the band y 140–178 at the old density
       // (to the Sound's west shore: since the spread the Sound's deep water runs down the jungle's east side; and from
       // eight tiles in from the jungle's west edge: since Stage 4b its first eight tiles blend with the Wilds, 92's soft seam)
@@ -11817,7 +11818,8 @@ PEOPLE_UI.auditPrompt = function (p) {
     // the spread. 900..2200 tiles of the old box's 3377 is 27%..65%, the bounds kept here; the old map stood at 52%)
     { let ash = 0, lava = 0, obs = 0, ground = 0; for (let y = AF.y0; y <= AF.y1; y++) for (let x = AF.x0; x <= AF.x1; x++) { if (inFang(x, y)) continue; ground++; const t = tileAt(x, y); if (t === DR_ASH) ash++; else if (t === DR_LAVA) lava++; else if (t === DR_OBSIDIAN) obs++; }
       const share = ash / Math.max(1, ground);
-      check('dragons: The Ashfields region fills the south-west (ash, lava, obsidian), Wolfwood ends at y 95', REGIONS.some(r => r.name === 'The Ashfields') && regionAt(...rt(DW.p(60, 110))).name === 'The Ashfields' && regionAt(...WD.p(60, 94)).name === 'Wolfwood' && share > 0.27 && share < 0.65 && lava >= 40 && obs >= 30, { at60_110: regionAt(...rt(DW.p(60, 110))).name, at60_94: regionAt(...WD.p(60, 94)).name, ash, ground, share: +share.toFixed(3), lava, obs }); }
+      check('dragons: The Ashfields region fills the south-west (ash, lava, obsidian), Wolfwood ends at y 95', REGIONS.some(r => r.name === 'The Ashfields') && regionAt(...rt(DW.p(60, 110))).name === 'The Ashfields' && regionAt(...WD.p(60, 94)).name === 'Wolfwood' && share > 0.27 && share < 0.65 && lava >= ground * 0.0118 && obs >= ground * 0.0089,   // (4b re-baseline: the old 40 / 30 of 3377 tiles as shares of the box's ground)
+        { at60_110: regionAt(...rt(DW.p(60, 110))).name, at60_94: regionAt(...WD.p(60, 94)).name, ash, ground, share: +share.toFixed(3), lava, obs }); }
     { const toFarm = F.bfs(...WD.p(60, 94), DUNSTAN_T.x, DUNSTAN_T.y + 1), toLair = F.bfs(...WD.p(60, 94), ...ATLAS.port('fang_lair.node'));
       check('dragons: the path from Wolfwood (60,94) reaches the farm and the approach to the lair', !!toFarm && !!toLair && tileAt(...WD.p(60, 96)) === T.DIRT, { farm: toFarm && toFarm.length, lair: toLair && toLair.length }); }
     // lava burns
@@ -13336,8 +13338,10 @@ window.PLACE_KIT = PLACE_KIT;
       check("board: Hale's job needs a best hit of 8, then pays 200 Melee xp", took && early && clicked && bq().done.hale && player.skills.melee.xp === mx0 + 200, { took, early, clicked, xp: player.skills.melee.xp - mx0 }); closePanel(); }
     // fish counter: raw fish rising while fishing
     { const q = byId.cass; bq().page = pageOf(q); open(); const took = F.clickButton('Take: Cass'); closePanel(); ensureRoom(2);
-      const w = F.nearestTile([T.WATER]) || ATLAS.frame('pond').pt({ x: 43, y: 36 }); player.action = { type: 'fish', t: 0, need: 1.8, tx: w.x, ty: w.y }; const f0 = bq().fish;
-      const steps = F.untilAction(2400, () => bq().fish > f0); player.action = null;
+      // (in peace: a monster that wanders up and hits the knight takes the rod out of his hands, and on the spread's
+      // bigger map the open-field goblins and wolves roam where the earlier checks left him)
+      const w = F.nearestTile([T.WATER]) || ATLAS.frame('pond').pt({ x: 43, y: 36 }); h.peace(true); player.action = { type: 'fish', t: 0, need: 1.8, tx: w.x, ty: w.y }; const f0 = bq().fish;
+      const steps = F.untilAction(2400, () => bq().fish > f0); player.action = null; h.peace(false);
       check('board: Fish for the street counts fish caught with the rod', took && typeof steps === 'number' && bq().fish === f0 + 1 && progress(q) >= 1, { took, steps, fish: bq().fish }); }
     // paging
     { const pg = boardPages(), per = pg[0].length; const l2 = `Take: ${BOARD_QUESTS[pg[1][0]].tag}`, l1 = 'Take: Brakka';
@@ -17854,7 +17858,7 @@ window.PLACE_KIT = PLACE_KIT;
     { const xs = new Set(); for (let y = W.ty(5); y <= W.ty(90); y++) for (let x = W.tx(150); x <= W.tx(199); x++) if (tileAt(x, y) === T.WATER) { xs.add(x); break; }
       check('blend: the Grey Sea shore wanders (6+ distinct westmost-water columns over y 5–90), with coves and headlands', xs.size >= 6, { distinct: xs.size, coast: S.coast }); }
     { let rim = 0; for (let y = W.ty(2); y <= W.ty(93); y++) for (let x = W.tx(150); x <= W.tx(178); x++) if (tileAt(x, y) === T.SAND && N4.some(([dx, dy]) => tileAt(x + dx, y + dy) === T.WATER)) rim++;
-      check('blend: a sand rim runs along the coast where the land meets the water', rim >= 60, { rim, laid: S.rim }); }
+      check('blend: a sand rim runs along the coast where the land meets the water', rim >= 96, { rim, laid: S.rim }); }   // (4b re-baseline: 60 x1.6, the coast's length at the spread's stretch)
     { const seen = new Uint8Array(MAP_W * MAP_H), q = []; let sea = false;
       const push = (x, y) => { if (!inMap(x, y)) return; const i = idx(x, y); const t = tileAt(x, y); if (seen[i] || (t !== T.WATER && t !== BRIDGE && t !== DOCK)) return; seen[i] = 1; q.push(i); };
       for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) push(POND.x + dx, POND.y + dy); // the pond's water (its centre column is the agility course's stepping stones)
@@ -31563,7 +31567,7 @@ HOOKS.selfTest.push((check, F, h) => {
       // ---- the key stays a key: real letter widths (the headless canvas measures every string as 10 px) ----
       { seeAll(); st().show = true;
         const fake = { font: '', measureText: t => ({ width: String(t).length * 6.2 }) }; // about bold 10px sans-serif
-        const sizes = [[314, 217], [724, 250], [692, 479], [724, 501]];  // the map image at 390x844, 844x390, 768x1024, 1280x800
+        const sizes = [[342, 239], [702, 277], [720, 504], [724, 507]];   // (4b re-baseline: measured at 400 x 280, the map's new shape)  // the map image at 390x844, 844x390, 768x1024, 1280x800
         const want = kindsInUse().map(k => k.id).sort().join();
         const bad = []; let widest = 0;
         for (const [iw, ih] of sizes) for (const narrow of [true, false]) {
@@ -71430,7 +71434,8 @@ const MOUNT_LOOK = (() => {
       for (let x = wallX(W.ty(96)); x <= W.tx(161); x++) { const y = Math.round(WS.seams.sWJ(x)); if (SOLID.has(tiles[idx(x, y)])) wall++; else if (x >= HFF.x(134) && x <= HFF.x(148)) gap++; }
       const gateShut = DRAGON_KILLERS ? DRAGON_KILLERS.GATE_T.every(([x, y]) => tiles[idx(x, y)] === Tn('WARDEN_GATE')) : false;
       check(P + "the Ashfields' rim is a wavy rock face where a ruled line of trees stood, the warden's gate is still the one notch through it, and the jungle's edge is a wall of giants with the old road its one gap",
-        rim >= 70 && line === rimCols && band >= 40 && gateShut && wall >= 30, { rimRockOnRow95: rim, solidOnRow95: line, rockBelowTheRow: band, gateShut, wallOnTheJungleLine: wall, roadGapColumns: gap }); }
+        rim >= 113 && line === rimCols && band >= 65 && gateShut && wall >= 47,   // (4b re-baseline: 70 / 40 rim tiles x1.62, the rim's stretch; 30 wall tiles x1.56, the rows' stretch)
+        { rimRockOnRow95: rim, solidOnRow95: line, rockBelowTheRow: band, gateShut, wallOnTheJungleLine: wall, roadGapColumns: gap }); }
 
     // ---- 8b. the wall splits the names: every wall row has the Ashfields (once below the rim) just west of the wall
     // and the Jungle (once below its north edge) on it, so the wall, the burnt band and the names move together on the pin
@@ -72373,7 +72378,8 @@ const MOUNT_LOOK = (() => {
     // 3. nothing green inside the Ashfields' box (not even dry grass: the fringe inside is singed straw), and the edge trees are charred
     { let bad = 0; for (let y = AF_BOX.y0; y <= AF_BOX.y1; y++) for (let x = AF_BOX.x0; x < wallX(y); x++) { if (y < afTop(x)) continue; const t = tileAt(x, y); if (t === DRY) bad++; }
       let charred = 0; for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) if (tileAt(x, y) === CHAR) charred++;
-      check(P + 'no dry green grass inside the Ashfields box; charred trees stand at the edge (40+)', bad === 0 && charred >= 40, { bad, charred, standing: S.standing, refused: S.refused }); }
+      check(P + 'no dry green grass inside the Ashfields box; charred trees stand at the edge (40+)', bad === 0 && charred >= 100,   // (4b re-baseline: 40 x2.5, the Ashfields' box at the spread)
+        { bad, charred, standing: S.standing, refused: S.refused }); }
     // 4. the lair is not a clean box: crags lean on its east and south walls at more than one depth, and its walls, gate and approach are as they were
     { const reach = new Set(); for (let y = LAIR.y0; y <= LAIR.y1; y++) { let x = LAIR.x1 + 1; while (tileAt(x, y) === CRAG) x++; reach.add(x - LAIR.x1 - 1); }
       let south = 0; for (let x = LAIR.x0; x <= LAIRF.x(40); x++) if (tileAt(x, LAIR.y1 + 1) === CRAG) south++;

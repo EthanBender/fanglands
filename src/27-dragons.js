@@ -520,7 +520,8 @@
     // the spread. 900..2200 tiles of the old box's 3377 is 27%..65%, the bounds kept here; the old map stood at 52%)
     { let ash = 0, lava = 0, obs = 0, ground = 0; for (let y = AF.y0; y <= AF.y1; y++) for (let x = AF.x0; x <= AF.x1; x++) { if (inFang(x, y)) continue; ground++; const t = tileAt(x, y); if (t === DR_ASH) ash++; else if (t === DR_LAVA) lava++; else if (t === DR_OBSIDIAN) obs++; }
       const share = ash / Math.max(1, ground);
-      check('dragons: The Ashfields region fills the south-west (ash, lava, obsidian), Wolfwood ends at y 95', REGIONS.some(r => r.name === 'The Ashfields') && regionAt(...rt(DW.p(60, 110))).name === 'The Ashfields' && regionAt(...WD.p(60, 94)).name === 'Wolfwood' && share > 0.27 && share < 0.65 && lava >= 40 && obs >= 30, { at60_110: regionAt(...rt(DW.p(60, 110))).name, at60_94: regionAt(...WD.p(60, 94)).name, ash, ground, share: +share.toFixed(3), lava, obs }); }
+      check('dragons: The Ashfields region fills the south-west (ash, lava, obsidian), Wolfwood ends at y 95', REGIONS.some(r => r.name === 'The Ashfields') && regionAt(...rt(DW.p(60, 110))).name === 'The Ashfields' && regionAt(...WD.p(60, 94)).name === 'Wolfwood' && share > 0.27 && share < 0.65 && lava >= ground * 0.0118 && obs >= ground * 0.0089,   // (4b re-baseline: the old 40 / 30 of 3377 tiles as shares of the box's ground)
+        { at60_110: regionAt(...rt(DW.p(60, 110))).name, at60_94: regionAt(...WD.p(60, 94)).name, ash, ground, share: +share.toFixed(3), lava, obs }); }
     { const toFarm = F.bfs(...WD.p(60, 94), DUNSTAN_T.x, DUNSTAN_T.y + 1), toLair = F.bfs(...WD.p(60, 94), ...ATLAS.port('fang_lair.node'));
       check('dragons: the path from Wolfwood (60,94) reaches the farm and the approach to the lair', !!toFarm && !!toLair && tileAt(...WD.p(60, 96)) === T.DIRT, { farm: toFarm && toFarm.length, lair: toLair && toLair.length }); }
     // lava burns

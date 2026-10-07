@@ -445,7 +445,8 @@ window.FANGLANDS = {
       // the owner's call: no grass in the Ashfields (56-ashfields burns what was left), so the ground between the
       // ash is scorch and bare dirt now rather than green. The intent of the check is unchanged: ash must be
       // patchy rather than a flat sheet, there must be open ground between it, and lava and obsidian must survive.
-      check('ashfields: ash lies in patches — 25–80% of dragon country, scorch and bare dirt between, lava and obsidian kept', cover >= 0.25 && cover <= 0.8 && green > 500 && lava >= 40 && obs >= 30, { cover: +cover.toFixed(2), ash, area, openGround: green, lava, obs }); }
+      check('ashfields: ash lies in patches — 25–80% of dragon country, scorch and bare dirt between, lava and obsidian kept', cover >= 0.25 && cover <= 0.8 && green > area * 0.155 && lava >= area * 0.0124 && obs >= area * 0.0093,   // (4b re-baseline: the old 500 / 40 / 30 tiles of 3234 as shares: dragon country is 3x the tiles at the spread)
+        { cover: +cover.toFixed(2), ash, area, openGround: green, lava, obs }); }
     { // the jungle runs south to the map edge: giant trees and ferns in the band y 140–178 at the old density
       // (to the Sound's west shore: since the spread the Sound's deep water runs down the jungle's east side; and from
       // eight tiles in from the jungle's west edge: since Stage 4b its first eight tiles blend with the Wilds, 92's soft seam)

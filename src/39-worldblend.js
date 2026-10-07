@@ -454,7 +454,7 @@
     { const xs = new Set(); for (let y = W.ty(5); y <= W.ty(90); y++) for (let x = W.tx(150); x <= W.tx(199); x++) if (tileAt(x, y) === T.WATER) { xs.add(x); break; }
       check('blend: the Grey Sea shore wanders (6+ distinct westmost-water columns over y 5–90), with coves and headlands', xs.size >= 6, { distinct: xs.size, coast: S.coast }); }
     { let rim = 0; for (let y = W.ty(2); y <= W.ty(93); y++) for (let x = W.tx(150); x <= W.tx(178); x++) if (tileAt(x, y) === T.SAND && N4.some(([dx, dy]) => tileAt(x + dx, y + dy) === T.WATER)) rim++;
-      check('blend: a sand rim runs along the coast where the land meets the water', rim >= 60, { rim, laid: S.rim }); }
+      check('blend: a sand rim runs along the coast where the land meets the water', rim >= 96, { rim, laid: S.rim }); }   // (4b re-baseline: 60 x1.6, the coast's length at the spread's stretch)
     { const seen = new Uint8Array(MAP_W * MAP_H), q = []; let sea = false;
       const push = (x, y) => { if (!inMap(x, y)) return; const i = idx(x, y); const t = tileAt(x, y); if (seen[i] || (t !== T.WATER && t !== BRIDGE && t !== DOCK)) return; seen[i] = 1; q.push(i); };
       for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) push(POND.x + dx, POND.y + dy); // the pond's water (its centre column is the agility course's stepping stones)

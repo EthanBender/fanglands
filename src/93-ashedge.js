@@ -891,7 +891,8 @@
     // 3. nothing green inside the Ashfields' box (not even dry grass: the fringe inside is singed straw), and the edge trees are charred
     { let bad = 0; for (let y = AF_BOX.y0; y <= AF_BOX.y1; y++) for (let x = AF_BOX.x0; x < wallX(y); x++) { if (y < afTop(x)) continue; const t = tileAt(x, y); if (t === DRY) bad++; }
       let charred = 0; for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) if (tileAt(x, y) === CHAR) charred++;
-      check(P + 'no dry green grass inside the Ashfields box; charred trees stand at the edge (40+)', bad === 0 && charred >= 40, { bad, charred, standing: S.standing, refused: S.refused }); }
+      check(P + 'no dry green grass inside the Ashfields box; charred trees stand at the edge (40+)', bad === 0 && charred >= 100,   // (4b re-baseline: 40 x2.5, the Ashfields' box at the spread)
+        { bad, charred, standing: S.standing, refused: S.refused }); }
     // 4. the lair is not a clean box: crags lean on its east and south walls at more than one depth, and its walls, gate and approach are as they were
     { const reach = new Set(); for (let y = LAIR.y0; y <= LAIR.y1; y++) { let x = LAIR.x1 + 1; while (tileAt(x, y) === CRAG) x++; reach.add(x - LAIR.x1 - 1); }
       let south = 0; for (let x = LAIR.x0; x <= LAIRF.x(40); x++) if (tileAt(x, LAIR.y1 + 1) === CRAG) south++;

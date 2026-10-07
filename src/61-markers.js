@@ -658,7 +658,7 @@
       // ---- the key stays a key: real letter widths (the headless canvas measures every string as 10 px) ----
       { seeAll(); st().show = true;
         const fake = { font: '', measureText: t => ({ width: String(t).length * 6.2 }) }; // about bold 10px sans-serif
-        const sizes = [[314, 217], [724, 250], [692, 479], [724, 501]];  // the map image at 390x844, 844x390, 768x1024, 1280x800
+        const sizes = [[342, 239], [702, 277], [720, 504], [724, 507]];   // (4b re-baseline: measured at 400 x 280, the map's new shape)  // the map image at 390x844, 844x390, 768x1024, 1280x800
         const want = kindsInUse().map(k => k.id).sort().join();
         const bad = []; let widest = 0;
         for (const [iw, ih] of sizes) for (const narrow of [true, false]) {

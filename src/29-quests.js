@@ -525,8 +525,10 @@ window.PLACE_KIT = PLACE_KIT;
       check("board: Hale's job needs a best hit of 8, then pays 200 Melee xp", took && early && clicked && bq().done.hale && player.skills.melee.xp === mx0 + 200, { took, early, clicked, xp: player.skills.melee.xp - mx0 }); closePanel(); }
     // fish counter: raw fish rising while fishing
     { const q = byId.cass; bq().page = pageOf(q); open(); const took = F.clickButton('Take: Cass'); closePanel(); ensureRoom(2);
-      const w = F.nearestTile([T.WATER]) || ATLAS.frame('pond').pt({ x: 43, y: 36 }); player.action = { type: 'fish', t: 0, need: 1.8, tx: w.x, ty: w.y }; const f0 = bq().fish;
-      const steps = F.untilAction(2400, () => bq().fish > f0); player.action = null;
+      // (in peace: a monster that wanders up and hits the knight takes the rod out of his hands, and on the spread's
+      // bigger map the open-field goblins and wolves roam where the earlier checks left him)
+      const w = F.nearestTile([T.WATER]) || ATLAS.frame('pond').pt({ x: 43, y: 36 }); h.peace(true); player.action = { type: 'fish', t: 0, need: 1.8, tx: w.x, ty: w.y }; const f0 = bq().fish;
+      const steps = F.untilAction(2400, () => bq().fish > f0); player.action = null; h.peace(false);
       check('board: Fish for the street counts fish caught with the rod', took && typeof steps === 'number' && bq().fish === f0 + 1 && progress(q) >= 1, { took, steps, fish: bq().fish }); }
     // paging
     { const pg = boardPages(), per = pg[0].length; const l2 = `Take: ${BOARD_QUESTS[pg[1][0]].tag}`, l1 = 'Take: Brakka';

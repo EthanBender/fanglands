@@ -959,7 +959,8 @@
       for (let x = wallX(W.ty(96)); x <= W.tx(161); x++) { const y = Math.round(WS.seams.sWJ(x)); if (SOLID.has(tiles[idx(x, y)])) wall++; else if (x >= HFF.x(134) && x <= HFF.x(148)) gap++; }
       const gateShut = DRAGON_KILLERS ? DRAGON_KILLERS.GATE_T.every(([x, y]) => tiles[idx(x, y)] === Tn('WARDEN_GATE')) : false;
       check(P + "the Ashfields' rim is a wavy rock face where a ruled line of trees stood, the warden's gate is still the one notch through it, and the jungle's edge is a wall of giants with the old road its one gap",
-        rim >= 70 && line === rimCols && band >= 40 && gateShut && wall >= 30, { rimRockOnRow95: rim, solidOnRow95: line, rockBelowTheRow: band, gateShut, wallOnTheJungleLine: wall, roadGapColumns: gap }); }
+        rim >= 113 && line === rimCols && band >= 65 && gateShut && wall >= 47,   // (4b re-baseline: 70 / 40 rim tiles x1.62, the rim's stretch; 30 wall tiles x1.56, the rows' stretch)
+        { rimRockOnRow95: rim, solidOnRow95: line, rockBelowTheRow: band, gateShut, wallOnTheJungleLine: wall, roadGapColumns: gap }); }
 
     // ---- 8b. the wall splits the names: every wall row has the Ashfields (once below the rim) just west of the wall
     // and the Jungle (once below its north edge) on it, so the wall, the burnt band and the names move together on the pin
