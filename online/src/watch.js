@@ -88,6 +88,7 @@ export const VIEW_END = {
 export const VIEWS_MAX = 6;               // kids being watched at once in the world (one per screen, SCREENS_MAX screens)
 export const VIEW_STREAMS_MAX = 3;        // kids told {view: on} at once: each may stream its monsters alone (R2-3)
 export const VIEW_DAY_MSGS = 40000;       // incoming alone-stream messages a Toronto day, counted in memory (2,000 requests)
+export const FRIEND_FRESH_MS = 15000;     // a friend on his map heard from this recently is one his game counts as near (75-coop REMOTE_STALE)
 export const WATCH_LOG_MS = 600000;       // one mod_log 'watch' row per teacher per knight per 10 minutes (R2-4)
 export const WATCH_ADMINS = true;         // R2-1: a teacher may watch an admin's knight too (read-only)
 const TYPE_RE = /^\{"t":"([a-z_]+)"/;
@@ -592,12 +593,20 @@ export class Watch {
       try { s.sock.send('{"t":"w_v","v":' + s.view.v + ',"m":' + str + '}'); this.viewStats.forwarded++; } catch (e) { }
     }
   }
-  // the keeper's own snapshot (he never receives it): to his screens; an alone stream (nobody else on his map) is counted
+  // the keeper's own snapshot (he never receives it): to his screens. While he is told {view: on}, every snapshot from a map
+  // where no friend has said where he is in the last 15 s is one his game sends only because a teacher watches (75-coop
+  // streams alone when its list of friends near him is empty, and a paused friend's game sends no presence): each is counted
+  // against VIEW_DAY_MSGS, whether that friend's socket is still on the map or not
+  aloneFor(k, now) {
+    const g = this.room.maps.get(k.map);
+    if (!g) return true;
+    for (const o of g.members) if (o !== k && !o.virtual && now - (o.pAt || 0) <= FRIEND_FRESH_MS) return false;
+    return true;
+  }
   monOut(k, out) {
     const v = this.views.get(k.lc);
     if (!v || v.sock !== k.sock) return;
-    const g = this.room.maps.get(k.map);
-    if (v.told && g && g.members.size === 1) {
+    if (v.told && this.aloneFor(k, this.now())) {
       const now = this.now();
       this.dayRoll(now);
       if (++this.day.msgs >= VIEW_DAY_MSGS && !this.day.full) {

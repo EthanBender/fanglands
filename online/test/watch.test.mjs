@@ -686,7 +686,7 @@ test('W8. NEGATIVE fuzz: every message a game may send, and junk, on a watching 
   assert.equal(K.snapshot(W.db).replace(/"last_seen":\d+/g, ''), db0.replace(/"last_seen":\d+/g, ''));
 });
 
-test('W9 (J4). golden: over a scripted 60 s every kid gets byte for byte the same frames with and without a teacher watching (the view signal and the tod field set aside)', async () => {
+test('W9 (J4). golden: over a scripted 60 s every kid gets byte for byte the same frames with and without a teacher watching (the view signal and the tod, vw and vh fields set aside)', async () => {
   const run = async watching => {
     const W = await world(['Sam', 'Leo', 'Ada']);
     const kids = {};
@@ -704,12 +704,12 @@ test('W9 (J4). golden: over a scripted 60 s every kid gets byte for byte the sam
       if (watching && step === 400) { tsay(a, { t: 'w_unview', req: 3 }); tsay(b, { t: 'w_unview', req: 4 }); }
       // each kid's game: its presence 8 a second (the time of day on it while watched), Sam keeps the overworld with Leo near
       // (8 snapshots a second), Ada keeps Deepholm alone (snapshots only while watched: 2 a second)
-      for (const n of ['Sam', 'Leo', 'Ada']) { const p = { t: 'p', map: n === 'Ada' ? 'deepholm' : 'over', x: (n === 'Leo' ? 6060 : n === 'Ada' ? 900 : 6000) + (step % 40), y: 3700, mv: true, sw: Math.floor(step / 30) }; if (viewed(n)) p.tod = (step * 0.125) % 600; K.say(W.w, kids[n], p); }
+      for (const n of ['Sam', 'Leo', 'Ada']) { const p = { t: 'p', map: n === 'Ada' ? 'deepholm' : 'over', x: (n === 'Leo' ? 6060 : n === 'Ada' ? 900 : 6000) + (step % 40), y: 3700, mv: true, sw: Math.floor(step / 30) }; if (viewed(n)) { p.tod = (step * 0.125) % 600; p.vw = 1366; p.vh = 768; } K.say(W.w, kids[n], p); }
       K.say(W.w, kids.Sam, { t: 'mon', list: [['s1', 'goblin', 6100 + step % 9, 3700, 10, 10, 'chase', 1, 0, 1, 0, 0, 0, 0]] });
       if (viewed('Ada') && step % 4 === 0) K.say(W.w, kids.Ada, { t: 'mon', list: [['i0', 'cave_bat', 950, 950, 5, 5, 'idle', 1, 0, 0, 0, 0, 0, 0]] });
       if (step % 64 === 5) K.say(W.w, kids.Leo, { t: 'chat', text: 'line ' + step });
     }
-    const norm = s => s.raw.map(x => JSON.parse(x)).filter(m => m.t !== 'view').map(m => { if (m.t === 'p') delete m.tod; return JSON.stringify(m); });
+    const norm = s => s.raw.map(x => JSON.parse(x)).filter(m => m.t !== 'view').map(m => { if (m.t === 'p') { delete m.tod; delete m.vw; delete m.vh; } return JSON.stringify(m); });
     return { frames: Object.fromEntries(Object.entries(kids).map(([n, s]) => [n, norm(s)])), teacherSent, forwarded: K.viewed(a).length + K.viewed(b).length, taps: W.w.room.taps.size };
   };
   const yes = await run(true), no = await run(false);
@@ -747,6 +747,30 @@ test('W10. the alone streams: at most 3 kids told at once (the 4th when one stop
   assert.equal(K.view(W.w, s6, 'Max').limit, null);
   assert.deepEqual(viewMsgs(kids.Max), [true]);
   assert.equal(VIEW_STREAMS_MAX, 3); assert.equal(VIEW_DAY_MSGS, 40000);
+});
+
+test('W10b. the day\'s ceiling counts every snapshot his game sends only because he is watched: a friend on his map whose game is paused (socket open, no presence for 15 s) does not make it free; a friend who is playing does', async () => {
+  const W = await world(['Sam', 'Ava']);
+  const sam = await K.online(W.w, W.tok.Sam, { map: 'spider_den', x: 300, y: 200 }, VIEW_CAPS); clock.t += 500;
+  const ava = await K.online(W.w, W.tok.Ava, { map: 'spider_den', x: 340, y: 200 }, VIEW_CAPS); clock.t += 500;
+  assert.equal(W.w.room.maps.get('spider_den').keeper.name, 'Sam');
+  const scr = await K.screen(W.w, W.token);
+  assert.equal(K.view(W.w, scr, 'Sam').t, 'w_vstart');
+  assert.deepEqual(viewMsgs(sam), [true]);
+  const day0 = W.w.watch.day.msgs;
+  // Ava is playing (a presence every second): Sam's 8 a second is the stream it always was, not counted
+  for (let i = 0; i < 40; i++) { clock.t += 125; K.say(W.w, sam, { t: 'p', map: 'spider_den', x: 300, y: 200 }); if (i % 8 === 0) K.say(W.w, ava, { t: 'p', map: 'spider_den', x: 340, y: 200 }); K.say(W.w, sam, { t: 'mon', list: [] }); }
+  assert.equal(W.w.watch.day.msgs, day0);
+  // Ava pauses (her socket stays on the map, she says nothing): after 15 s Sam's game streams alone for the teacher, and every
+  // one of those snapshots is counted
+  clock.t += 15100;
+  for (let i = 0; i < 20; i++) { clock.t += 500; K.say(W.w, sam, { t: 'p', map: 'spider_den', x: 300, y: 200 }); K.say(W.w, sam, { t: 'mon', list: [] }); }
+  assert.equal(W.w.room.maps.get('spider_den').members.size, 2);
+  assert.equal(W.w.watch.day.msgs, day0 + 20);
+  // Ava plays again: free again
+  K.say(W.w, ava, { t: 'p', map: 'spider_den', x: 340, y: 200 });
+  K.say(W.w, sam, { t: 'mon', list: [] });
+  assert.equal(W.w.watch.day.msgs, day0 + 20);
 });
 
 test('W11. one mod_log row per teacher per knight per 10 minutes ("Mrs Smith (teacher) watched Sam"), not one of the 10 knight actions', async () => {
