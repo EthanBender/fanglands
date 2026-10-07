@@ -797,6 +797,66 @@ Corvin's Traps) and the bear's. Shots: `~/.fanglands/work/spread/s5d/shots/` (th
 night, the Far Beacon, the lodge, inside it, the range, the den; laptop 1280x800 and iPad 1024x768); full map
 `s5d/fullmap-5d.png`. The fingerprint baseline is this build's (c3b66a6060ec1272), for 5e's diff.
 
+## Stage 5e: THE GOBLIN OUTPOSTS (feat/spread5, 7 Oct 2026)
+
+`src/86-outposts.js`. Spec §4 "New places". Points in `ATLAS.planFrame('outpost_north')` (offsets from 212,66) and
+`ATLAS.planFrame('outpost_south')` (offsets from 232,98).
+
+| Place | What is there | Person | Creatures |
+| --- | --- | --- | --- |
+| North Goblin Outpost 212..222 x 66..74 | a ring of 65-palisade's sharpened stakes (212..222 x 67..74, 33 stakes) with one gap in its road side (222,71); inside, trampled earth, a lookout of lashed poles (213,68; solid), a fire (217,70; cook on it, lit at night) and a scrap heap (220,73; DECO); the iron ore at 215,73 stays inside; a worn trail from the gap to the Goblin Road (y 71) with a signpost where it leaves the road (233,70: OUTPOST); a rail (222,66) | Bramble the scout, by her hide (DECO) outside the ring (213,66) | goblins 215,69 219,69 217,72 (lv 2), a sapper 219,72 (lv 7) |
+| South Goblin Outpost 232..242 x 98..106 | a ring of stakes (233..242 x 99..106, 28 stakes) whose corner by the river is the scarp's own rock face (241,99 242,99 242,100, untouched); its gap on the far side from the road (239,106); inside, a lookout over the road (234,100), a fire (238,102), a scrap heap (241,105); the iron ore at 237,105 stays inside; the Drovers' Track ends at the west wall, where a worn path goes round below the ring to the gap (stepping round the iron rock at 237,107); a signpost where the track leaves the Goblin Road (230,103: OUTPOST, INN); a rail (232,99) | Brin the drover, at the end of his track (232,100) | goblins 236,101 240,101 235,104 (lv 2), a brute 239,104 (lv 9) |
+
+- **Fights he chooses.** Each gap is 12.97 (north) and 12.1 (south) tiles off the Goblin Road's centre line; no outpost
+  goblin can see a knight on the road (each stands farther off it than its sight plus 2.5; the nearest, 235,104, is 7.8
+  off with sight 4.5). The walls stop them; a goblin that sees the knight through the stakes runs into them.
+- **Multi combat.** `ATLAS.markBuilt(id, { combat: 'multi' })` (01-atlas build applies a built place's `combat`): both
+  outposts are multi in the Atlas (atlas.json too), as the camp is.
+- **The camp's respawn rule.** The spawn rows carry `outpost` (the place's id). 06-systems: `isCampMonster` (the 30-minute
+  respawn that waits until the knight is 40+ tiles off, everywhere it is read: 07-update, 75-coop, 79-worldkeeper) now
+  reads `s.camp || s.outpost`; the Goblin Camp's own CLEARED banner and its refill flag read `isGoblinCampMonster` (camp
+  rows only), so the outposts never count toward it (11-main's camp test reads that one too). atlas.json's spawn flag
+  is still `camp` only.
+- **Cleared.** When an outpost's last goblin dies (HOOKS.monsterDeath, so a kill online counts too): "GOBLIN OUTPOST
+  CLEARED / They will not be back for a while", once per clear (`quest.outposts[id]`: cleared, won, searched, thanked; no
+  positions). Then the heap gives 15 coins and two goblin scrap once a clear, the lookout is empty ("The lookout is empty.
+  The goblins are gone, for now."; while any goblin stands, one peeks over its rail), and the watcher thanks the knight
+  once ever (Bramble 30 coins, Brin 40). When one comes back the outpost is filling again (checked once a second).
+- **The stakes** are 65-palisade's PALISADE tile (solid, prick on a shove, the bulldozer smashes them and they are driven
+  in again after 180 s). `PALISADE.addRing(x0, y0, x1, y1)` (new; emptied each world by 65's own pass) draws each ring with
+  its points leaning out from its own middle; 65's "no stake outside the camp" check counts the added rings as theirs.
+  Every stake clears the trees and rocks on the open ground beside it (an apron, as 86-wildplaces').
+- **The signposts** are SIGN tiles with this file's words (`ATLAS.signText` and `SIGN_ARMS` ask 86-outposts first for its
+  two): "→ The goblin outpost, west, along the trail. ..." and "→ The goblin outpost, east, at the end of the Drovers'
+  Track. → The Crossroads Inn, west." The inn's four-way signpost now says "The goblin outpost" without "(builders at work)".
+- **The ground**: "This is a goblin outpost's ground. Build somewhere else." (93-spread lowers a leading "A " as it did "The ").
+- **The core clears ore round spawns.** 02-world, after the world passes, clears trees, rocks AND ore in the 3 x 3 round
+  every spawn: the first build stood a goblin by each outpost's iron rock and lost both; the spawns moved a tile.
+- **People's looks**: 83-townsart's 'outposts' family (bramble_scout with a new held spyglass, brin_drover with a drover's
+  goad); 83-townsfolk counts 92. Brin's sister is Marigold the drover at the inn.
+- **Other files**: 00-core (WORLD_REV 5), 01-atlas (built `combat`, the REVS comment), 06-systems and 07-update (the camp
+  rule), 11-main (the camp test), 65-palisade (`addRing`), 83-townsart, 83-townsfolk, 93-spread ("a goblin outpost's"),
+  converted.json, literals-allow (the lookout's cull reach).
+
+**The footprint: WORLD_REV 5.** `ATLAS.REVS[5]` is each box plus its 6-tile ring (206..228 x 60..80, 226..248 x 92..112)
+and the north trail's run to the road with its signpost (229..236 x 69..72). `node tools/spread-footprint.mjs
+<spread5-86-wildplaces index.html>`: 223 tiles changed (map and variants), 0 outside (and 0 outside the declared boxes
+themselves, without the tool's ring); 2 region lines changed (their sub), 2 people and 8 spawns added, all inside.
+
+**The migration with the sweep.** `--rev-base` (the 5d build, rev 4): fixture + matrix 27/27 (3 footprint planks back to
+the knight, the far one kept). The real saves (the 7 Oct pre-spread-live export, locally) 94/94 straight (world 1 to
+rev 5) and 94/94 through rev 4; 0 stage changes, 0 lost machines, items or coins.
+
+**Proved on this build:** `./build.sh` (literals 0 bare, changetile, compass, boot budget); headless ALL 1451; `--play`
+ALL 1452, the Fang dead (one run under the full gate load failed aerie2's Spire Run check once, "fell: false" in the
+Aerie's instance; the rerun alone passed with nothing changed); online 430; mmo-sim 43, `--room` 43, `--sim` 47; dom-keys 16; mmo-sim-admin 8; mmo-sim-party 18;
+mmo-sim-teacher 9; mmo-sim-world 16; sim-suite 28; build-sim `--strip --reads`; atlas-drift (hash 91af030298886343); the
+footprint; the migration as above. The beat gaps hold (R1 19, R2 23, R3 29, R5 14, R6 44) and the Goblin Road's stop gap
+falls from 25 to 13 with the outposts as stops. The wiki has both places' pages (their goblins and their watcher). Shots:
+`~/.fanglands/work/spread/s5e/shots/` (each outpost, the north trail and its signpost, the north one by night, Brin's
+path round to the south gap, the south signpost; laptop 1280x800 and iPad 1024x768); full map `s5e/fullmap-5e.png`. The
+fingerprint baseline is this build's (474d5a5390b6c70d), for 5f's diff.
+
 ## Proving "nothing visible changed" (spec §9.4)
 
 ```

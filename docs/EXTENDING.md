@@ -88,6 +88,14 @@ Everything a feature needs is reachable through globals and the `HOOKS` registry
   A shop says what it buys with `buysWords` (10-hud; Fennick's words are the default). A rock face that makes a switchback
   leaves the network's track straight between its ports (01-atlas TRACKS lay the dirt at world start, and every earlier
   pass reads them): the path on the ground is the place's own, and its self-test walks it.
+  A ring of goblin stakes outside the camp (`src/86-outposts.js`) lays 65-palisade's PALISADE tile itself and calls
+  `PALISADE.addRing(x0, y0, x1, y1)` so 65 draws it (points leaning out from that ring's middle) and its self-test knows it.
+  A place that is a gang fight says so with `ATLAS.markBuilt(id, { combat: 'multi' })`. A spawn row carrying `outpost`
+  (the place's id) keeps the Goblin Camp's respawn rule (06-systems `isCampMonster`: 30 minutes, back only while the
+  knight is 40+ tiles off) without counting toward the camp's own CLEARED banner (`isGoblinCampMonster`). The core
+  clears ore, trees and rocks in the 3 x 3 round every spawn after the world passes: keep spawns a tile off any ore. A
+  signpost that is not at a road node (01-atlas SIGNPOSTS) has its own words: 86-outposts wraps `ATLAS.signText` and
+  `SIGN_ARMS` for its two posts.
   **DECO** (`src/83-deco.js`, Stage 5's one tile): open ground drawn as a kind from a side table (`DECO.kind(name,
   { draw, use, ground, flat, bridge })`, `DECO.put(api, x, y, kind)` in a `HOOKS.built` pass, `DECO.at`, `DECO.cells`):
   the Old Bridge's stone deck (`bridge: true`, counted as a crossing by the scarp-seal and river checks), reeds, wheat,
