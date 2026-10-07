@@ -857,6 +857,73 @@ falls from 25 to 13 with the outposts as stops. The wiki has both places' pages 
 path round to the south gap, the south signpost; laptop 1280x800 and iPad 1024x768); full map `s5e/fullmap-5e.png`. The
 fingerprint baseline is this build's (474d5a5390b6c70d), for 5f's diff.
 
+## Stage 5f: THE BANDIT HILLS (feat/spread5, 7 Oct 2026)
+
+`src/86-bandits.js` (the place, the bandits' rules, the self-tests) and `src/86-banditart.js` (their look and book pages;
+stripped from the server's copy like 87-critterart). Spec §4 "New places". Points in `ATLAS.planFrame('bandit_hills')`
+(offsets from 250,148).
+
+| Part | What is there | Person | Creatures |
+| --- | --- | --- | --- |
+| the approach, 250..274 x 148..157 | the Bandit Track (R8) down from Hollowford through rock-and-scrub hills: the jungle in the box cut to open ground with thorn scrub (DECO 'bandit_scrub'), dry patches and boulder clusters (ROCK); the track's own cells are worn path; a signpost by the track (258,149: BANDITS, HOLLOWFORD); a rail (255,152) | Wat the carter (256,152) | none |
+| the ring and the toll gate | a rock face (CLIFF, 41 tiles): north wall y 158 (x 251..272) with the toll gate at the track's end (262,158 = bandit_hills.toll: DECO 'bandit_gate', its pole raised), west wall x 251, south wall y 169 (x 251..261); the river closes the east side (never painted); the toll booth (263,157, solid) | | |
+| the hollow, 252..(the river) x 159..168 | trampled paths from the gate, two tents (254,160 and 267,160), a fire (257,163: cook on it), the stolen sacks (253,163: DECO), Wat's cart (261,166); the hideout's mouth in the south wall (257,169, solid), two builders' stakes and a plaque on its step (256..258,168: 93-spread PROP, place 'bandit_hideout', "Builders' stakes. The Bandit Hideout is coming."; port `bandit_hills.hideout` 257,168) | | bandits 256,161 263,162 260,165 253,166 (lv 12); bandit archers 265,161 259,167 (lv 15, throwers); the bandit chief 255,165 (lv 20) |
+
+- **The bandits** (MONSTER_DEFS, `human: true`, aggro): bandit lv 12 (50 hp, sight 5), bandit archer lv 15 (48 hp, sight
+  6, `thrower`: keeps 2.5 to 5 tiles off and throws the sapper's sticky bomb), bandit chief lv 20 (120 hp, sight 5). The
+  spec's ranges (12-14, 15-17) take their low end, as 87-critters and 86-wildplaces did. As people they walk through doors,
+  traps do not catch them and 79-deaths fells them as 'person' (a falling one drops his weapon). Drops: coins always;
+  bread, daggers, arrows, a shortbow; the chief 40-80 coins, meat pies, steel. On 42-playthrough's curve (`HOOKS.xpSource`).
+- **The look** (86-banditart): each drawn with the core's `drawHuman` (plain looks: tunic, hood, weapon; a cloth mask over
+  the face, the archer's quiver, the chief's wide black hat with a red feather) through `MONSTER_LOOK.addType`; boxes
+  measured with `s5f/measure.cjs` (drawHuman holds the weapon out at rest, so rest and swing are the same box). Not a `who`
+  look: 83-townsfolk's own test keeps monsters out of the townsfolk.
+- **A fight he chooses.** The Bandit Track is a spur that ends at the gate; no main road comes within 40 tiles (the gate is 43.8 off the nearest, the nearest bandit 41). No bandit
+  can see Wat, his rail or the signpost (each is farther off than its sight plus 2.5). Multi combat (`markBuilt`'s
+  `combat`). The spawn rows carry `outpost: 'bandit_hills'`, so the camp's rule holds (down 30 minutes, back only while the
+  knight is 40+ tiles off) without counting toward the Goblin Camp's banner.
+- **Cleared.** The last bandit down: "BANDIT HILLS CLEARED / The track is safe, for now", once per clear
+  (`quest.bandits`: won (the chief beaten, ever), cleared, searched, thanked; no positions). Then the sacks give 25 coins
+  and a meat pie once a clear, the booth is empty, and Wat thanks the knight once ever (60 coins) after the chief has
+  fallen. When one comes back the hills fill again (checked once a second).
+- **The inn's notice board** (84-crossroads `NOTICES`): a WANTED notice for the bandits; after the chief falls, the news.
+  84's own test now reads the pinned notice. The Bandit Toll itself (paying at the gate) and the hideout instance are later
+  (spec §15).
+- **Wat the carter**: 83-townsart's 'bandits' family (a flat cap, a patched coat, a carter's whip whose sway comes round in
+  the 2 s standing loop); 83-townsfolk counts 93. His lines tell the story (the toll, the cart, the bombs, the chief) with
+  no compass word.
+- **Hollowford's square signpost** now says "The Bandit Hills, east." without "(builders at work)". "This is the Bandit
+  Hills' ground. Build somewhere else."
+- **The dressing ring**: outside the box the jungle thins to fern, grass and scrub over 6 tiles (own dice; never on a
+  road, the water, the Hollowford burn or within 3 of another place's box): 128 tiles.
+- **Other files**: 00-core (WORLD_REV 6), 01-atlas (the port, the REVS comment), 06-systems (comment), 83-townsart,
+  83-townsfolk (93), 84-crossroads (its board test), 93-spread (the PLAQUE line for 'bandit_hideout'), 97-spreadchecks
+  (the beat gaps held, below), tools/build-sim.mjs (86-banditart stripped), converted.json, literals-allow (the sights,
+  the things' cull reach).
+
+**The footprint: WORLD_REV 6.** `ATLAS.REVS[6]` is the box plus its 6-tile ring (244..280 x 142..176).
+`node tools/spread-footprint.mjs <spread5-86-outposts index.html>`: 469 tiles changed (map and variants), 0 outside the
+declared box; 1 region line changed (its sub), 1 person and 7 spawns added, all inside.
+
+**The beat gaps, after 5f (spec §13: "after 5f, the beat-gap limits hold on R1, R2 and R3").** 97-spreadchecks' report
+is now a check for the Cave, Sea and Long Roads (`BEAT_HELD`, `BEAT_LIMIT`: a stop at most every 73 tiles and a glance at
+most every 36, each beat within 10 tiles of the centre line); the other main roads are reported until Stage 6. On this
+build: R1 stop 19 / glance 19, R2 23 / 23, R3 29 / 29 (R4 13 / 12, R5 14 / 8, R6 44 / 41).
+
+**The migration with the sweep.** `--rev-base` (the 5e build, rev 5): fixture + matrix 27/27. The real saves (the 7 Oct
+pre-spread-live export, locally) 94/94 straight (world 1 to rev 6) and 94/94 through rev 5; 0 stage changes, 0 lost
+machines, items or coins.
+
+**Proved on this build:** `./build.sh` (literals 0 bare, changetile, compass, boot budget); headless ALL 1460; `--play`
+ALL 1461, the Fang dead; online 430; mmo-sim 43, `--room` 43, `--sim` 47; dom-keys 16; mmo-sim-admin 8; mmo-sim-party 18;
+mmo-sim-teacher 9; mmo-sim-world 16; sim-suite 28; build-sim `--strip --reads` (0 unlisted; the first try read
+MONSTER_LOOK and WIKI from the kept file, so the look moved to 86-banditart, stripped); atlas-drift; the footprint; the
+migration as above. One `--sim` run under the first full gate load failed its "Ann spawns 3 goblins" check once; alone,
+and in the full rerun, it passed with nothing changed. The wiki has the place's page (its seven bandits and Wat) and a page
+for each bandit kind. Shots: `~/.fanglands/work/spread/s5f/shots/` (the approach, the gate, the hollow, the hideout's
+mouth, a fight, the hollow by night; laptop 1280x800 and iPad 1024x768); full map `s5f/fullmap-5f.png`. The fingerprint
+baseline is this build's (ab4d229fca979712), for Stage 6's diff.
+
 ## Proving "nothing visible changed" (spec §9.4)
 
 ```

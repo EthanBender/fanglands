@@ -96,6 +96,15 @@ Everything a feature needs is reachable through globals and the `HOOKS` registry
   clears ore, trees and rocks in the 3 x 3 round every spawn after the world passes: keep spawns a tile off any ore. A
   signpost that is not at a road node (01-atlas SIGNPOSTS) has its own words: 86-outposts wraps `ATLAS.signText` and
   `SIGN_ARMS` for its two posts.
+  Human enemies (`src/86-bandits.js`): a MONSTER_DEFS row with `human: true` walks like a person, is not caught by traps
+  and dies as 'person' in 79-deaths; `thrower: true` keeps back and throws the sapper's sticky bomb. Each new type needs a
+  drawing: `MONSTER_LOOK.addType(type, { draw, size, r, box, pic })`, and the draw may call the core's `drawHuman(g, v,
+  look)` with a plain look (tunic, hair, helm, weapon; a `who` look would be a townsperson's). Measure its box with
+  every facing, standing, walking and swinging (the s5f `measure.cjs`). A place whose fight is a whole gang and that clears
+  as one keeps the camp rule with `outpost: '<place id>'` on its spawn rows. A thing a later instance will open (the bandits'
+  hideout) is staked with 93-spread's PROP cells under a place id of its own and a line in its PLAQUE table, and its step
+  gets an Atlas port (`bandit_hills.hideout`). 84-crossroads' notice board takes a notice: push a string or a function to
+  `CROSSROADS.NOTICES`.
   **DECO** (`src/83-deco.js`, Stage 5's one tile): open ground drawn as a kind from a side table (`DECO.kind(name,
   { draw, use, ground, flat, bridge })`, `DECO.put(api, x, y, kind)` in a `HOOKS.built` pass, `DECO.at`, `DECO.cells`):
   the Old Bridge's stone deck (`bridge: true`, counted as a crossing by the scarp-seal and river checks), reeds, wheat,
