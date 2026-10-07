@@ -689,7 +689,7 @@
       check('goblincity: the landing reaches the market, the keep door, the lab door and the scrap yard on foot', !!a && !!b && !!c && !!d, { a: a && a.length, b: b && b.length, c: c && c.length, d: d && d.length }); }
     // the ferry: refused below combat 10, then 40 coins to the Far Shore; Harl waits at the far dock with 'Back to the dock'
     if (bq) {
-      bq.sailing = null; bq.where = 'dock'; makeRoom(4); h.give('coins', 200);
+      bq.sailing = null; F.tp(...ATLAS.port('dock.planks')); bq.where = 'dock'; TQ().visited = false; makeRoom(4); h.give('coins', 200);   // on the mainland first: a knight left east by the lab checks has Harl brought to him (26-boats), and the first Far Shore moment would come too early
       const talkHarl = (hx, hy) => { const a = F.goAdjacent(hx, hy, 3000); F.face(hx, hy); closePanel(); drain(); F.press('KeyE'); F.sim(2, []); return a; };
       F.tp(...ATLAS.port('dock.planks')); setCombat(5); const a = talkHarl(...GC_DK.p(165, 14)); const open = panel === 'ferry'; const listed = buttons.some(b => /The Far Shore/.test(b.label)); const cbLow = combatLevel();
       const c1 = F.clickButton('The Far Shore'); F.sim(3, []); const refused = !bq.sailing && bq.where === 'dock' && notice && /combat level 10/.test(notice.text);
