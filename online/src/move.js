@@ -120,7 +120,9 @@ export class MoveCheck {
 }
 
 // the map as every message out names it: a knight's own island is 'house' (room.js keys it 'house:<name>')
-export const wireMap = map => isHouse(map) ? 'house' : map;
+// the map's name as a game knows it: a knight's own island is 'house', and a stale page's keyed-apart map (room.js STALE,
+// '<map>@stale') is just '<map>' to it
+export const wireMap = map => isHouse(map) ? 'house' : (typeof map === 'string' && map.endsWith('@stale') ? map.slice(0, -6) : map);
 
 // ---------- where the counts and the violations go ----------
 export class MoveBook {

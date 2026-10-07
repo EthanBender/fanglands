@@ -487,3 +487,33 @@ test('a party from an admin with no region names the map in the log', () => {
   assert.deepEqual(mud.last('announce'), { t: 'announce', kind: 'party', n: 'MudGoll', region: '', map: 'inst_spider', count: 5 });
   assert.equal(w.store.modLog(1)[0].detail, '5 crackers in inst_spider, party hats 1 in 100');
 });
+
+// The Great Spread's deploy step (spec §11; tools/spread-deploy-step.mjs, GET/POST /api/admin/spread-parties): every live
+// party on the overworld is listed, then ended (its unlit crackers lie at the old world's places); a cracker already lit
+// keeps its prize, claimable after the end and after a nap; a party in a cave is left alone.
+test('the spread deploy step: the overworld parties listed, then ended; lit prizes stay claimable; a cave party is kept', () => {
+  const { w, mud, sam, ada, zed } = scene();
+  party(w, mud);
+  w.say(sam, { t: 'light', id: 'p1.0', x: 504, y: 600 });
+  // a party in the cave, thrown by an admin standing there
+  w.at(mud, 100, 100, 'cave1'); w.t += 5000;
+  w.say(mud, { t: 'party', spots: [[1, 1], [2, 1], [3, 1], [1, 2], [3, 2]], table: COINS, hat: 1000 });
+  assert.equal(w.room.parties.size, 2, JSON.stringify(mud.of('party_no')));
+  const listed = w.room.partiesOn('over');
+  assert.deepEqual(listed.map(p => [p.id, p.by, p.unlit, p.lit]), [[1, 'MudGoll', 4, 1]]);
+  assert.equal(w.room.parties.size, 2, 'listing ends nothing');
+  for (const s of [mud, sam, ada, zed]) s.clear();
+  const ended = w.room.endPartiesOn('over');
+  assert.deepEqual(ended.map(p => p.id), [1]);
+  assert.deepEqual(sam.last('party_end'), { t: 'party_end', pid: 1, map: 'over' });
+  assert.equal(zed.of('party_end').length, 0);
+  assert.deepEqual(Array.from(w.room.parties.keys()), [2], 'the cave party is kept');
+  assert.equal(w.store.liveParties(w.t).map(p => p.id).join(), '2');
+  assert.deepEqual(w.store.unclaimed('sam', 0), [{ id: 'p1.0', reward: { id: 'coins', qty: 5 } }], 'the lit cracker\'s prize is still there');
+  assert.deepEqual(w.room.endPartiesOn('over'), [], 'a second run finds nothing');
+  // a nap: the Room loads only the cave party again, and Sam's prize comes with his welcome
+  const w2 = world(w.store, w.t);
+  assert.deepEqual(Array.from(w2.room.parties.keys()), [2]);
+  const s2 = w2.knight('Sam');
+  assert.deepEqual(s2.of('prize').map(p => p.id), ['p1.0']);
+});

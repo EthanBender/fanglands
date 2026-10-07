@@ -559,6 +559,45 @@ test('hello caps and atlas are kept with the knight (known caps only, in order),
   assert.equal('atlas' in a.last('welcome'), false);
 });
 
+// The Great Spread (spec §11): a page from an older world (its hello names another Atlas, or none) is keyed apart on every
+// map ('over' is 'over@stale' in the Room), so it never shares presence, keepers or trades with the new world; two old
+// pages still see each other, every message to a game names the map as it knows it ('over'), and a nap keeps the keying.
+test('an older world\'s page is keyed onto over@stale: no presence, keeper or trade with the new world; old pages share with each other; a nap keeps it', () => {
+  const atlas = { hash: 'ab12cd34ef56ab78', knows: () => false, speedMax: 350 };
+  let t = 1000;
+  const room = new Room({ now: () => t, wake: () => { }, atlas });
+  const sock = () => { const s = { got: [], state: null, send(str) { s.got.push(JSON.parse(str)); }, close() { }, attach(st) { s.state = st; } }; s.of = k => s.got.filter(m => m.t === k); return s; };
+  const knight = (name, a) => { const s = sock(); room.join(s, name); room.message(s, JSON.stringify(Object.assign({ t: 'hello', v: 1, caps: [] }, a === undefined ? {} : { atlas: a }))); return s; };
+  const nu = knight('New', atlas.hash), old = knight('Old', '0000000000000000'), none = knight('Older');
+  // each side keeps its own monsters: the first on each map is its keeper
+  assert.equal(nu.of('welcome')[0].keeper, 'New');
+  assert.equal(old.of('welcome')[0].keeper, 'Old');
+  assert.equal(none.of('welcome')[0].keeper, 'Old', 'two old pages share one stale overworld');
+  assert.equal(old.of('welcome')[0].atlas, atlas.hash, 'the old page hears the new Atlas (96-atlas shows its reload plaque)');
+  assert.equal(old.state.map, 'over@stale'); assert.equal(nu.state.map, 'over');
+  for (const s of [nu, old, none]) s.got.length = 0;
+  room.message(nu, JSON.stringify({ t: 'p', map: 'over', x: 100, y: 100 }));
+  room.message(old, JSON.stringify({ t: 'p', map: 'over', x: 110, y: 100 }));
+  assert.deepEqual(old.of('p'), [], 'the old page never sees the new knight');
+  assert.deepEqual(nu.of('p'), [], 'the new page never sees the old knight');
+  assert.deepEqual(none.of('p').map(m => [m.n, m.map]), [['Old', 'over']], 'old pages see each other, on the map their game knows');
+  // an instance is keyed apart too, and a trade between the two worlds is refused as another map
+  room.message(nu, JSON.stringify({ t: 'p', map: 'deepholm', x: 100, y: 100 }));
+  room.message(old, JSON.stringify({ t: 'p', map: 'deepholm', x: 110, y: 100 }));
+  assert.equal(old.state.map, 'deepholm@stale');
+  room.message(old, JSON.stringify({ t: 'trade_ask', to: 'New' }));
+  assert.equal(old.of('trade_no').pop().code, 'map');
+  assert.deepEqual(room.knightsView().map(k => [k.n, k.map, k.atlas]), [['New', 'deepholm', 'same'], ['Old', 'deepholm', 'old'], ['Older', 'over', 'none']]);
+  // a nap: rebuilt from the attachments, the keying holds (and is worked out again from this world's Atlas)
+  const again = new Room({ now: () => t, wake: () => { }, atlas });
+  for (const s of [nu, old]) { const s2 = sock(); again.restore(s2, s.state); }
+  assert.deepEqual(Array.from(again.maps.keys()).sort(), ['deepholm', 'deepholm@stale']);
+  // the same attachment in a world with no Atlas (nothing judged): not keyed apart
+  const bare = new Room({ now: () => t, wake: () => { }, atlas: null });
+  bare.restore(sock(), old.state);
+  assert.deepEqual(Array.from(bare.maps.keys()), ['deepholm']);
+});
+
 // Review round 3 (4 Oct 2026): two knights whose games have stopped (sockets open) on one map, the Room rebuilt from their
 // sockets after a nap in either order. Before the fix, when the knight restored first had also come first, his stale moment
 // stayed in the past and every alarm asked for the next one at that same moment (thousands in one instant; in workerd the loop

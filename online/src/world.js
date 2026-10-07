@@ -338,19 +338,42 @@ export class World {
   async putSave(req) {
     // goes through while kept out for bad words (session, opts.saving)
     const s = this.auth(req, { saving: true });
-    const text = await this.saveBody(req);
+    const { text, value } = await this.readSave(req);
+    // The stale-world guard (the Great Spread, spec §11; docs/ONLINE.md "Saves and the world's version"): a knight whose
+    // newest save is from world 2 or later is never written over by a page from an older world (its worldV is lower; none
+    // is world 1). 409 stale_world, and the page says "This page is older than the world. Reload." The admin's rollback and
+    // the pin's restore do not come through here on purpose: a restored old save migrates on its next load.
+    const stored = this.storedWorldV(s.name_lc);
+    if (stored >= 2 && worldVOf(value) < stored) throw oops(409, 'stale_world', 'stale_world');
     const ver = this.storeSave(s.name_lc, text);
     return json({ at: ver.at, ver: ver.ver });
   }
 
-  // A save's body: at most SAVE_MAX bytes of JSON, kept as the exact string that came in.
-  async saveBody(req) {
+  // A save's body: at most SAVE_MAX bytes of JSON, kept as the exact string that came in (and the parsed value beside it).
+  async readSave(req) {
     const text = await req.text();
     if (new TextEncoder().encode(text).length > SAVE_MAX) throw oops(413, 'that save is too big', 'full');
     let v = null;
     try { v = JSON.parse(text); } catch (e) { }
     if (!v || typeof v !== 'object') throw oops(400, 'that save is not JSON', 'bad');
-    return text;
+    return { text, value: v };
+  }
+  async saveBody(req) { return (await this.readSave(req)).text; }
+
+  // the world the knight's newest stored save was made in: its worldV (none, or no save, is world 1; 0 when no save)
+  // (SQLite reads the one field; a stored string its JSON reader refuses is read whole instead, so a save is never stuck)
+  storedWorldV(lc) {
+    try {
+      const r = this.row("SELECT json_extract(json, '$.worldV') AS w FROM saves WHERE name_lc = ? ORDER BY ver DESC LIMIT 1", lc);
+      if (!r) return 0;
+      const w = Number(r.w);
+      return Number.isInteger(w) && w > 1 ? w : 1;
+    } catch (e) {
+      const r = this.row('SELECT json FROM saves WHERE name_lc = ? ORDER BY ver DESC LIMIT 1', lc);
+      if (!r) return 0;
+      let v = null; try { v = JSON.parse(r.json); } catch (e2) { }
+      return worldVOf(v);
+    }
   }
 
   storeSave(lc, text) {
@@ -508,6 +531,14 @@ export class World {
     const post = method === 'POST';
     { const r = await backupCall(this, req, url, call, method); if (r) return r; }
     if (call === 'accounts' && method === 'GET') return json(this.accountsView());
+    // the Great Spread's deploy step (spec §11; tools/spread-deploy-step.mjs, run only inside the owner-approved deploy):
+    // GET lists the live drop parties on the overworld, POST ends them (their unlit crackers lie at the old world's places;
+    // a prize already won stays claimable). The world's Atlas hash rides along, so the step can see the new world is live.
+    if (call === 'spread-parties' && (method === 'GET' || post)) {
+      const parties = post ? this.room.endPartiesOn('over') : this.room.partiesOn('over');
+      if (post && parties.length) this.room.store.log({ at: this.now(), by: PARENT, act: 'party_end', target: 'over', detail: 'the Great Spread: ' + parties.length + ' drop part' + (parties.length === 1 ? 'y' : 'ies') + ' on the old map ended (' + parties.map(p => '#' + p.id).join(', ') + ')' });
+      return json({ atlas: ATLAS ? ATLAS.hash : null, mapW: ATLAS ? ATLAS.MAP_W : null, ended: post, parties });
+    }
     if (call === 'sim' && method === 'GET') return json(this.simView());   // the shared world: the meter, the Atlas, the movement check
     if (call === 'sim' && post) {
       // any of {move, master, maps}: the movement check (Stage 1), and which maps the world runs itself (Stage 2)
@@ -643,6 +674,8 @@ export class World {
 }
 
 const roleWord = role => role === 'admin' ? 'admin' : 'player';
+// a save's world (spec §10): its worldV, and a save that names none (or junk) is world 1
+export const worldVOf = save => { const v = save && save.worldV; return Number.isInteger(v) && v > 1 ? v : 1; };
 // where a call came from, as Cloudflare says it ('' when it does not: a local test world)
 const ipOf = req => String((req && req.headers && req.headers.get('cf-connecting-ip')) || '').trim().slice(0, 64);
 

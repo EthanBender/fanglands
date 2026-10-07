@@ -5,6 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
+import { readFileSync } from 'node:fs';
 import { Room, ROSTER_EVERY, SEEN_EVERY, KICK_TEXT } from '../src/room.js';
 import { MemoryStore, SqlStore, SCHEMA, migrate, LOGINS_KEPT } from '../src/store.js';
 import { makeHash, checkPassword } from '../src/auth.js';
@@ -438,4 +439,66 @@ test('the kick text and the Room constants the game reads stay what the contract
   assert.equal(KICK_TEXT, 'An admin sent you out of the world. You can come back in.');
   assert.equal(SEEN_EVERY, 60000); assert.equal(LOGINS_KEPT, 50); assert.equal(LOGINS_SHOWN, 10); assert.equal(RESETS_PER_MINUTE, 3);
   assert.ok(ROSTER_EVERY > 0);
+});
+
+// The Great Spread (spec §11; docs/ONLINE.md "Saves and the world's version"): once a knight's newest save is from world 2,
+// a page from an older world (a lower worldV; none is world 1) cannot write over it: 409 stale_world, nothing stored. A
+// newer or equal world goes through; the admin's rollback and the pin's restore bypass it on purpose (a restored old save
+// migrates on its next load), and then the old world's page may save again until that load.
+test('PUT /api/save: the stale-world guard (409 stale_world over a world-2 save), and the rollback and the pin bypass it', async () => {
+  const { w, tok } = await fourKnights();
+  const save = (v, mark) => JSON.stringify(Object.assign({ player: { playSeconds: 10, skills: {} }, quest: { stage: 3 }, mark }, v == null ? {} : { worldV: v }));
+  const put = (body, who = tok.Sam) => call(w, 'PUT', '/api/save', body, who);
+  const newest = async (who = tok.Sam) => JSON.parse((await call(w, 'GET', '/api/save', undefined, who)).data.save);
+  // a world-1 knight (an old save names no worldV): old pages save as before
+  assert.equal((await put(save(null, 'old a'))).status, 200);
+  assert.equal((await put(save(1, 'old b'))).status, 200);
+  // the first world-2 save (the migration's) goes through
+  assert.equal((await put(save(2, 'migrated'))).status, 200);
+  // now an old page is refused, with or without a worldV, and nothing is stored
+  for (const body of [save(null, 'stale a'), save(1, 'stale b'), save(0, 'stale c'), save('2', 'stale d'), JSON.stringify({ player: {}, worldV: 1.5 })]) {
+    const r = await put(body);
+    assert.deepEqual([r.status, r.data.error, r.data.code], [409, 'stale_world', 'stale_world'], body);
+  }
+  assert.equal((await newest()).mark, 'migrated');
+  // the new world and a newer one go through; then world 2 is refused under world 3
+  assert.equal((await put(save(2, 'new'))).status, 200);
+  assert.equal((await put(save(3, 'newer'))).status, 200);
+  assert.equal((await put(save(2, 'under 3'))).status, 409);
+  assert.equal((await newest()).mark, 'newer');
+  // another knight is never held by Sam's world
+  assert.equal((await put(save(1, 'pip old'), tok.Pip)).status, 200);
+  // the admin's rollback copies an old version forward: then the old world's save is the newest, and an old page may save
+  const vers = (await parent(w, 'GET', '/api/admin/saves?name=Sam')).data;
+  const oldVer = vers.map(v => v.ver).filter(v => v !== 'pin').sort((a, b) => a - b)[0];
+  assert.equal((await parent(w, 'POST', '/api/admin/rollback', { name: 'Sam', ver: oldVer })).status, 200);
+  assert.equal((await newest()).worldV, 2, 'the three kept versions: the oldest kept is "migrated", world 2');
+  // an admin's pin: a world-1 knight pinned and restored over a world-2 save, both bypass the guard
+  assert.equal((await put(save(2, 'mud new'), tok.MudGoll)).status, 200);
+  assert.equal((await call(w, 'POST', '/api/save/pin', save(1, 'mud pinned'), tok.MudGoll)).status, 200);
+  assert.equal((await put(save(1, 'mud stale'), tok.MudGoll)).status, 409);
+  const back = await call(w, 'POST', '/api/save/restore', undefined, tok.MudGoll);
+  assert.equal(back.status, 200);
+  assert.equal((await newest(tok.MudGoll)).mark, 'mud pinned');
+  assert.equal((await put(save(1, 'mud old again'), tok.MudGoll)).status, 200, 'restored to world 1: its page saves until it migrates');
+  // a world-1 version rolled back to by the parent page: the same
+  await put(save(1, 'pip old 2'), tok.Pip); await put(save(2, 'pip new'), tok.Pip);
+  assert.equal((await put(save(1, 'pip stale'), tok.Pip)).status, 409);
+  const pv = (await parent(w, 'GET', '/api/admin/saves?name=Pip')).data.map(v => v.ver).sort((a, b) => a - b);
+  assert.equal((await parent(w, 'POST', '/api/admin/rollback', { name: 'Pip', ver: pv[0] })).status, 200);
+  assert.equal((await newest(tok.Pip)).worldV, 1);
+  assert.equal((await put(save(1, 'pip after rollback'), tok.Pip)).status, 200);
+});
+
+// GET/POST /api/admin/spread-parties (tools/spread-deploy-step.mjs): the admin key only; it names the world's Atlas and size
+// (so the step can see the new world is live) and lists, or ends, the overworld's live parties (party.test has the Room side)
+test('GET/POST /api/admin/spread-parties: the admin key only; names the Atlas; lists and ends nothing when there is no party', async () => {
+  const { w, tok } = await fourKnights();
+  assert.equal((await call(w, 'GET', '/api/admin/spread-parties')).status, 401);
+  assert.equal((await call(w, 'POST', '/api/admin/spread-parties', undefined, tok.MudGoll)).status, 401, 'an admin knight\'s session is not the key');
+  const atlas = JSON.parse(readFileSync(new URL('../src/atlas.json', import.meta.url), 'utf8'));
+  let r = await parent(w, 'GET', '/api/admin/spread-parties');
+  assert.deepEqual(r.data, { atlas: atlas.hash, mapW: atlas.MAP_W, ended: false, parties: [] });
+  r = await parent(w, 'POST', '/api/admin/spread-parties');
+  assert.deepEqual(r.data, { atlas: atlas.hash, mapW: atlas.MAP_W, ended: true, parties: [] });
 });

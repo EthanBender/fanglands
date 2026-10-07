@@ -9,6 +9,7 @@
 // Feature file: registers through HOOKS and wraps save by reassignment. window.CLOUD is the register.
 // ============================================================================
 {
+  const STALE_PAGE = 'This page is older than the world. Reload.';
   const DEBOUNCE = 12000, TICK = 1.5;   // a 12 s hold: the free plan counts every call, and the page-hide flush covers leaving
   const lsGet = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
   const lsDel = k => { try { localStorage.removeItem(k); } catch (e) { } };
@@ -52,8 +53,16 @@
       if (CLOUD.pending) schedule();
       result = true;
     };
-    const bad = () => {
-      CLOUD.inflight = false; CLOUD.fails++;
+    const bad = e => {
+      CLOUD.inflight = false;
+      // the world holds this knight from a newer world than this page's (the Great Spread, spec §11: 409 stale_world): this
+      // page must not write again, here or to the cloud. SAVE_LOCK holds both (72-savelock), and the plaque says why; its
+      // tap reloads, and the new page brings the world's knight in
+      if (e && e.status === 409 && e.code === 'stale_world') {
+        CLOUD.pending = null; clearTimer(); SAVE_LOCK = true; saveLockSay = STALE_PAGE; notify(STALE_PAGE);
+        result = false; return;
+      }
+      CLOUD.fails++;
       if (!CLOUD.pending) CLOUD.pending = raw;
       if (CLOUD.fails >= 3 && !CLOUD.nagged) { CLOUD.nagged = true; notify('Could not reach the world — your progress is saved on this device for now.'); }
       result = false;
@@ -101,9 +110,9 @@
   HOOKS.selfTest.push((check, F, h) => {
     const L = window.LOGIN;
     const was = { enabled: NET.enabled, token: NET.token, fake: NET.fake, status: NET.status, playing: L && L.playing, notice, titleActive: title.active, slot: title.slot };
-    const puts = []; let down = false;
+    const puts = []; let down = false, stale = false;
     const fake = {
-      call(method, path, body) { if (method === 'PUT' && path === '/api/save') { if (down) throw Object.assign(new Error('down'), { status: 0 }); puts.push(body); return { at: 1 }; } return { ok: true }; },
+      call(method, path, body) { if (method === 'PUT' && path === '/api/save') { if (stale) throw Object.assign(new Error('stale_world'), { status: 409, code: 'stale_world' }); if (down) throw Object.assign(new Error('down'), { status: 0 }); puts.push(body); return { at: 1 }; } return { ok: true }; },
       open: () => { const s = { readyState: 1, send(str) { if (JSON.parse(str).t === 'hello') s.onmessage({ data: JSON.stringify({ t: 'welcome', me: 'Cohen', at: 1, keeper: 'Cohen' }) }); }, close() { s.readyState = 3; if (s.onclose) s.onclose(); } }; return s; },
     };
     try {
@@ -130,7 +139,15 @@
       check(P + 'with no knight playing online, a save never touches the cloud', !active() && CLOUD.pending === null && CLOUD.timer === null && puts.length === 3, { pending: CLOUD.pending });
       NET.setToken(null); if (L) L.playing = true; save(); const noToken = CLOUD.pending === null && CLOUD.timer === null;
       check(P + 'without a session there is nothing to push to', noToken, { noToken });
+      // the world holds a knight from a newer world (409 stale_world): the page stops writing and says so, once
+      NET.setToken('tok-test'); CLOUD.reset(); stale = true; notice = null; player.kills++; save(); CLOUD.flush();
+      const before = lsGet(title.slotKey(title.slot)), locked = SAVE_LOCK === true && saveLockSay === STALE_PAGE && CLOUD.pending === null && CLOUD.timer === null && CLOUD.fails === 0;
+      const said = !!notice && notice.text === 'This page is older than the world. Reload.';
+      player.kills++; save(); const pushedAgain = CLOUD.flush() || CLOUD.push(true) || CLOUD.pending !== null;
+      check(P + 'a push the world refuses as stale_world (409) locks the page: nothing more is written here or to the cloud, and it says "This page is older than the world. Reload."',
+        locked && said && !pushedAgain && lsGet(title.slotKey(title.slot)) === before && puts.length === 3, { locked, said, pushedAgain, lock: SAVE_LOCK, say: saveLockSay, notice: notice && notice.text, puts: puts.length });
     } finally {
+      SAVE_LOCK = false; saveLockSay = NEWER_WORLD;
       CLOUD.reset(); NET.disconnect(); NET.fake = was.fake; NET.enabled = was.enabled; NET.setToken(was.token); NET.status = 'off'; NET.me = null;
       if (L) L.playing = was.playing;
       notice = was.notice;

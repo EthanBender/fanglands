@@ -16,7 +16,7 @@ const centre = id => { const r = json.places.find(p => p.id === id).rects[0]; re
 test('the Atlas reads: a 16-digit hash, every region and instance a place, plain ids, one grid cell per overworld tile', () => {
   assert.ok(atlas);
   assert.match(atlas.hash, /^[0-9a-f]{16}$/);
-  assert.equal(atlas.MAP_W * atlas.MAP_H, 400 * 280);   // the Great Spread (Stage 4a)
+  assert.deepEqual([atlas.MAP_W, atlas.MAP_H], [W, H]);   // the size is the file's own (the game's, checked below); the grid holds W x H
   assert.equal(json.v, 2);
   for (const id of ['thistledown', 'hollowford', 'old_bridge', 'alchemy', 'necromancy']) assert.ok(json.anchors[id] && json.anchors[id].box.length === 4, 'anchor ' + id);
   for (const p of atlas.places) assert.match(p.id, /^[a-z0-9_]{1,40}$/);
@@ -63,7 +63,7 @@ test('FIXED_SOLID: walls and cliffs are, water and grass are not, the edge alway
   assert.equal(atlas.solidAt('over', -1, 5), true);
   assert.equal(atlas.solidAt('over', 5, H), true);
   assert.equal(atlas.solidAt('over', 0, 0), true);       // the Cave's rock border
-  assert.equal(atlas.solidAt('over', 5, 7), false);      // the Cave's floor, where you wake
+  assert.equal(atlas.solidAt('over', ...port('cave.spawn')), false);      // the Cave's floor, where you wake
   assert.equal(atlas.solidAt('over', ...port('pond.centre')), false);    // Miller's Pond: water is never fixed
   assert.equal(atlas.solidAt('spider_den', -1, 3), true);
   assert.equal(atlas.knows('over'), true);
@@ -90,6 +90,7 @@ test('the Room\'s reading matches the game\'s own Atlas on every overworld tile 
   g.window = g; vm.createContext(g); vm.runInContext(script, g);
   const A = g.ATLAS;
   assert.equal(A.hash(), atlas.hash);
+  assert.equal(vm.runInContext('MAP_W + "x" + MAP_H', g), W + 'x' + H);   // atlas.json's size is the game's
   let zones = 0, solids = 0;
   for (let ty = -1; ty <= H; ty++) for (let tx = -1; tx <= W; tx++) {
     if (A.zoneAt('over', tx, ty) !== atlas.zoneAt('over', tx, ty)) zones++;

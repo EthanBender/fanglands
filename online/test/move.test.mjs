@@ -9,8 +9,15 @@ import { MoveCheck, MoveBook, MIN_GAP, LOG_PER_DAY, MOVE_DAY_SCHEMA, MOVE_LOG_SC
 import { Room } from '../src/room.js';
 import { ATLAS_FILE } from '../../tools/atlas.mjs';
 
-const atlas = readAtlas(JSON.parse(fs.readFileSync(ATLAS_FILE, 'utf8')));
+const json = JSON.parse(fs.readFileSync(ATLAS_FILE, 'utf8'));
+const atlas = readAtlas(json);
 const TILE = 48, mid = t => t * TILE + TILE / 2;
+// the world's size and its places are read from atlas.json (its MAP_W/H, anchors and ports), never written as literals:
+// the searches run inside a 10-tile margin, and start at a port: the cave mouth (NEAR), Miller's Pond (POND), Thistledown's
+// square (FAR) or Hollowford's square (FARTHER)
+const W = json.MAP_W, H = json.MAP_H, EDGE = 10;
+const port = id => { const q = json.ports[id]; assert.ok(q, 'port ' + id); return q; };
+const NEAR = port('cave.mouth'), POND = port('pond.centre'), FAR = port('thistledown.square'), FARTHER = port('hollowford.square');
 
 // a knight on the overworld with this world's Atlas, and a check whose counts stay in memory
 function rig(opts = {}) {
@@ -25,7 +32,7 @@ function rig(opts = {}) {
 }
 // open ground: a tile with no FIXED_SOLID within `pad` tiles
 function openTile(fromX, fromY, pad = 3) {
-  for (let ty = fromY; ty < 170; ty++) for (let tx = fromX; tx < 250; tx++) {
+  for (let ty = fromY; ty < H - EDGE; ty++) for (let tx = fromX; tx < W - EDGE; tx++) {
     let ok = true; for (let dy = -pad; dy <= pad && ok; dy++) for (let dx = -pad; dx <= pad && ok; dx++) if (atlas.solidAt('over', tx + dx, ty + dy)) ok = false;
     if (ok) return [tx, ty];
   }
@@ -33,12 +40,12 @@ function openTile(fromX, fromY, pad = 3) {
 }
 // a FIXED_SOLID tile one thick between open tiles above and below (a wall to walk through)
 function thinWall() {
-  for (let ty = 2; ty < 170; ty++) for (let tx = 2; tx < 250; tx++) if (atlas.solidAt('over', tx, ty) && !atlas.solidAt('over', tx, ty - 1) && !atlas.solidAt('over', tx, ty + 1) && !atlas.solidAt('over', tx - 1, ty - 1) && !atlas.solidAt('over', tx + 1, ty + 1)) return [tx, ty];
+  for (let ty = 2; ty < H - EDGE; ty++) for (let tx = 2; tx < W - EDGE; tx++) if (atlas.solidAt('over', tx, ty) && !atlas.solidAt('over', tx, ty - 1) && !atlas.solidAt('over', tx, ty + 1) && !atlas.solidAt('over', tx - 1, ty - 1) && !atlas.solidAt('over', tx + 1, ty + 1)) return [tx, ty];
   throw new Error('no thin wall');
 }
 // a FIXED_SOLID tile with all eight neighbours open (a corner to walk round)
 function loneWall() {
-  for (let ty = 2; ty < 170; ty++) for (let tx = 2; tx < 250; tx++) {
+  for (let ty = 2; ty < H - EDGE; ty++) for (let tx = 2; tx < W - EDGE; tx++) {
     if (!atlas.solidAt('over', tx, ty)) continue;
     let n = 0; for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if ((dx || dy) && atlas.solidAt('over', tx + dx, ty + dy)) n++;
     if (!n) return [tx, ty];
@@ -47,7 +54,7 @@ function loneWall() {
 }
 
 test('walking at 175 px/s, 8 presences a second, for 20 seconds: nothing counted; every step checked', () => {
-  const r = rig(); const [tx, ty] = openTile(40, 20, 4);
+  const r = rig(); const [tx, ty] = openTile(...NEAR, 4);
   let x = mid(tx) - 60, out = [];
   r.at(x, mid(ty));
   for (let i = 0; i < 160; i++) { x += i % 40 < 20 ? 175 / 8 : -175 / 8; out.push(r.at(x, mid(ty))); }
@@ -57,7 +64,7 @@ test('walking at 175 px/s, 8 presences a second, for 20 seconds: nothing counted
 });
 
 test('the speed window with mounts: the horse at 350 (spd 350) passes; the same path with spd 175 is too fast once a second; a claimed spd over the fastest mover is cut to it', () => {
-  const [tx, ty] = openTile(40, 60, 6);
+  const [tx, ty] = openTile(...POND, 6);
   const run = (spd, step, n) => { const r = rig(); let x = mid(tx) - 200; r.at(x, mid(ty), 125, { spd }); const out = []; for (let i = 0; i < n; i++) { x += i % 16 < 8 ? step : -step; out.push(r.at(x, mid(ty), 125, { spd })); } return { out, c: r.counts(), r }; };
   const horse = run(350, 350 / 8, 32);
   assert.equal(horse.c.speed, 0);
@@ -97,7 +104,7 @@ test('FIXED_SOLID: a step straight through a wall counts, a step into one counts
 });
 
 test('a jump (j went up) waives that step, wherever it goes, but not a landing in a wall; more than 6 jumps in 10 s is logged once', () => {
-  const [tx, ty] = openTile(40, 20, 4), [fx, fy] = openTile(150, 100, 4), [wx, wy] = thinWall();
+  const [tx, ty] = openTile(...NEAR, 4), [fx, fy] = openTile(...FAR, 4), [wx, wy] = thinWall();
   const r = rig();
   r.at(mid(tx), mid(ty));
   r.j++; assert.ok(r.at(mid(fx), mid(fy)).ok);                         // across the world in one step
@@ -111,7 +118,7 @@ test('a jump (j went up) waives that step, wherever it goes, but not a landing i
 });
 
 test('a slow frame or a stalled line never counts: a second of presences arriving at once, a 2 s hitch, a 50 ms frame', () => {
-  const [tx, ty] = openTile(40, 20, 6);
+  const [tx, ty] = openTile(...NEAR, 6);
   const r = rig(); let x = mid(tx) - 150;
   r.at(x, mid(ty));
   for (let i = 0; i < 4; i++) { x += 175 / 8; r.at(x, mid(ty)); }
@@ -123,7 +130,7 @@ test('a slow frame or a stalled line never counts: a second of presences arrivin
 });
 
 test('not judged: another Atlas or none (counted old), the island, an unknown map, a death and the respawn after it, the first step; off judges and counts nothing', () => {
-  const [tx, ty] = openTile(40, 20, 4), [fx, fy] = openTile(150, 100, 4);
+  const [tx, ty] = openTile(...NEAR, 4), [fx, fy] = openTile(...FAR, 4);
   const old = rig({ atlas: 'f00' }); old.at(mid(tx), mid(ty)); old.at(mid(fx), mid(fy));
   let c = old.counts(); assert.deepEqual([c.checked, c.skipped, c.old], [0, 2, 2]);
   const none = rig({ atlas: null }); none.at(1, 1); assert.equal(none.counts().old, 1);
@@ -163,7 +170,7 @@ test('in the Room: the check only watches. A presence through a wall is relayed 
   const sock = () => { const s = { got: [], send(str) { s.got.push(JSON.parse(str)); }, close() { }, attach() { } }; return s; };
   const a = sock(), b = sock();
   room.join(a, 'Ann'); room.message(a, JSON.stringify({ t: 'hello', v: 1, caps: [], atlas: atlas.hash }));
-  room.join(b, 'Ben'); room.message(b, JSON.stringify({ t: 'hello', v: 1 }));
+  room.join(b, 'Ben'); room.message(b, JSON.stringify({ t: 'hello', v: 1, atlas: atlas.hash }));   // the same world (an older page is keyed apart: room.test)
   const [wx, wy] = thinWall();
   room.message(a, JSON.stringify({ t: 'p', map: 'over', x: mid(wx), y: mid(wy - 1), j: 0, spd: 175 }));
   room.message(b, JSON.stringify({ t: 'p', map: 'over', x: 5, y: 5 }));
@@ -184,7 +191,7 @@ test('in the Room: the check only watches. A presence through a wall is relayed 
 });
 
 test('a forged position far off the map is never judged or remembered, and two messages can never make the World walk a long line', () => {
-  const [tx, ty] = openTile(40, 20, 4);
+  const [tx, ty] = openTile(...NEAR, 4);
   // count every tile the check looks at
   let calls = 0; const spy = Object.create(atlas); spy.solidAt = (...a) => { calls++; return atlas.solidAt(...a); };
   const book = new MoveBook(null, () => Date.parse('2026-10-03T15:00:00Z'));
@@ -202,7 +209,7 @@ test('a forged position far off the map is never judged or remembered, and two m
     assert.ok(calls < 10 && Date.now() - t0 < 50, `looked at ${calls} tiles in ${Date.now() - t0} ms`);
   }
   // a real but huge step on the map (not a jump): the line is never walked past CROSS_MAX; the speed check catches it
-  const [fx, fy] = openTile(200, 140, 4);
+  const [fx, fy] = openTile(...FARTHER, 4);
   assert.ok(Math.hypot(mid(fx) - mid(tx), mid(fy) - mid(ty)) > CROSS_MAX);
   send(mid(tx), mid(ty)); calls = 0;
   const leap = send(mid(fx), mid(fy));
