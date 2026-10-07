@@ -58,6 +58,10 @@
   HOOKS.selfTest.push((check, F, h) => {
     const P = 'teacher: ';
     const was = { enabled: NET.enabled, token: NET.token, fake: NET.fake, notice, seen: lsGet(SEEN_KEY), on: T.on, pause: T.pauseUntil };
+    // the frames run here (F.sim, F.step) walk a hired companion up beside the knight; she goes back where she was, or a later
+    // self-test drawing at the knight's place finds two figures there (knight gear's atPlayer, with --play's Sera)
+    const comp = player.companion && typeof player.companion === 'object' ? player.companion : null;
+    const comp0 = comp ? { x: comp.x, y: comp.y, hp: comp.hp, downT: comp.downT } : null;
     let sock = null, role = 'player';
     const world = {
       call(method, path) { if (path === '/api/save' && method === 'PUT') return { at: 1, ver: 1 }; if (path === '/api/status') return { ok: true, online: 0, names: [] }; return {}; },
@@ -128,6 +132,8 @@
       try { if (was.seen == null) localStorage.removeItem(SEEN_KEY); else localStorage.setItem(SEEN_KEY, was.seen); } catch (e) { }
       if (window.CHAT) CHAT.log.length = 0;
       closePanel();
+      if (comp0 && player.companion === comp) Object.assign(comp, comp0);
     }
+    check(P + 'the companion is where she was before these checks', !comp0 || (player.companion === comp && comp.x === comp0.x && comp.y === comp0.y), { comp0, now: comp && { x: comp.x, y: comp.y } });
   });
 }

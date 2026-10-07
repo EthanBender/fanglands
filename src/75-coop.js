@@ -1111,6 +1111,9 @@
     const P = 'coop (watched): ';
     if (window.INSTANCES && INSTANCES.active && INSTANCES.active()) INSTANCES.leave();
     const was = { enabled: NET.enabled, token: NET.token, fake: NET.fake, px: player.x, py: player.y, paused, title: title.active };
+    // the frames run here walk a hired companion up beside the knight; she goes back where she was (as 79-teacher's self-test)
+    const comp = player.companion && typeof player.companion === 'object' ? player.companion : null;
+    const comp0 = comp ? { x: comp.x, y: comp.y, hp: comp.hp, downT: comp.downT } : null;
     const sent = []; let sock = null;
     const push = m => { if (sock && sock.onmessage) sock.onmessage({ data: JSON.stringify(m) }); };
     const fake = { call: async () => ({}), open: () => { sock = { readyState: 1, send(str) { const m = JSON.parse(str); sent.push(m); if (m.t === 'hello') push({ t: 'welcome', me: 'Cohen', at: 0, keeper: 'Cohen' }); }, close() { sock.readyState = 3; } }; return sock; } };
@@ -1154,6 +1157,8 @@
       reset(); monsters = real; S.viewed = false; aloneReset();
       if (keep) Object.assign(gob, keep);
       player.x = was.px; player.y = was.py; paused = was.paused; title.active = was.title; h.peace(false);
+      if (comp0 && player.companion === comp) Object.assign(comp, comp0);
     }
+    check(P + 'the companion is where she was before these checks', !comp0 || (player.companion === comp && comp.x === comp0.x && comp.y === comp0.y), { comp0, now: comp && { x: comp.x, y: comp.y } });
   });
 }
