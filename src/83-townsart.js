@@ -4470,7 +4470,7 @@ const TOWNSFOLK_ART = (() => {
     },
     // ---------- Cinder Meg the charcoal-burner: an old woman in a sooty red-brown dress and a grey hood, her white hair ----------
     // wisping out, smudges of soot, a leather apron, her clamp's long rake
-    meg: {
+    cinder_meg: {
       build: 'adult', skin: SKIN.tan,
       face: { eye: '#2a1a10', lash: '#2a1a10', brow: '#c9c0b0', lines: true, mouth: 'smile', lip: '#a05050', age: 'elder' },
       hair: { style: 'bun', c: '#e2dccf' },

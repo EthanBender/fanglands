@@ -271,7 +271,9 @@
       targets.push({ what: r.id + ' rail', x: p.x, y: p.y, t: tileAt(p.x, p.y) });
       for (const [dx, dy] of N8) { const x = p.x + dx, y = p.y + dy; if (inMap(x, y) && PLACEABLE_ON.has(tileAt(x, y)) && !insideBuilding(x, y)) targets.push({ what: r.id + ' mare', x, y, t: HORSE }); } }
     const signs = new Set();
-    for (let r = 2; r <= WORLD_REV; r++) for (const b of ((A.REVS || {})[r] || {}).boxes || []) for (let y = b[1]; y <= b[3]; y++) for (let x = b[0]; x <= b[2]; x++) if (inMap(x, y) && tileAt(x, y) === T.SIGN && !signs.has(idx(x, y))) { signs.add(idx(x, y)); targets.push({ what: 'signpost', x, y, t: T.SIGN }); }
+    // (Stage 5's boxes: Stage 6's footprint runs the length of every road, and its own check keeps the traders off the posts)
+    for (let r = 2; r <= WORLD_REV; r++) { const R = (A.REVS || {})[r]; if (!R || !/^5/.test(R.stage || '')) continue;
+      for (const b of R.boxes || []) for (let y = b[1]; y <= b[3]; y++) for (let x = b[0]; x <= b[2]; x++) if (inMap(x, y) && tileAt(x, y) === T.SIGN && !signs.has(idx(x, y))) { signs.add(idx(x, y)); targets.push({ what: 'signpost', x, y, t: T.SIGN }); } }
     const keep = { x: player.x, y: player.y, f: player.facing }, homes = NPCS.map(n => [n, n.px, n.py]);
     try {
       for (const n of NPCS) if (n.home) { n.px = n.home.x; n.py = n.home.y; }
@@ -336,7 +338,8 @@
   // monster's spawn, a signpost, a built place's box, a shop or quest marker); a GLANCE is a landmark on screen (a stop,
   // a building, a reserved place's stakes, the river or the sea, a bridge, a wall). Reports the longest gap of each.
   // the roads Stage 5 brings under the limits (§13 STAGE 5: "after 5f, the beat-gap limits hold on R1, R2 and R3")
-  const BEAT_HELD = ['r1_cave', 'r2_sea', 'r3_long'], BEAT_LIMIT = { stop: 73, glance: 36 };
+  // (Stage 6 holds every main road: §13 STAGE 6, "stop gap <= 73 and glance gap <= 36 on every main road")
+  const BEAT_HELD = A.MAIN_ROADS.slice(), BEAT_LIMIT = { stop: 73, glance: 36 };
   function beatGaps() {
     const segs = [], beats = [];
     const BRIDGE = Tn('BRIDGE'), WALLISH = new Set([T.TOWN_WALL, Tn('CLIFF'), Tn('PALISADE')].filter(v => v >= 0));
@@ -347,6 +350,10 @@
     for (const id of Object.keys(A.ANCHORS)) { const b = A.box(id); if (!b) continue; const kind = A.ANCHORS[id].kind === 'place' || A.isBuilt(id) ? 'stop' : 'glance';
       for (let y = b[1]; y <= b[3]; y += 2) for (let x = b[0]; x <= b[2]; x += 2) beats.push([x, y, kind, id]); }
     for (const b of BUILDINGS) beats.push([b.x, b.y, 'glance', 'building']);
+    // the roads' own (93-roads, Stage 6): a place to stop for is a stop (a wreck to search, a shrine, a cache, a named beast,
+    // a trader); a milestone, a lantern post and a cairn are glances
+    if (window.ROADS) { for (const p of ROADS.pois || []) if (p.at) beats.push([p.at[0], p.at[1], 'stop', 'poi ' + p.id]);
+      for (const id in ROADS.roads) for (const m of ROADS.roads[id].marks || []) beats.push([m.x, m.y, 'glance', m.kind]); }
     for (let y = 0; y < MAP_H; y += 2) for (let x = 0; x < MAP_W; x += 2) { const t = map[y * MAP_W + x]; if (t === T.WATER || t === BRIDGE || WALLISH.has(t) || (window.DECO && DECO.isBridge(y * MAP_W + x))) beats.push([x, y, 'glance', tileName(t)]); }
     const out = [];
     for (const id of A.MAIN_ROADS) {
@@ -405,7 +412,7 @@
       // (Stage 5 is built: the Cave, Sea and Long Roads hold the limits, a stop at most every 73 tiles and a glance at most every
       // 36, each beat within 10 tiles of the road; the other main roads are reported, and Stage 6 holds them all)
       { const r = beatGaps(), held = r.filter(q => BEAT_HELD.includes(q.road)), bad = held.filter(q => q.stopGap > BEAT_LIMIT.stop || q.glanceGap > BEAT_LIMIT.glance);
-        check(PF + 'the beat gaps (section 6): on the Cave Road, the Sea Road and the Long Road a stop comes at most every 73 tiles and a glance at most every 36, each within 10 tiles of the road (the other main roads are reported until Stage 6)',
+        check(PF + 'the beat gaps (section 6): on every main road (the Cave, Sea, Long, Goblin, Wolfwood and Ash Roads) a stop comes at most every 73 tiles and a glance at most every 36, each within 10 tiles of the road',
           r.length === A.MAIN_ROADS.length && r.every(q => q.length > 0) && held.length === BEAT_HELD.length && !bad.length, { r, bad }); }
       // regionAt asks the outlines directly (section 12): no bisect through REGIONS.find on the way
       { const nf = Object.getOwnPropertyDescriptor(REGIONS, 'find'); let calls = 0;

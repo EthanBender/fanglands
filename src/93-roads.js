@@ -61,7 +61,7 @@
     // ordinary ground: the mare may be tied on the road and a knight may stand anything on it the rules allow (the
     // wrap below keeps the road itself clear)
     PLACEABLE_ON.add(T_ROAD); PLACEABLE_ON.add(T_VERGE);
-    if (window.TAP_NAMES) Object.assign(TAP_NAMES, { ROAD: 'Road', VERGE: 'Verge' });
+    if (typeof TAP_NAMES !== 'undefined') Object.assign(TAP_NAMES, { ROAD: 'Road', VERGE: 'Verge' });
   };
 
   // ---------- the network's names ----------
@@ -136,7 +136,12 @@
   let JIT = null;
   const jitter = () => { if (!JIT) { JIT = new Float32Array(MAP_W * MAP_H); const r = mulberry32(SEED); for (let i = 0; i < JIT.length; i++) JIT[i] = 0.93 + r() * 0.22; } return JIT; };
   // pave: the cost of laying a main road through (x, y); track: the cost of walking a track that stays as it lies
+  // a person's own cell costs a little more (the warden stands in his gate: the road goes by him, so a rider passes)
+  let WHO = null;
   function cost(x, y, mode) {
+    const k = cost0(x, y, mode); return k >= 0 && WHO && WHO[y * MAP_W + x] ? k + 4 : k;
+  }
+  function cost0(x, y, mode) {
     const i = y * MAP_W + x, t = map[i];
     if (t === T_ROAD) return 0.35;
     if (t === T_VERGE) return 0.55;
@@ -185,9 +190,10 @@
   // nearest cell a road may stand on, within 4
   function standOn(x, y, mode) {
     x = Math.round(x); y = Math.round(y);
-    if (inMap(x, y) && cost(x, y, mode) >= 0) return [x, y];
+    const free = (cx, cy) => inMap(cx, cy) && cost(cx, cy, mode) >= 0 && !(WHO && WHO[cy * MAP_W + cx]);   // (nor where someone stands: the warden at his post)
+    if (free(x, y)) return [x, y];
     for (let r = 1; r <= 4; r++) { let best = null;
-      for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) { if (Math.max(Math.abs(dx), Math.abs(dy)) !== r || !inMap(x + dx, y + dy) || cost(x + dx, y + dy, mode) < 0) continue;
+      for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) { if (Math.max(Math.abs(dx), Math.abs(dy)) !== r || !free(x + dx, y + dy)) continue;
         const d = Math.hypot(dx, dy); if (!best || d < best[2]) best = [x + dx, y + dy, d]; }
       if (best) return [best[0], best[1]]; }
     return null;
@@ -197,10 +203,14 @@
   // ---------- the pass ----------
   let NET = null;   // Uint8Array: 1 = a tile of the network (ROAD, a track's walked cells, the crossings adopted on the way)
   const addNet = (x, y) => { if (inMap(x, y)) NET[y * MAP_W + x] = 1; };
+  // the Ashfields' open ground (11-main's count: grass, dirt and scorch between the ash), before and after the pass
+  const afGreen = () => { const G = new Set([T.GRASS, T.DIRT, Tn('SCORCH')].filter(v => v >= 0)); let n = 0; for (let i = 0; i < map.length; i++) if (G.has(map[i]) && inAF(i % MAP_W, (i / MAP_W) | 0)) n++; return n; };
+  RD.afGreen = afGreen;
   function lay(api) {
     const t0 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
     const set = api.setTile;
-    ensureTiles(); sets(); buildProtect(); buildAF();
+    ensureTiles(); sets(); buildProtect(); buildAF(); RD.afBefore = afGreen();
+    WHO = new Uint8Array(MAP_W * MAP_H); for (const n of NPCS) if (inMap(n.x, n.y)) WHO[n.y * MAP_W + n.x] = 1;
     NET = RD.net = new Uint8Array(MAP_W * MAP_H);
     RD.laid = []; RD.roads = {};
     const S = RD.stats = { paved: 0, verges: 0, felled: 0, adopted: 0, pops: 0, legs: 0, failed: [], ms: 0, aStarMs: 0 };
@@ -254,6 +264,71 @@
     S.aStarMs = Math.round(S.aStarMs * 10) / 10;
   }
 
+  // ---------- the places the network reaches, and the ones it does not (each with its reason) ----------
+  const OFF_ROAD = {
+    pond: "Miller's Pond: Mill Lane runs past its west shore (the river leaves its east shore, and the lane has no bridge); the pond is water and its stepping stones an Agility course",
+    stone_circle: 'the standing stones: the Ash Road goes round them, not through (section 5)',
+    gull_isle: 'an island: Harl\'s boat from the dock', ironclad_isle: 'an island: by boat', far_shore: 'east of the Sound: Harl\'s ferry', redcut: 'east of the Sound: Harl\'s ferry',
+    wreck_rock: 'out in the Grey Sea (reserved: a boat route later)', brightwater: 'ringed by cliff: the blimp, later (reserved)',
+    drill_field: "the bulldozer's flat test lane in Thistledown's fields: no port", deepholm_rock: 'rock scenery (Deepholm is under it): no port',
+    ash_wastes: 'reserved Wilds, not open yet', sylvaris_growth: "Sylvaris' growth ring, kept free",
+  };
+  RD.OFF_ROAD = OFF_ROAD;
+  // a place's own way to its road (the north outpost's trail from its gap): walked into the network when none of its
+  // ports is within 3 tiles of it
+  function placeLinks() {
+    const S = RD.stats; S.links = [];
+    const reached = p => { for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) { const x = Math.round(p[0]) + dx, y = Math.round(p[1]) + dy; if (inMap(x, y) && NET[y * MAP_W + x]) return true; } return false; };
+    for (const id of Object.keys(A.ANCHORS)) {
+      if (OFF_ROAD[id]) continue;
+      const ports = Object.keys(A.PORTS).filter(k => k.split('.')[0] === id).map(k => A.port(k)); if (!ports.length || ports.some(reached)) continue;
+      const [px, py] = ports[0].map(Math.round), a = standOn(px, py, 'track'); if (!a) continue;
+      let best = null; for (let y = a[1] - 20; y <= a[1] + 20; y++) for (let x = a[0] - 20; x <= a[0] + 20; x++) if (inMap(x, y) && NET[y * MAP_W + x]) { const d = Math.hypot(x - a[0], y - a[1]); if (!best || d < best.d) best = { x, y, d }; }
+      if (!best) { S.links.push({ id, failed: 'no road within 20' }); continue; }
+      const p = search(a[0], a[1], best.x, best.y, 'track', 12); if (!p) { S.links.push({ id, failed: 'no walk' }); continue; }
+      for (let q = 0; q < p.length; q++) { const [x, y] = p[q]; addNet(x, y); if (q) { const [qx, qy] = p[q - 1]; if (qx !== x && qy !== y) { if (walkable(map[qy * MAP_W + x])) addNet(x, qy); else addNet(qx, y); } } }
+      S.links.push({ id, tiles: p.length });
+    }
+  }
+
+  // ---------- stitching: every piece of the network joined to the rest ----------
+  // The tracks meet at their nodes, but a road that ends at one gate of a place and another that leaves by another gate
+  // (Thistledown's west and east gates, Hollowford's four ways in) are joined only by the place's own streets: each piece
+  // not joined to the largest is walked to it (a track's walk: over its streets and paths, never paved) from its nearest
+  // cell, and the walk joins the network.
+  function components() {
+    const comp = new Int32Array(MAP_W * MAP_H).fill(-1), sizes = []; let n = 0;
+    for (let i = 0; i < NET.length; i++) { if (!NET[i] || comp[i] >= 0) continue;
+      const q = [i]; comp[i] = n; for (let k = 0; k < q.length; k++) { const c = q[k], x = c % MAP_W, y = (c / MAP_W) | 0;
+        for (const [dx, dy] of N4) { const nx = x + dx, ny = y + dy; if (!inMap(nx, ny)) continue; const j = ny * MAP_W + nx; if (NET[j] && comp[j] < 0) { comp[j] = n; q.push(j); } } }
+      sizes.push(q.length); n++; }
+    return { comp, sizes };
+  }
+  function stitch() {
+    const S = RD.stats; S.stitches = [];
+    let { comp, sizes } = components();
+    const main = sizes.indexOf(Math.max(...sizes)), joined = new Set([main]);
+    // each other piece, smallest first: a search outward from its cells (any tile, 30 at most) to the nearest joined cell,
+    // then a track's walk between the two
+    const order = sizes.map((n, k) => k).filter(k => k !== main).sort((a, b) => sizes[a] - sizes[b]);
+    for (const k of order) {
+      if (joined.has(k)) continue;
+      const dist = new Map(), q = []; for (let i = 0; i < NET.length; i++) if (comp[i] === k) { dist.set(i, 0); q.push(i); }
+      let hit = -1, src = new Map(q.map(i => [i, i]));
+      for (let h = 0; h < q.length && hit < 0; h++) { const c = q[h], d = dist.get(c); if (d >= 30) continue; const x = c % MAP_W, y = (c / MAP_W) | 0;
+        for (const [dx, dy] of N4) { const nx = x + dx, ny = y + dy; if (!inMap(nx, ny)) continue; const j = ny * MAP_W + nx; if (dist.has(j)) continue;
+          dist.set(j, d + 1); src.set(j, src.get(c)); if (NET[j] && joined.has(comp[j])) { hit = j; break; } q.push(j); } }
+      if (hit < 0) { S.stitches.push({ piece: sizes[k], failed: 'nothing within 30' }); continue; }
+      const a = src.get(hit), p = search(a % MAP_W, (a / MAP_W) | 0, hit % MAP_W, (hit / MAP_W) | 0, 'track', 24);
+      if (!p) { S.stitches.push({ piece: sizes[k], failed: 'no walk' }); continue; }
+      for (let r = 0; r < p.length; r++) { const [x, y] = p[r]; addNet(x, y); if (r) { const [px, py] = p[r - 1]; if (px !== x && py !== y) { if (walkable(map[py * MAP_W + x])) addNet(x, py); else addNet(px, y); } } }
+      joined.add(k); S.stitches.push({ from: p[0], to: p[p.length - 1], tiles: p.length });
+      // a walk may have crossed other pieces: they are joined now too
+      for (const [x, y] of p) { const c = comp[y * MAP_W + x]; if (c >= 0) joined.add(c); }
+    }
+    S.components = components().sizes.length;
+  }
+
   // ---------- the footprint: every tile the pass changed or walked, grown by 2, as row runs (REVS[7]) ----------
   const REV = 7, FOOT = [];
   if (A.REVS) A.REVS[REV] = { stage: '6', by: '93-roads', why: 'the roads: every tile the roads pass paved, walked or stood a thing on, grown by 2 (the road corridors and the cells beside them)', boxes: FOOT };
@@ -302,16 +377,24 @@
   // open ground a thing may stand on: not a road's own cell, not a place's, not a building's, nobody standing there, and
   // (for a solid thing) the open ground round it one piece, so it never cuts a way
   const OPEN_GROUND = () => new Set(['GRASS', 'FLOWERS', 'MUSHROOM', 'FERN', 'SAND', 'SCORCH', 'ASH', 'DIRT', 'AF_DRYGRASS', 'AF_SINGED', 'AF_CINDERS', 'VERGE'].map(Tn).filter(v => v >= 0));
-  let OG = null, DOORS = null;
+  let OG = null, DOORS = null, GREEN = null;
   const RING8 = [[-1, -1], [0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0]];
   const simple = (x, y) => { const o = RING8.map(([dx, dy]) => walkable(map[(y + dy) * MAP_W + x + dx]) && !buildingAt(x + dx, y + dy));
     let runs = 0; for (let k = 0; k < 8; k++) if (o[k] && !o[(k + 7) % 8]) runs++; return runs === 1 || (runs === 0 && o.every(Boolean)); };
+  // (the masks a stand reads, made once a pass: people and spawns with the tile round each, the reserved plots not built)
+  let NEARP = null, RESV = null;
+  const markNear = (x, y) => { for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (inMap(x + dx, y + dy)) NEARP[(y + dy) * MAP_W + x + dx] = 1; };
+  function standMasks() {
+    NEARP = new Uint8Array(MAP_W * MAP_H); RESV = new Uint8Array(MAP_W * MAP_H);
+    for (const n of NPCS) markNear(n.x, n.y); for (const m of MONSTER_SPAWNS) markNear(m.tx, m.ty);
+    for (const r of A.reserved()) { if (A.isBuilt(r.id)) continue; const b = r.box; for (let y = Math.max(0, b[1]); y <= Math.min(MAP_H - 1, b[3]); y++) for (let x = Math.max(0, b[0]); x <= Math.min(MAP_W - 1, b[2]); x++) RESV[y * MAP_W + x] = 1; }
+  }
   function canStand(x, y, solid, inPlace) {
     if (!inMap(x, y) || x < 2 || y < 2 || x > MAP_W - 3 || y > MAP_H - 3) return false;
-    const i = y * MAP_W + x; if (!OG.has(map[i]) || NET[i] || (!inPlace && PROTECT[i]) || buildingAt(x, y) || A.reservedAt(x, y) && !A.isBuilt(A.reservedAt(x, y))) return false;
-    if (NPCS.some(n => Math.abs(n.x - x) <= 1 && Math.abs(n.y - y) <= 1) || MONSTER_SPAWNS.some(m => Math.abs(m.tx - x) <= 1 && Math.abs(m.ty - y) <= 1)) return false;
+    const i = y * MAP_W + x; if (!OG.has(map[i]) || NET[i] || (!inPlace && PROTECT[i]) || NEARP[i] || RESV[i]) return false;
+    if (inAF(x, y) && GREEN.has(map[i])) return false;   // the Ashfields' open ground is 11-main's: things stand on its ash
     // never on a doorstep or by a gate, a stair or a rail (Dunstan's door is where his farm path meets his shrine path)
-    if (N8.some(([dx, dy]) => inMap(x + dx, y + dy) && DOORS.has(map[(y + dy) * MAP_W + x + dx]))) return false;
+    if (N8.some(([dx, dy]) => inMap(x + dx, y + dy) && DOORS.has(map[(y + dy) * MAP_W + x + dx])) || buildingAt(x, y)) return false;
     if (solid && (A.onMainRoad(x, y) || !simple(x, y) || cuts(x, y))) return false;
     return true;
   }
@@ -334,8 +417,8 @@
     let best = null;
     for (let r = 0; r <= 3 && !best; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
       if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue; const x = wx + dx, y = wy + dy;
-      if (!canStand(x, y, solid, false) || near(x, y, gap) || (extra && !extra(x, y))) continue;
       if (!N8.some(([ex, ey]) => inMap(x + ex, y + ey) && (NET[(y + ey) * MAP_W + x + ex] || map[(y + ey) * MAP_W + x + ex] === T_VERGE))) continue;
+      if (near(x, y, gap) || !canStand(x, y, solid, false) || (extra && !extra(x, y))) continue;
       const d = Math.hypot(dx, dy); if (!best || d < best.d) best = { x, y, d, s, q: p.q };
     }
     return best;
@@ -379,7 +462,7 @@
   // (SIGNPOSTS' stage 6) gets one
   function forkSigns(api) {
     const SP = window.SPREAD_GROUND; if (!SP) return;
-    OG = OG || OPEN_GROUND(); DOORS = DOORS || new Set(['DOOR', 'COFFINDOOR', 'DUNGEON_DOOR', 'CRYPT_DOOR', 'HATCH', 'HOUSE_PORTAL', 'SHAFT', 'HITCH', 'GATE', 'PORTCULLIS', 'WARDEN_GATE', 'LAIR_GATE', 'CITY_GATE', 'SCARP_STEPS', 'CRYPT_BARS'].map(Tn).filter(v => v >= 0));
+    standMasks(); OG = OG || OPEN_GROUND(); GREEN = GREEN || new Set([T.GRASS, T.DIRT, Tn('SCORCH')].filter(v => v >= 0)); DOORS = DOORS || new Set(['DOOR', 'COFFINDOOR', 'DUNGEON_DOOR', 'CRYPT_DOOR', 'HATCH', 'HOUSE_PORTAL', 'SHAFT', 'HITCH', 'GATE', 'PORTCULLIS', 'WARDEN_GATE', 'LAIR_GATE', 'CITY_GATE', 'SCARP_STEPS', 'CRYPT_BARS'].map(Tn).filter(v => v >= 0));
     const S = RD.stats; S.signsMoved = []; S.signsAdded = []; S.signsMissing = [];
     const cellsOf = f => { const out = []; for (let y = f.at[1] - 3; y <= f.at[1] + 3; y++) for (let x = f.at[0] - 3; x <= f.at[0] + 3; x++) if (inMap(x, y) && NET[y * MAP_W + x] && Math.hypot(x - f.at[0], y - f.at[1]) <= 2.5) out.push([x, y]); return out; };
     const cheb = (x, y, cells) => cells.reduce((m, [cx, cy]) => Math.min(m, Math.max(Math.abs(cx - x), Math.abs(cy - y))), 99);
@@ -451,7 +534,7 @@
       give: ['coal', 6], take: ['iron_bar', 1], line: 'Six coal for an iron bar, every time. I fire the little forge behind the heap.' },
     kett: { id: 'kett', name: 'Rusty Kett', tunic: '#3f6a72', hair: '#c9b48a', role: 'road_trade',
       give: ['river_pearl', 1], take: ['coins', 120], line: 'A river pearl is worth a hundred and twenty to me. Nobody else on this coast will say so.' },
-    meg: { id: 'meg', name: 'Cinder Meg', tunic: '#5a3a33', hair: '#d9d0c0', woman: true, role: 'road_trade',
+    cinder_meg: { id: 'cinder_meg', name: 'Cinder Meg', tunic: '#5a3a33', hair: '#d9d0c0', woman: true, role: 'road_trade',
       give: ['wood', 4], take: ['coal', 3], line: 'Four logs in the clamp, three coal out of it. That is the whole of my trade.' },
   };
   HOOKS.world.unshift(() => { for (const k in TRADES) { const i = NPCS.indexOf(TRADES[k]); if (i >= 0) NPCS.splice(i, 1); } });
@@ -526,7 +609,7 @@
       blurb: "The Warden's father kept this post before the gate was built. His key is still in it.", loot: [['iron_key', 1, 1], ['coins', 40, 40], ['bread', 2, 2]], once: true },
     { road: 'r6_ash', at: 0.32, side: -1, id: 'lore_ash', kind: 'lore', name: 'The Last Board',
       blurb: 'Painted on the board: "Past the gate the road is only a track across the ash. Follow the cairns. Turn back if you see wings."' },
-    { road: 'r6_ash', at: 0.56, side: 1, id: 'meg', kind: 'trader', who: 'meg', name: 'Cinder Meg',
+    { road: 'r6_ash', at: 0.56, side: 1, id: 'cinder_meg', kind: 'trader', who: 'cinder_meg', name: 'Cinder Meg',
       blurb: 'Her charcoal clamp smokes beside the track past the gate. Four logs for three coal.' },
     { road: 'r6_ash', at: 0.68, side: -1, id: 'stone_kneel', kind: 'shrine', name: 'The Kneeling Stone', bless: 'might', blessName: 'Ash Ward', secs: 90, every: 300, amount: 3,
       blurb: 'Ash Ward: your swings hit 3 harder for ninety seconds.' },
@@ -564,8 +647,8 @@
       }
       if (!spot) { S.poiUnplaced.push(d.id); continue; }
       p.at = [spot.x, spot.y]; p.s = Math.round(spot.s); S.pois++;
-      if (d.kind === 'beast') { api.spawnList(d.type, [[spot.x, spot.y]]); const sp = MONSTER_SPAWNS[MONSTER_SPAWNS.length - 1]; sp.by = '93-roads'; RD.changed[spot.y * MAP_W + spot.x] = 1; taken.push([spot.x, spot.y]); }
-      else if (d.kind === 'trader') { const n = TRADES[d.who]; n.x = spot.x; n.y = spot.y; initNpc(n); NPCS.push(n); RD.changed[spot.y * MAP_W + spot.x] = 1; taken.push([spot.x, spot.y]); }
+      if (d.kind === 'beast') { api.spawnList(d.type, [[spot.x, spot.y]]); const sp = MONSTER_SPAWNS[MONSTER_SPAWNS.length - 1]; sp.by = '93-roads'; RD.changed[spot.y * MAP_W + spot.x] = 1; taken.push([spot.x, spot.y]); markNear(spot.x, spot.y); }
+      else if (d.kind === 'trader') { const n = TRADES[d.who]; n.x = spot.x; n.y = spot.y; initNpc(n); NPCS.push(n); RD.changed[spot.y * MAP_W + spot.x] = 1; taken.push([spot.x, spot.y]); markNear(spot.x, spot.y); }
       else thing(api, spot.x, spot.y, d.kind, { poi: d.id });
     }
   }
@@ -575,7 +658,8 @@
   // a beast's patch: open ground all round (the core clears its 3 x 3 of trees and rocks, never ore: keep a tile off ore)
   const ORE = () => new Set(['IRON', 'COAL', 'MITHRIL', 'BLACKIRON', 'SUNSTONE', 'STORMSTONE', 'BERRY_BUSH'].map(Tn).filter(v => v >= 0));
   let ORES = null;
-  function clearRing(x, y) { ORES = ORES || ORE(); for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) { const t = map[(y + dy) * MAP_W + x + dx]; if (ORES.has(t) || (Math.abs(dx) <= 1 && Math.abs(dy) <= 1 && !walkable(t) && !FELL.has(t) && t !== T.ROCK)) return false; } return !PROTECT[y * MAP_W + x]; }
+  // (and never on the camp's ground: its respawn rule and its CLEARED banner are the camp's)
+  function clearRing(x, y) { ORES = ORES || ORE(); if (x >= CAMP_GROUND.x0 && x <= CAMP_GROUND.x1 && y >= CAMP_GROUND.y0 && y <= CAMP_GROUND.y1) return false; for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) { const t = map[(y + dy) * MAP_W + x + dx]; if (ORES.has(t) || (Math.abs(dx) <= 1 && Math.abs(dy) <= 1 && !walkable(t) && !FELL.has(t) && t !== T.ROCK)) return false; } return !PROTECT[y * MAP_W + x]; }
   // a person: 4+ tiles from a signpost, a rail and every thing beside the road (E at one of them must not talk to him first)
   function clearOf(x, y, d) { for (let dy = -d; dy <= d; dy++) for (let dx = -d; dx <= d; dx++) { if (!inMap(x + dx, y + dy)) continue; const t = map[(y + dy) * MAP_W + x + dx]; if (t === T.SIGN || t === Tn('HITCH') || t === TD_PROP()) return false; } return true; }
 
@@ -804,7 +888,14 @@
   });
 
   // the pass: last of the built passes (it is pushed after every Stage 5 place's, all of which load before 93)
-  HOOKS.built.push((rnd, api) => { lay(api); RD.things.clear(); taken = []; forkSigns(api); placePois(api); markers(api); footprint(); });
+  const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+  HOOKS.built.push((rnd, api) => {
+    const T0 = now(), ph = {}, run = (k, f) => { const t = now(); f(); ph[k] = Math.round((now() - t) * 10) / 10; };
+    run('lay', () => lay(api)); run('links', placeLinks); run('stitch', stitch); RD.things.clear(); taken = [];
+    run('signs', () => forkSigns(api)); run('pois', () => placePois(api)); run('markers', () => markers(api)); run('foot', footprint);
+    run('ash', () => { RD.afAfter = afGreen(); });
+    RD.stats.phases = ph; RD.stats.passMs = Math.round((now() - T0) * 10) / 10;
+  });
   // the walk time of a leg (01-atlas signText asks it for every arm): the road's laid length over a knight's foot speed
   A.legSecs = (id, k0, k1) => { const L = RD.span(id, k0, k1); return L === null ? null : L / WALK; };
 
@@ -866,5 +957,239 @@
     items.push({ y: -1e9 + 0.5, draw: () => {
       for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) { const t = map[idx(tx, ty)]; if (t === T_ROAD) drawRoad(g, tx, ty); else if (t === T_VERGE) drawVerge(g, tx, ty); }
     } });
+  });
+
+  // ============================================================================
+  // THE HORSE ON THE ROAD: a ride along a main road's laid path on the mare, timed (spec §13 STAGE 6: within 10% of its
+  // length over 7.3 tiles a second). The knight is put on her at the road's start and steered cell to cell along it with
+  // the arrow keys, as a player rides; the story gates stand open for the ride (a gate is not the road's).
+  // ============================================================================
+  RD.ride = (id, F, opts) => {
+    const R = RD.roads[id]; F = F || window.FANGLANDS; if (!R || !R.path.length || !F || !window.MOUNTS) return null;
+    const o = opts || {}, P = R.path, from = o.from || 0, to = Math.min(P.length - 1, o.to === undefined ? P.length - 1 : o.to);
+    // (a story gate on the road stands open for the ride, as it does once its story is done: its tiles are ground while she
+    // rides, and put back after)
+    const shut = new Set([...GATES].filter(t => SOLID.has(t) && !PUSH_THROUGH.has(t))), opened = [];
+    for (const [x, y] of P) for (const [dx, dy] of [[0, 0], ...N8]) { const i = (y + dy) * MAP_W + x + dx; if (inMap(x + dx, y + dy) && shut.has(map[i])) { opened.push([i, map[i]]); map[i] = T.DIRT; } }
+    const keep = { x: player.x, y: player.y, mech: player.mech, r: player.r, speed: player.speed, peace: window.__peace };
+    let frames = 0, stuck = 0, q = from, best = Infinity, err = null, tiles = 0;
+    for (let k = from + 1; k <= to; k++) tiles += stepLen(P[k - 1], P[k]);
+    try {
+      window.__peace = true; player.dead = false; player.hp = player.maxHp; player.mech = null;
+      F.tp(P[from][0], P[from][1]); F.step([]);
+      if (!MOUNTS.mount()) return { id, err: 'could not mount', tiles };
+      const limit = Math.ceil(tiles / RIDE * 60 * 2) + 120;
+      while (q < to && frames < limit) {
+        // the next cell of the road, reached within 0.45 of a tile
+        const t = P[Math.min(to, q + 1)], tx = tc(t[0]), ty = tc(t[1]), dx = tx - player.x, dy = ty - player.y, d = Math.hypot(dx, dy);
+        if (d < TILE * 0.45) { q = Math.min(to, q + 1); best = Infinity; stuck = 0; continue; }
+        const keys = []; if (dx > TILE * 0.2) keys.push('KeyD'); else if (dx < -TILE * 0.2) keys.push('KeyA'); if (dy > TILE * 0.2) keys.push('KeyS'); else if (dy < -TILE * 0.2) keys.push('KeyW');
+        F.step(keys); frames++;
+        if (d < best - 1) { best = d; stuck = 0; } else if (++stuck > 90) break;   // no nearer for a second and a half: stuck
+      }
+    } catch (e) { err = String(e && e.message); }
+    finally {
+      for (const [i, t] of opened) map[i] = t;
+      if (player.mech && player.mech.kind === 'horse') { player.mech = keep.mech; player.r = keep.r; player.speed = keep.speed; }
+      player.x = keep.x; player.y = keep.y; window.__peace = keep.peace;
+    }
+    const secs = frames / 60, want = tiles / RIDE;
+    return { id, tiles: Math.round(tiles * 10) / 10, secs: Math.round(secs * 100) / 100, want: Math.round(want * 100) / 100, off: Math.round((secs / want - 1) * 1000) / 10, done: q >= to, at: q < to ? P[q] : null, err };
+  };
+
+  // ============================================================================
+  // SELF-TEST (roads2's checks, pointed at the new network; and Stage 6's proofs)
+  // ============================================================================
+  HOOKS.selfTest.push((check, F, h) => {
+    const P = 'roads: ', S = RD.stats, SP = window.SPREAD_GROUND;
+    const played = window.PLAYTHROUGH && PLAYTHROUGH.pristine ? null : null; void played;
+    // 1. the network: a flood over the network's own tiles (the roads, the tracks, the crossings they adopt; never open
+    //    ground) from the cave mouth reaches every place's port, but the ones listed with their reason
+    { const seen = new Uint8Array(MAP_W * MAP_H), q = [], [mx, my] = A.port('cave.mouth').map(Math.round);
+      let s0 = -1; for (let r = 0; r <= 4 && s0 < 0; r++) for (let dy = -r; dy <= r && s0 < 0; dy++) for (let dx = -r; dx <= r; dx++) if (inMap(mx + dx, my + dy) && NET[(my + dy) * MAP_W + mx + dx]) { s0 = (my + dy) * MAP_W + mx + dx; break; }
+      if (s0 >= 0) { seen[s0] = 1; q.push(s0); }
+      for (let k = 0; k < q.length; k++) { const c = q[k], x = c % MAP_W, y = (c / MAP_W) | 0; for (const [dx, dy] of N4) { const nx = x + dx, ny = y + dy; if (!inMap(nx, ny)) continue; const j = ny * MAP_W + nx; if (!seen[j] && NET[j]) { seen[j] = 1; q.push(j); } } }
+      const near = p => { for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) { const x = Math.round(p[0]) + dx, y = Math.round(p[1]) + dy; if (inMap(x, y) && seen[y * MAP_W + x]) return true; } return false; };
+      const missed = [], places = []; let ports = 0;
+      for (const id of Object.keys(A.ANCHORS)) { if (OFF_ROAD[id]) continue; const ps = Object.keys(A.PORTS).filter(k => k.split('.')[0] === id); if (!ps.length) continue; places.push(id); ports += ps.length; if (!ps.some(k => near(A.port(k)))) missed.push(id); }
+      let road = 0, track = 0, cross = 0, open = 0, net = 0; const OPENT = new Set([T.GRASS, T.FLOWERS, T.MUSHROOM, Tn('FERN')].filter(v => v >= 0));
+      for (let i = 0; i < NET.length; i++) { if (!NET[i]) continue; net++; const t = map[i]; if (t === T_ROAD) road++; else if (t === T.DIRT) track++; else if (OPENT.has(t)) open++; else cross++; }
+      check(P + `the network is one: a flood over its own tiles alone (the ROAD, the tracks' dirt and the crossings they adopt: bridges, gates, the places' streets; never open ground) from the cave mouth reaches every one of the ${places.length} places' ports, but the ${Object.keys(OFF_ROAD).length} listed with their reason (the islands and the east by boat, the reserved plots); open ground is under a twentieth of it (the worn steps to a door and a track's corners)`,
+        missed.length === 0 && q.length === net && places.length >= 25 && open / net < 0.05 && road > 1000, { missed, places: places.length, flood: q.length, net, road, track, crossings: cross, open, components: S.components, offRoad: OFF_ROAD }); }
+    // 2. it reads as a road: one surface three wide with a kerbed verge along it, on the line of the track Stage 4 laid
+    { let edges = 0, kerbed = 0, roadN = 0; for (let i = 0; i < map.length; i++) { if (map[i] !== T_ROAD) continue; roadN++; const x = i % MAP_W, y = (i / MAP_W) | 0; for (const [dx, dy] of N4) { const t = map[(y + dy) * MAP_W + x + dx]; if (t === T_ROAD) continue; edges++; if (t === T_VERGE || t === TD_PROP() || (window.DECO && t === DECO.id) || t === T.SIGN) kerbed++; } }
+      const off = []; for (const id of A.MAIN_ROADS) { const R = RD.roads[id], pl = A.track(id); let far = 0;
+        for (const [x, y] of R.path) { if (PROTECT[y * MAP_W + x]) continue; let d = Infinity; for (let k = 1; k < pl.length; k++) d = Math.min(d, segD(x, y, pl[k - 1][0], pl[k - 1][1], pl[k][0], pl[k][1])); if (d > 3) far++; }
+        if (far) off.push(id + ' ' + far); }
+      const wide = A.MAIN_ROADS.every(id => { const R = RD.roads[id]; let three = 0, n = 0; for (const [x, y] of R.path) { if (PROTECT[y * MAP_W + x] || inAF(x, y)) continue; n++; const lr = map[y * MAP_W + x] === T_ROAD && ((isRoad(x - 1, y) && isRoad(x + 1, y)) || (isRoad(x, y - 1) && isRoad(x, y + 1))); if (lr) three++; } return n === 0 || three / n > 0.85; });
+      check(P + `${roadN} tiles of road surface on the six main roads, three wide down the middle of the way, its edges kerbed by a verge (${Math.round(kerbed / Math.max(1, edges) * 100)}% of them: the rest a tree, a wall, the water or a place's ground), and every road on the line of the track Stage 4 laid (within 3 of it, outside the places)`,
+        roadN > 1000 && kerbed / edges > 0.55 && wide && !off.length, { roadN, edges, kerbed, off, wide, verges: S.verges, felled: S.felled }); }
+    // 3. what it may not touch: no road, verge or thing inside a place's ground, a reserved plot or a built place (a road
+    //    meets them at their gates), nothing laid on anything but ordinary ground, the Ashfields' open ground kept
+    { const bad = [];
+      for (const l of RD.laid) {
+        const i = l.y * MAP_W + l.x, res = A.reservedAt(l.x, l.y);
+        if ((l.t === 'ROAD' || l.t === 'VERGE') && PROTECT[i]) bad.push('paved a place ' + l.x + ',' + l.y);
+        if (l.why !== 'sign moved' && l.why !== 'fork sign' && res) bad.push(l.t + ' in ' + res + ' ' + l.x + ',' + l.y);
+        if (!(l.was in T) || !(PAVE.has(T[l.was]) || FELL.has(T[l.was]) || VERGEABLE.has(T[l.was]) || OG.has(T[l.was]) || l.was === 'ROAD' || l.was === 'VERGE' || l.was === 'SIGN')) bad.push('laid on ' + l.was + ' ' + l.x + ',' + l.y);
+      }
+      const inBuild = RD.laid.filter(l => buildingAt(l.x, l.y)).length, onNpc = NPCS.filter(n => (map[idx(n.x, n.y)] === TD_PROP() && RD.things.has(idx(n.x, n.y)))).map(n => n.id);
+      check(P + "nothing a place has is touched: no road, verge or thing in a place's own ground, a reserved plot or a built place (a road meets each at its gate), nothing laid on anything but ordinary ground, no building or person stood on; the Ashfields' open ground (11-main's grass, dirt and scorch between the ash) is not paved",
+        !bad.length && !inBuild && !onNpc.length && RD.afAfter >= RD.afBefore, { bad: bad.slice(0, 8), more: Math.max(0, bad.length - 8), inBuild, onNpc, afBefore: RD.afBefore, afAfter: RD.afAfter, laid: RD.laid.length }); }
+    // 4. a signpost within 2 tiles of every fork (a node where three or more roads' legs meet): its road's tiles there
+    { const forks = RD.forkList || [], bad = forks.filter(f => f.sign > 2).map(f => f.at.join(',') + ' ' + f.roads.join('/') + ' ' + f.sign);
+      check(P + `a signpost stands within 2 tiles of every one of the ${forks.length} forks (where three or more road legs meet), three of them new (the Glasshouse spur, the Old Barrow spur, Dunstan's turn) and one moved in (the Skypier lane's)`, forks.length >= 14 && !bad.length && !S.signsMissing.length, { bad, missing: S.signsMissing, added: S.signsAdded, moved: S.signsMoved }); }
+    // 5. every arm of every road's signpost names the next stop on that road and the walk to it; the walk is the road's laid
+    //    length over a knight's foot speed (3.65 tiles a second)
+    { const bad = [], sample = {};
+      for (const [x, y] of (SP ? SP.signs : [])) { const t = A.signText(x, y) || '', arms = t.split(/\s{3}/).filter(a => a.startsWith('→'));
+        if (!arms.length || arms.some(a => !/, (\d+ seconds|\d+ (and a half )?minutes?) on foot[,.]/.test(a))) bad.push(x + ',' + y + ': ' + t); }
+      const mill = SP && SP.signs.find(q => { const p = A.pointOf(A.SIGNPOSTS[0].at); return q[2] === p[0] && q[3] === p[1]; });
+      if (mill) sample.mill = A.signText(mill[0], mill[1]);
+      // the walk: the Cave Road's laid length from the cave to the Mill Lane fork, in seconds, as its arm says it
+      const R = RD.roads.r1_cave, k = A.TRACKS.r1_cave.findIndex(q => q[0] === 'n' && q[1] === A.pointOf(A.SIGNPOSTS[0].at)[0]), secs = R && k > 0 ? R.cum[k] / WALK : null;
+      check(P + `every arm of every road's signpost (${SP ? SP.signs.length : 0}) names the next stop on its road and the walk to it ("→ Millbrook, south-west, 20 seconds on foot."), from the road's laid length at 3.65 tiles a second`,
+        !bad.length && !!mill && new RegExp('The cave, north-west, ' + A.walkWords(secs).replace(/ on foot$/, '') + ' on foot').test(sample.mill), { bad: bad.slice(0, 4), sample, caveSecs: secs && Math.round(secs * 10) / 10 }); }
+    // 6. the markers: a milestone at each end of every main road (E names the road, the far end with its walk, and every
+    //    stop on the way), lanterns along the main roads lit at night, cairns along the tracks and the Ash Road's ash
+    { const stones = [...RD.things].filter(([, c]) => c.kind === 'milestone'), byRoad = {}; for (const [, c] of stones) byRoad[c.road] = (byRoad[c.road] || 0) + 1;
+      let said = null; const R1 = stones.find(([, c]) => c.road === 'r1_cave' && !c.end);
+      if (R1) { const [i] = R1, x = i % MAP_W, y = (i / MAP_W) | 0, spot = N4.map(([dx, dy]) => [x + dx, y + dy]).find(([sx, sy]) => !SOLID.has(tileAt(sx, sy)));
+        h.peace(true); dialog.queue.length = 0; dialog.cur = null; F.tp(spot[0], spot[1]); F.face(x, y); F.press('KeyE'); F.sim(2, []);
+        const d = [dialog.cur, ...dialog.queue].find(q => q && q.who === 'The milestone'); said = d ? d.text : null; dialog.queue.length = 0; dialog.cur = null; h.peace(false); }
+      const lant = Object.values(RD.roads).reduce((n, r) => n + (r.marks || []).filter(m => m.kind === 'road_lantern').length, 0), cairn = Object.values(RD.roads).reduce((n, r) => n + (r.marks || []).filter(m => m.kind === 'road_cairn').length, 0);
+      const day = player.dayTime, lights = (dt) => { player.dayTime = dt; const out = []; for (const f of HOOKS.nightLights || []) f(out, 0, 0, MAP_W - 1, MAP_H - 1); return out.filter(l => l.kind === 'road lantern').length; };
+      const night = lights(7 * 60 + 60 + 60), noon = lights(100); player.dayTime = day;
+      check(P + `a milestone stands at each end of every main road (${stones.length}), and E on the Cave Road's names the road, the walk to its far end and every stop on the way; ${lant} lantern posts along the main roads burn at night (none by day); ${cairn} cairns mark the tracks and the Ash Road across the ash`,
+        A.MAIN_ROADS.every(id => byRoad[id] >= 1) && stones.length >= 11 && !!said && /^The Cave Road\. /.test(said) && /on foot/.test(said) && /The Overturned Cart/.test(said) && /Grizzlejaw/.test(said) && lant >= 25 && night === lant && noon === 0 && cairn >= 8,
+        { byRoad, said, lant, night, noon, cairn, unplaced: S.unplaced }); }
+    // 7. the places to stop for: every one placed beside its road, and walked to from the cave mouth (story gates open)
+    { const pass = t => walkable(t), seen = new Uint8Array(MAP_W * MAP_H), q = []; const [mx, my] = A.port('cave.mouth').map(Math.round);
+      const push = (x, y) => { if (!inMap(x, y)) return; const i = y * MAP_W + x; if (seen[i] || !pass(map[i])) return; seen[i] = 1; q.push(i); };
+      push(mx, my); for (let k = 0; k < q.length; k++) { const c = q[k]; for (const [dx, dy] of N4) push(c % MAP_W + dx, ((c / MAP_W) | 0) + dy); }
+      const bad = [];
+      for (const p of RD.pois) {
+        if (!p.at) { bad.push(p.id + ' unplaced'); continue; }
+        const [x, y] = p.at, R = RD.roads[p.road]; let d = Infinity; for (const [px, py] of R.path) d = Math.min(d, Math.hypot(px - x, py - y));
+        const reach = SOLID.has(map[idx(x, y)]) ? N4.some(([dx, dy]) => seen[(y + dy) * MAP_W + x + dx]) : !!seen[y * MAP_W + x];
+        if (d > (p.kind === 'beast' ? 8.5 : 5)) bad.push(p.id + ' ' + d.toFixed(1) + ' off its road'); if (!reach) bad.push(p.id + ' not reached');
+      }
+      const per = {}; for (const p of RD.pois) per[p.road] = (per[p.road] || 0) + 1;
+      check(P + `all ${RD.pois.length} places to stop for stand beside their roads (within 5 tiles of the road's line, a named beast within 8.5) and are walked to from the cave mouth (story gates open): roads2's 25, re-homed by road, and 10 new`,
+        RD.pois.length === 35 && !bad.length, { bad, per }); }
+    // 8. the wrecked carts give what they promise, go empty, and fill again
+    { const p = RD.poi('cart_over'), q0 = st(), inv0 = JSON.stringify(player.inv);
+      h.peace(true); player.inv = player.inv.map(() => null); delete q0.timer[p.id];
+      const pl0 = countItem('plank'), c0 = coins();
+      F.goAdjacent(p.at[0], p.at[1], 5000); F.face(p.at[0], p.at[1]); F.press('KeyE'); F.sim(2, []);
+      const got = countItem('plank') - pl0, gotCoins = coins() - c0;
+      notice = null; F.press('KeyE'); F.sim(2, []);
+      const empty = countItem('plank') - pl0 === got && !!notice && /picked clean/i.test(notice.text) && timer(p.id) > 0;
+      q0.timer[p.id] = 0.01; F.sim(3, []); F.press('KeyE'); F.sim(2, []);
+      const again = countItem('plank') - pl0 > got;
+      player.inv = JSON.parse(inv0); delete q0.timer[p.id]; dialog.queue.length = 0; dialog.cur = null; h.peace(false);
+      check(P + `${p.name} gives 2-4 planks, 1-2 logs and 4-14 coins, is picked clean, and a new cart comes by after ${p.every / 60} minutes`, got >= 2 && got <= 4 && gotCoins >= 4 && gotCoins <= 14 && empty && again, { got, gotCoins, empty, again, at: p.at }); }
+    // 9. the wayshrines: each its own named blessing, and the blessing does the thing; the cooldown said in plain words
+    { const q0 = st(), fair = RD.poi('stone_trav'), names = ['stone_trav', 'stone_kneel', 'stone_wind', 'stone_bell', 'stone_wood', 'fisher'].map(id => RD.poi(id).blessName);
+      q0.bless = null; delete q0.timer[fair.id];
+      h.peace(true); F.goAdjacent(fair.at[0], fair.at[1], 6000); F.face(fair.at[0], fair.at[1]); F.press('KeyE'); F.sim(2, []);
+      const on = !!blessed('fair') && q0.bless.name === 'Fair Road' && q0.bless.left > 170;
+      const hp0 = player.hp = player.maxHp; hurtPlayer(6, player.x + 40, player.y, true); const softened = hp0 - player.hp === 4;
+      q0.bless = { key: 'might', name: 'Ash Ward', left: 90, n: 3 }; const base = player.equip.weapon; player.equip.weapon = null;
+      const withMight = playerMaxHit(); q0.bless = null; const without = playerMaxHit(); player.equip.weapon = base;
+      q0.bless = { key: 'hands', name: 'Steady Hands', left: 180, n: 2 };
+      const mx0 = player.skills.mining.xp; gainXp('mining', 10); const doubled = player.skills.mining.xp - mx0 === 20;
+      const rx0 = player.skills.range.xp; gainXp('range', 10); const rangeSame = player.skills.range.xp - rx0 === 10;
+      q0.bless = { key: 'lines', name: 'Tight Lines', left: 180, n: 2 }; const fx0 = player.skills.fishing.xp; gainXp('fishing', 10); const fishDoubled = player.skills.fishing.xp - fx0 === 20;
+      player.skills.mining.xp = mx0; player.skills.range.xp = rx0; player.skills.fishing.xp = fx0;
+      q0.bless = { key: 'mend', name: 'Deep Breath', left: 180, n: 1 }; q0.mendT = 0; player.hp = player.maxHp - 5;
+      for (let i = 0; i < 200; i++) for (const u of HOOKS.update) u(1 / 60);
+      const mended = player.hp > player.maxHp - 5;
+      q0.bless = null; player.hp = player.maxHp; setTimer(fair.id, fair.every);
+      notice = null; F.goAdjacent(fair.at[0], fair.at[1], 6000); F.face(fair.at[0], fair.at[1]); F.press('KeyE'); F.sim(2, []);
+      const refused = !blessed('fair') && !!notice && /quiet/i.test(notice.text) && /minutes/.test(notice.text);
+      delete q0.timer[fair.id]; q0.bless = null; dialog.queue.length = 0; dialog.cur = null; h.peace(false);
+      check(P + 'six wayshrines, six named blessings: Fair Road softens a hit by 2, Ash Ward adds 3 to the best swing, Steady Hands doubles Mining and Woodcutting only, Tight Lines doubles Fishing, Deep Breath mends as you walk, Green Path calms the beasts; a shrine gives once every six minutes and says so in plain words',
+        on && softened && withMight - without === 3 && doubled && rangeSame && fishDoubled && mended && refused && names.join('/') === 'Fair Road/Ash Ward/Steady Hands/Deep Breath/Green Path/Tight Lines',
+        { on, softened, might: withMight - without, doubled, rangeSame, fishDoubled, mended, refused, names }); }
+    // 10. the brambles, the bone pile, the well and the deep pool
+    { const b = RD.poi('salt_bramble'), bn = RD.poi('bones'), w = RD.poi('well'), q0 = st(), inv0 = JSON.stringify(player.inv);
+      for (const p of [b, bn, w]) delete q0.timer[p.id];
+      h.peace(true); player.inv = player.inv.map(() => null);
+      const h0 = countItem('haws'); F.goAdjacent(b.at[0], b.at[1], 6000); F.face(b.at[0], b.at[1]); F.press('KeyE'); F.sim(2, []);
+      const picked = countItem('haws') - h0; notice = null; F.press('KeyE'); F.sim(2, []);
+      const bare = countItem('haws') - h0 === picked && !!notice && /bare/i.test(notice.text);
+      const bo0 = countItem('bone'); F.tp(bn.at[0], bn.at[1] + 1); F.goAdjacent(bn.at[0], bn.at[1], 3000); F.face(bn.at[0], bn.at[1]); F.press('KeyE'); F.sim(2, []); const bones = countItem('bone') - bo0;
+      player.hp = 3; F.tp(w.at[0], w.at[1] + 1); F.goAdjacent(w.at[0], w.at[1], 3000); F.face(w.at[0], w.at[1]); F.press('KeyE'); F.sim(2, []); const drank = player.hp === player.maxHp;
+      player.inv = player.inv.map(() => null); h.give('fishing_rod', 1);
+      const pool = RD.poi('pool_pond'), t0 = countItem('raw_trout');
+      F.tp(pool.at[0], pool.at[1] + 1); F.goAdjacent(pool.at[0], pool.at[1], 8000); F.face(pool.at[0], pool.at[1]); F.press('KeyE');
+      const caught = F.untilAction(2500, () => countItem('raw_trout') > t0);
+      player.action = null; player.inv = JSON.parse(inv0); for (const p of [b, bn, w]) delete q0.timer[p.id]; dialog.queue.length = 0; dialog.cur = null; h.peace(false);
+      check(P + `${b.name} gives 2-4 hawthorn haws then goes bare; ${bn.name} gives 2-4 bones; ${w.name} makes you whole; ${pool.name} is fished with a rod for trout (and, 1 in ${pool.extraOdds}, a river pearl)`,
+        picked >= 2 && picked <= 4 && bare && bones >= 2 && bones <= 4 && drank && typeof caught === 'number' && ITEMS.haws.heal === 3 && ITEMS.river_pearl.value === 75, { picked, bare, bones, drank, caught }); }
+    // 11. the locked strongbox, and the key a road away
+    { const box = RD.poi('toll'), cache = RD.poi('post'), q0 = st(), inv0 = JSON.stringify(player.inv), opened0 = Object.assign({}, q0.opened);
+      q0.opened = {}; player.inv = player.inv.map(() => null); h.peace(true); dialog.queue.length = 0; dialog.cur = null;
+      F.tp(box.at[0], box.at[1] + 1); F.goAdjacent(box.at[0], box.at[1], 4000); F.face(box.at[0], box.at[1]); F.press('KeyE'); F.sim(2, []);
+      const locked = !q0.opened[box.id] && !!dialog.cur && /iron key/i.test(dialog.cur.text) && /Ash Road/.test(dialog.cur.text);
+      dialog.queue.length = 0; dialog.cur = null;
+      F.tp(cache.at[0], cache.at[1] + 1); F.goAdjacent(cache.at[0], cache.at[1], 3000); F.face(cache.at[0], cache.at[1]); F.press('KeyE'); F.sim(2, []);
+      const gotKey = countItem('iron_key') === 1 && q0.opened[cache.id] === true;
+      const c0 = coins(), sb0 = countItem('steel_bar');
+      F.tp(box.at[0], box.at[1] + 1); F.goAdjacent(box.at[0], box.at[1], 3000); F.face(box.at[0], box.at[1]); F.press('KeyE'); F.sim(2, []);
+      const opened = q0.opened[box.id] === true && coins() - c0 === 250 && countItem('steel_bar') - sb0 === 3 && countItem('iron_key') === 0;
+      const farApart = Math.hypot(box.at[0] - cache.at[0], box.at[1] - cache.at[1]) > 60 && box.road !== cache.road;
+      dialog.queue.length = 0; dialog.cur = null; player.inv = JSON.parse(inv0); q0.opened = opened0; h.peace(false);
+      check(P + `${box.name} on the Sea Road is locked until you find the ${ITEMS.iron_key.name} at ${cache.name} on the Ash Road, then gives 250 coins and 3 steel bars, once`, locked && gotKey && opened && farApart, { locked, gotKey, opened, farApart, box: box.at, cache: cache.at }); }
+    // 12. the three roadside traders each do exactly their one thing
+    { const inv0 = JSON.stringify(player.inv); h.peace(true); const rows = [];
+      for (const k of ['ivo', 'kett', 'cinder_meg']) {
+        const tr = TRADES[k], npc = NPCS.find(n => n.id === k), [gid, gn] = tr.give, [tid, tn] = tr.take;
+        if (!npc) { rows.push({ who: k, ok: false, why: 'not standing' }); continue; }
+        player.inv = player.inv.map(() => null); dialog.queue.length = 0; dialog.cur = null;
+        { const sp = N8.map(([dx, dy]) => [npc.x + dx * 2, npc.y + dy * 2]).find(([x, y]) => inMap(x, y) && !SOLID.has(tileAt(x, y))); if (sp) F.tp(sp[0], sp[1]); }   // (Cinder Meg is past the Warden's gate)
+        F.talk(k); const refused = !!dialog.cur && new RegExp('You have 0 of ' + gn).test(dialog.cur.text);
+        dialog.queue.length = 0; dialog.cur = null; h.give(gid, gn);
+        const before = tid === 'coins' ? coins() : countItem(tid); F.talk(k); F.sim(2, []); const after = tid === 'coins' ? coins() : countItem(tid);
+        rows.push({ who: npc.name, refused, got: after - before, want: tn, ok: refused && after - before === tn && countItem(gid) === 0 });
+      }
+      player.inv = JSON.parse(inv0); dialog.queue.length = 0; dialog.cur = null; h.peace(false);
+      check(P + 'Ivo swaps 6 coal for an iron bar, Rusty Kett pays 120 coins for a river pearl, Cinder Meg turns 4 logs into 3 coal, and each says what they want when you have not got it', rows.every(r => r.ok), { rows }); }
+    // 13. six named beasts by the roads: none charges, each keeps to its patch, respawns, and drops its own trophy; one,
+    //     killed, pays
+    { const rows = RD.pois.filter(p => p.kind === 'beast').map(p => { const def = MONSTER_DEFS[p.type], trophy = def.drops.rare.table[0][0];
+        return { name: def.name, live: monsters.some(m => m.type === p.type), spawn: MONSTER_SPAWNS.some(s => s.type === p.type && s.by === '93-roads'), ok: !def.aggro && def.roam === 2 && def.respawn <= 110 && ITEMS[trophy].value >= 90 }; });
+      const m = monsters.find(x => x.type === 'grizzlejaw'); let paid = false, respawns = false;
+      if (m) { h.peace(true); const k0 = player.kills; m.dead = false; m.hp = 1; m.x = player.x + 40; m.y = player.y; m.state = 'idle'; killMonster(m);
+        for (let i = 0; i < 90; i++) for (const u of HOOKS.update) u(1 / 60);
+        paid = player.kills === k0 + 1 && drops.some(d => d.id === 'raw_beef'); respawns = m.respawnT >= MONSTER_DEFS.grizzlejaw.respawn;
+        drops = drops.filter(d => !['raw_beef', 'boar_tusk', 'coins', 'grizzle_tusk'].includes(d.id)); m.dead = false; m.hp = m.maxHp; m.respawnT = 0; m.x = m.home.x; m.y = m.home.y; h.peace(false); }
+      check(P + `six named beasts stand off the roads (${rows.map(r => r.name).join(', ')}): none charges a knight, each keeps to its own patch (roam 2), comes back within 110 seconds and drops its own trophy; Grizzlejaw, killed, drops raw beef and comes back`,
+        rows.length === 6 && rows.every(r => r.ok && r.live && r.spawn) && paid && respawns, { rows, paid, respawns }); }
+    // 14. the picture: the road, the verge, every thing and marker and the blessing's plaque draw without error through the
+    //     hooks the renderer calls; every solid thing is tappable and every kind named
+    { let ok = true, err = null, items = 0; const cx = cam.x, cy = cam.y, px = player.x, py = player.y, b0 = st().bless;
+      try {
+        for (const [i, c] of RD.things) KINDS[c.kind].draw(ctx, (i % MAP_W) * TILE, ((i / MAP_W) | 0) * TILE, c, i % MAP_W, (i / MAP_W) | 0);
+        for (const kind of ['road_lantern', 'road_cairn']) { const [x, y] = DECO.cells(kind)[0]; DECO.KINDS[kind].draw(ctx, x * TILE, y * TILE, DECO.at(x, y), x, y, 0); }
+        const r = RD.roads.r1_cave.path[20]; drawRoad(ctx, r[0], r[1]); drawVerge(ctx, r[0], r[1] - 2);
+        for (const p of RD.pois.slice(0, 6)) { cam.x = p.at[0] * TILE - VW / 2; cam.y = p.at[1] * TILE - VH / 2; const list = []; for (const f of HOOKS.draw) f(ctx, list, cam); items += list.length; for (const it of list) it.draw(); }
+        st().bless = { key: 'fair', name: 'Fair Road', left: 100, n: 2 }; for (const f of HOOKS.hud) f(ctx, false);
+      } catch (e) { ok = false; err = String(e && e.stack || e); }
+      st().bless = b0; cam.x = cx; cam.y = cy; player.x = px; player.y = py;
+      const tappable = INTERESTING_TILES.has(TD_PROP()) && !!TAP_NAMES.ROAD && !!TAP_NAMES.VERGE && !SOLID.has(T_ROAD) && !SOLID.has(T_VERGE);
+      check(P + 'the road, the verge, every thing beside it, the lanterns, the cairns and the blessing draw without error through the hooks the renderer calls; every solid thing is tappable, and the road and its verge are walked, not climbed', ok && items > 6 && tappable, { ok, items, err, tappable }); }
+    // 15. nothing is built on the road; a knight builds beside it
+    { h.give('goblin_trap', 2); h.peace(true); const R = RD.roads.r3_long, at = R.path.find(([x, y]) => map[y * MAP_W + x] === T_ROAD && !A.onMainRoad(x, y)) || R.path.find(([x, y]) => map[y * MAP_W + x] === T_ROAD);
+      const [x, y] = at; F.tp(x, y + 1); player.facing = { x: 0, y: -1 }; notice = null; const n0 = countItem('goblin_trap'); placeAction('goblin_trap');
+      const refused = countItem('goblin_trap') === n0 && !!notice && /road|staked/i.test(notice.text); h.peace(false);
+      check(P + 'nothing is set down on the road: placing on it is refused in plain words', refused, { at, notice: notice && notice.text }); }
+    // 16. the A* time budget: the whole roads pass is cheap (spec §7's boot budget holds the world; this pass is a small
+    //     part of it), each search bounded to its leg's box plus 24
+    check(P + `the roads pass takes ${S.passMs} ms in all (its ${S.legs} A* searches ${S.aStarMs} ms, ${S.pops} cells settled): under 250 ms, the searches under 120 ms`, S.passMs < 250 && S.aStarMs < 120 && !S.failed.length, { passMs: S.passMs, aStarMs: S.aStarMs, pops: S.pops, legs: S.legs, failed: S.failed });
+    // 17. the horse on the road: a ride down the Sea Road on the mare takes its length over 7.3 tiles a second, within 10%
+    { const r = RD.ride('r2_sea', F);
+      check(P + `the mare on the road: a ride down the Sea Road (${r && r.tiles} tiles) takes ${r && r.secs} s, its length over 7.3 tiles a second (${r && r.want} s) within 10%`, !!r && r.done && !r.err && Math.abs(r.off) <= 10, r); }
   });
 }
