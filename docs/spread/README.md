@@ -180,6 +180,110 @@ Four trips are short: Stage 4b tunes them by moving a TRACK point or an anchor (
   every Wolfwood tile west of x 60 that the scarp and the rim leave room for; the Barrow is 53 tiles (about 15 s) east
   of the crypt along the Wolfwood Road.
 
+## Stage 4b: FIX-UPS, LABELS, TESTS (feat/spread)
+
+Built on 4a (cdff429), 7 Oct 2026. Not deployed (the test world is held by the owner, `~/.fanglands/test-world.hold`).
+
+**The world map's names (ADDENDUM B, `src/61-maplabels.js`).** One label per overworld Atlas place (the open Goblin
+Fields and the Wilds unnamed, as before), from one function, `MAP_LABELS.layout(items, opts)`, which the teacher view's
+map can call with its own scale, rings and bounds. Priority: towns, then regions, then landmarks, then small places
+(`MAP_LABELS.TIERS`); a name by the map's edge slides in, then each is nudged (up to a set distance: towns and regions
+three times a small place's, a region only onto its own ground) off the names already placed, every marker and quest
+ring and the key strip, and a name that still cannot fit is dropped at that zoom. A quest ring on a place lights that
+place's name in gold; a ring on a person or a thing prints no words (people are markers, not labels). Self-test at
+1280x800, 1024x768, 768x1024 and 390x844, markers on and off (a recording canvas hears every word: no place twice, no
+person). Screenshots of the panel at each size: `~/.fanglands/work/spread/s4b/mapshots/`.
+
+**The land.**
+- 92-worldshape: BAND 8 (was 5). Soft seams (the Wolfwood / Jungle giants, Hollowford's burn on the wood and the jungle,
+  the Jungle's west edge on the Wilds and the Ash Wastes): within the band a tile wears its neighbour's ground by a chance
+  falling from 0.7 at the border (a noise of its own, read in old coordinates), half the time with that ground's mark
+  (an oak, a giant, scorch). Step 7's re-flood after each dig is incremental: the same map (hash proved), 1.2 s to 0.8 s.
+- 39-worldblend: the Wolfwood and jungle edge dither six old rows each side (about nine new); the camp ring and the
+  quarry's spill eight tiles; Hollowford's burn eight out and four in.
+- 37-dragonkillers: the Ashfields' east wall is laid unbroken (each row takes every tile from the last row's column to
+  its own, the top carried up to the rim's end). On its pin it stepped diagonally and the corner by the rim's east end
+  was sealed only by the luck of the scatter: a widened dither re-rolled it and the Ashfields were reached round the
+  Warden's gate.
+- 02-world: a one-wide spur that steps diagonally takes the corner tile; 25-elves treads every road through the jungle.
+  The Bandit Track's toll (262,158) was walled in by giants.
+- 01-atlas: `saltmere.huts` is 251,72 (section 5's 256,72 is the Grey Sea at the spread; the Coast Path laid a line of
+  dirt into the sea).
+- 93-spread: every aggressive spawn 6+ tiles off a main road. Twelve moved (goblins by the Cave Road, wolves by the
+  Wolfwood and Long Roads), each to the nearest open ground of its own region with open ground all round (a new game
+  clears the 3x3 about a spawn, and a wolf moved beside the scarp cut the seal open that way). The roads' own fights
+  stay: the camp, the outposts, the bandit hills, the lair, Hollowford's occupiers (the Long and Goblin Roads meet in
+  its square; a deviation from section 4's list) and the Ashfields' dragons on the Ash Road.
+- 02-world: `regionAt` asks the outlines directly once they are on (section 12).
+- 90-canyon: the Redcut's wiki page printed the old map's numbers ("THE MOUTH, x 215 y 103"); it reads them through the
+  Redcut's frame now. 28-thefang: the lair is "in the far west of dragon country" (it said south; `compass.json`).
+
+**RAILS (51-mounts).** `window.RAILS`: Fennick's rail first, the Glasshouse's and the Old Barrow's reserved (no post
+yet), `RAILS.add` for each new place's rail (Stage 5). A rail is visited when the knight stands within 6 tiles of its
+post (`player.horse.rails`); thrown off, or fallen, the mare runs to the nearest visited rail and the Voice names it.
+
+**The checks (`src/97-spreadchecks.js`, `window.SPREAD_CHECKS`; `node tools/spread-report.mjs` prints the tables).**
+Spacing (36 named places 25+ apart; section 1's exceptions; the drill field, an unnamed lane, and the open grounds are
+not named places); the walk-clock; every port reached from the cave mouth (the ferry and the boats as links; held:
+Brightwater's landing (blimp), Wreck Rock (boat later), the strait's water, the pond's stepping stones); reach floods
+with the Warden's gate, the lair gate, the palisade's gaps shut and on foot east of the strait; the scarp seal (all three
+crossings shut: no Wolfwood; each alone: all of it); seam transects; main roads clear (both lanes, gates, doors and the
+river beside a bridge aside); aggressive spawns off the main roads; ADDENDUM C's 8-tile edge ring; the beat-gap report;
+`regionAt` direct. They read the world as generated (a `generateWorld` wrap keeps the snapshot; the Atlas's pass stays
+the last world pass).
+
+**The walk-clock** (an 8-connected walk, root-2 diagonals, no corner cut, story gates open, the Agility steps shut, at
+175 px/s):
+
+| Trip | Tiles | Seconds | Window | |
+| --- | --- | --- | --- | --- |
+| Cave mouth to Fountain Square | 167 | 46 | 40-55 | inside |
+| Fountain Square to Hollowford square | 124 | 34 | 45-62 | short, held |
+| Fountain Square to Harl's dock | 109 | 30 | 26-40 | inside |
+| Fountain Square to the Warden's post | 144 | 39 | 45-65 | short, held |
+| Fountain Square to Wren's door | 174 | 48 | 50-70 | short, held |
+| Hollowford square to the Sylvaris gap | 106 | 29 | 18-32 | inside |
+| Cave mouth to the Fang's Lair gate | 318 | 87 | 100-135 | short, held |
+
+Four trips are short, and **no track point or anchor move fixes them**: section 1's windows were drawn from the roads'
+lengths, and the walk-clock is the shortest walk over open ground, which cuts every bend of a road. Hollowford is 112
+straight tiles from the square by the goblin-road bridge (45 s is 164); the open Wolfwood lets the walk to the Warden's
+post and on to the lair go straight down from the Old Bridge instead of round by the inn; Wren is as far by the open
+wood as by the road. Each is held in `WALK_HELD` with its measured time (the check fails on a drift of more than 3 s, or
+when the trip comes inside its window) **for the owner's decision**: widen the windows to the open-ground walk, or make
+the Wolfwood a wood a knight cannot cut through (the roads its corridors), or move Hollowford south (into Sylvaris'
+ring).
+
+**Seam transects** (20 lines across each land seam; a line's mixed run is how deep each ground reaches onto the other's
+side, a fade counted whole): wolfwood_jungle median 9, ashfields_jungle (the ash fade) 14, jungle_wilds 9,
+hollowford_burn 8, quarry_edge 19; a seam passes on a median of 8+ with at most 5 of 20 lines nearly ruled (under 3:
+a road or a ford crossing). This reading of section 6's one sentence ("needs a mixed run of 8 or more") is the
+builder's. Exempt: the scarp and the rim (cliffs), the coasts, the river and the Sound (water), the palisade (a story
+gate), and the Ash Wastes' edge with the Ashfields (ash both sides, reserved).
+
+**The beat-gap report** (report-only in Stage 4; stops and glances within 10 tiles of the road): longest stop gap and
+glance gap on r1_cave 19 / 19, r2_sea 23 / 23, r3_long 29 / 29, r4_goblin 25 / 12, r5_wolfwood 21 / 9, r6_ash 47 / 41
+(a builders' plot counts as a glance, not a stop).
+
+**The compass test (`tools/compass.mjs`, run by `build.sh`; `docs/spread/compass.json`).** 70 lines the game says with
+a direction or distance word; 73 rows, 40 on the map (each within 67.5 degrees of its word from `from` to `to` on the
+Atlas), 33 local (an instance, or the inside of a place that moved whole, or a figure of speech). The weakest on the
+map: "a village east of Thistledown" (Hollowford is 50 degrees round to the south-east, as it was on the old map).
+
+**The boot budget (`tools/boot-budget.mjs`).** node `generateWorld` 1.43 s (budget 2.0; 4a was 1.85 s before 92's
+incremental re-flood); Chromium at 4x CPU 3.84 s (budget 4.0: little room); workerd from `tools/sim-bench.mjs`
+(local `wrangler dev --local`, never a live Worker): the overworld copy boots in 2.57, 2.75 and 3.11 s inside workerd (budget 3.5: little room) and the isolate holds 17.8 MB with the overworld (budget 45).
+
+**Re-baselined counts** (each with its reason in the check): 11-main's Ashfields open ground, lava and obsidian, and
+27-dragons' lava and obsidian, as shares of dragon country (3x the tiles); 92's rim (x1.62) and jungle-wall (x1.56)
+counts; 93-ashedge's charred trees (x2.5); 39's coast sand rim (x1.6); 61-markers' map image sizes measured at
+400 x 280. Checks the new land's luck had broken, made to hold: 11-main's jungle density measured from eight tiles in
+(its edge blends now); 58-underground's open count three in four (the wood's thickness is the density match's);
+32-beast rams along the side with open ground; 29-quests fishes in peace; 16-instances hears the place names and no
+person (people are markers).
+
+**Fingerprint.** `docs/spread/baseline-fingerprint.json` is regenerated from this build (4b changes the map on purpose).
+
 ## Proving "nothing visible changed" (spec §9.4)
 
 ```
