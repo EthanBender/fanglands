@@ -4415,6 +4415,33 @@ const TOWNSFOLK_ART = (() => {
     },
   });
 
+  // ---------- the Bandit Hills (the Great Spread, Stage 5f: 86-bandits): Wat the carter, by the Bandit Track below the ----------
+  // toll gate, waiting for his cart. Drawn by the sample's own hand (npc specs)
+  // a carter's whip: a short stiff handle, its lash curling back and swinging a little
+  PROPS.bh_whip = (g, C, o) => {
+    g.save(); g.rotate(-0.35 + Math.sin(time * Math.PI + C.seed) * 0.06);   // (the standing loop is 2 s: every sway comes round in it)
+    g.beginPath(); g.moveTo(-1.2, -0.7); g.lineTo(7.4, -0.5); g.lineTo(7.4, 0.5); g.lineTo(-1.2, 0.7); g.closePath(); g.fillStyle = '#6b4a2a'; g.fill(); outline(g, 0.3);
+    g.fillStyle = '#3a2614'; g.fillRect(-1.6, -0.9, 2.2, 1.8);
+    const sw = Math.sin(time * Math.PI * 2 + C.seed) * 1.2;
+    g.strokeStyle = '#4a3420'; g.lineWidth = 0.55; g.lineCap = 'round';
+    g.beginPath(); g.moveTo(7.4, 0); g.bezierCurveTo(10.4, -2.6 + sw, 12, 1.6, 9.6, 4.2 + sw); g.stroke();
+    g.restore();
+  };
+  addPeople('bandits', {
+    // ---------- Wat the carter: a small, wiry old man with a grey stubbly chin, a flat brown cap, a patched green coat ----------
+    // over a yellow shirt, and his carter's whip (the cart is the bandits' now)
+    wat_carter: {
+      build: 'adult', size: 0.97, geo: { w: 8.2 }, skin: SKIN.tan,
+      face: { eye: '#3a2a1a', brow: '#9a948a', browW: 1.1, mouth: 'frown', nose: 'big', noseC: '#b07a5a', lines: true },
+      hair: { style: 'short', c: '#a8a49c' },
+      beard: { style: 'stubble', c: '#9a968e' },
+      hat: { kind: 'cap', c: '#6a4a2a' },
+      body: { kind: 'coat', c: '#4e6a3e', under: '#d9b84a', sleeve: '#445e36', button: '#c9b48a', belt: '#3a2614', buckle: '#a8a090', pouch: false },
+      legs: { c: '#5a4a3a', boot: '#2e2218', cuff: '#6a5a44', patch: '#7a6a4a' },
+      held: { kind: 'bh_whip' },
+    },
+  });
+
   // ---------- pieces only one person uses ----------
   // Fennick's wide felt hat: a dented crown, a red band, a blue feather swept back
   function td_feltHat(g, C, c, band, feather) {
@@ -4519,7 +4546,7 @@ const TOWNSFOLK_ART = (() => {
 
   // every person's name as the sample's people list has it (today.json), for the talking pose; the game's own name for
   // a person wins where the call site hands it in
-  const NPC_NAMES = {"sera": "Sera", "garrick": "Garrick", "marta": "Marta", "aldous": "Aldous the banker", "rosalind": "Rosalind", "brakka": "Brakka the smith", "pim": "Pim the tinker", "dorran": "Dorran the innkeeper", "duke": "Duke Ferrin", "hale": "Sergeant Hale", "tobin": "Tobin", "greta": "Greta", "fennick": "Fennick the trader", "wren": "Old Wren", "v1": "Ada", "v2": "Bram", "v3": "Cass", "v4": "Dunn", "v5": "Elsie", "v6": "Finn", "osric": "Gatewarden Osric", "ambrose": "Ambrose the bell-ringer", "hettie": "Hettie the apple seller", "mabel": "Mabel the candle maker", "moll": "Moll the flower seller", "wynn": "Wynn", "tess": "Tess", "robin": "Robin", "death2": "Death", "tam": "Old Tam", "nell": "Nell", "pip": "Pip", "hob": "Hob", "wenna": "Wenna", "harl": "Harl the ferryman", "pete": "Pete", "thrain": "King Thrain", "brunhild": "Brunhild the smith", "dagny": "Dagny", "orik": "Orik", "hilde": "Hilde", "aelith": "Queen Aelith", "lira": "Lira the archery master", "thessaly": "Thessaly the weaver", "faelan": "Faelan", "seraphel": "Queen Seraphel", "halcyon": "Master Halcyon", "pell": "Keeper Pell", "quill": "Quill Windward", "skyla": "Skyla Fleetwing", "ferris": "Old Ferris", "aldric": "Captain Aldric", "tamsin": "Tamsin the baker", "mossbeard": "Mossbeard", "aubade": "Sister Aubade", "corvin": "Guildmaster Corvin", "merriweather": "Merriweather", "orla": "Warden Orla", "brisk": "Warden Brisk", "lark": "Lark", "bellweather": "Bellweather the lamplighter", "brannoc": "Brannoc the porter", "fen": "Fen", "tilly": "Tilly", "wick": "Wick the messenger", "pippa": "Pippa the fruit seller", "maudie": "Maudie the weaver", "plume": "Old Plume the feather seller", "crockett": "Crockett the potter", "hazel": "Hazel", "wim": "Wim", "tinkerton": "Tinkerton", "grubb": "Grubb the cook", "nix": "Nix the scrapper", "snaggle": "Old Snaggle", "pipsqueak": "Pip-squeak", "gnash": "King Gnash", "mudge": "Mudge", "skritch": "Skritch", "ratchet": "Ratchet", "wilf": "Wilf the stonemason", "tamsin_miller": "Tamsin the miller", "odo": "Odo the farmer", "nan_gully": "Nan Gully", "mother_hobb": "Mother Hobb", "jory": "Jory the pedlar", "marigold": "Marigold the drover", "ansel": "Ansel the beacon keeper", "hilde_trapper": "Hilde the trapper", "corvin_hunter": "Corvin the hunter", "bramble_scout": "Bramble the scout", "brin_drover": "Brin the drover"};
+  const NPC_NAMES = {"sera": "Sera", "garrick": "Garrick", "marta": "Marta", "aldous": "Aldous the banker", "rosalind": "Rosalind", "brakka": "Brakka the smith", "pim": "Pim the tinker", "dorran": "Dorran the innkeeper", "duke": "Duke Ferrin", "hale": "Sergeant Hale", "tobin": "Tobin", "greta": "Greta", "fennick": "Fennick the trader", "wren": "Old Wren", "v1": "Ada", "v2": "Bram", "v3": "Cass", "v4": "Dunn", "v5": "Elsie", "v6": "Finn", "osric": "Gatewarden Osric", "ambrose": "Ambrose the bell-ringer", "hettie": "Hettie the apple seller", "mabel": "Mabel the candle maker", "moll": "Moll the flower seller", "wynn": "Wynn", "tess": "Tess", "robin": "Robin", "death2": "Death", "tam": "Old Tam", "nell": "Nell", "pip": "Pip", "hob": "Hob", "wenna": "Wenna", "harl": "Harl the ferryman", "pete": "Pete", "thrain": "King Thrain", "brunhild": "Brunhild the smith", "dagny": "Dagny", "orik": "Orik", "hilde": "Hilde", "aelith": "Queen Aelith", "lira": "Lira the archery master", "thessaly": "Thessaly the weaver", "faelan": "Faelan", "seraphel": "Queen Seraphel", "halcyon": "Master Halcyon", "pell": "Keeper Pell", "quill": "Quill Windward", "skyla": "Skyla Fleetwing", "ferris": "Old Ferris", "aldric": "Captain Aldric", "tamsin": "Tamsin the baker", "mossbeard": "Mossbeard", "aubade": "Sister Aubade", "corvin": "Guildmaster Corvin", "merriweather": "Merriweather", "orla": "Warden Orla", "brisk": "Warden Brisk", "lark": "Lark", "bellweather": "Bellweather the lamplighter", "brannoc": "Brannoc the porter", "fen": "Fen", "tilly": "Tilly", "wick": "Wick the messenger", "pippa": "Pippa the fruit seller", "maudie": "Maudie the weaver", "plume": "Old Plume the feather seller", "crockett": "Crockett the potter", "hazel": "Hazel", "wim": "Wim", "tinkerton": "Tinkerton", "grubb": "Grubb the cook", "nix": "Nix the scrapper", "snaggle": "Old Snaggle", "pipsqueak": "Pip-squeak", "gnash": "King Gnash", "mudge": "Mudge", "skritch": "Skritch", "ratchet": "Ratchet", "wilf": "Wilf the stonemason", "tamsin_miller": "Tamsin the miller", "odo": "Odo the farmer", "nan_gully": "Nan Gully", "mother_hobb": "Mother Hobb", "jory": "Jory the pedlar", "marigold": "Marigold the drover", "ansel": "Ansel the beacon keeper", "hilde_trapper": "Hilde the trapper", "corvin_hunter": "Corvin the hunter", "bramble_scout": "Bramble the scout", "brin_drover": "Brin the drover", "wat_carter": "Wat the carter"};
   const H = { lerp, ease, OUT, shade, hex, rr, ell, outline, vfill, rfill, metal, shadow, face4 };
   return { NEW_NPC, NPC_FAMILY, NPC_SPEC, NPC_NAMES, npc, drawPerson, npcFromToday, BUILDS, SKIN, HAIR, H, mark: f => { NPC_MARK = f || null; } };
 })();

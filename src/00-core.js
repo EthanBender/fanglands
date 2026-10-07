@@ -101,9 +101,10 @@ const HOOKS = {
 // places (85-riverside: the Old Bridge, Millbrook and Saltmere, each box with its dressing ring); 3 = Stage 5c, the
 // Crossroads Inn (84-crossroads: its box grown over the inn and the yard, with its dressing ring); 4 = Stage 5d, the wild
 // places (86-wildplaces: Beacon Hills and the Hunters' Lodge, each box with its dressing ring, and the bear's den); 5 = Stage
-// 5e, the goblin outposts (86-outposts: each box with its dressing ring, and the north one's trail to the Goblin Road).
+// 5e, the goblin outposts (86-outposts: each box with its dressing ring, and the north one's trail to the Goblin Road); 6 =
+// Stage 5f, the Bandit Hills (86-bandits: the box with its dressing ring).
 const WORLD_V = 2;
-const WORLD_REV = 5;
+const WORLD_REV = 6;
 let SAVE_LOCK = false;
 // a cell the knight could step onto but could not get across (an agility obstacle above his level): pathfinders go round it
 function pathBlocked(tx, ty, who) { for (const f of HOOKS.pathBlock) if (f(tx, ty, who)) return true; return false; }

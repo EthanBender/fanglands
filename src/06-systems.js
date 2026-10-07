@@ -126,7 +126,8 @@ function explode(x, y, radius, dmgMin, dmgMax, owner) {
 // ---------- the Goblin Camp ----------
 // Spawns inside the palisade carry `camp: true` (02-world). A dead camp monster stays down for 30 minutes and only comes back while
 // the knight is 40+ tiles away, so a cleared camp stays cleared for a proper while. quest.campCleared gates the banner to once per clear.
-// The goblin outposts' spawns (86-outposts) carry `outpost` (the place's id) and keep the same rule; their banner is their own.
+// The goblin outposts' spawns (86-outposts) and the Bandit Hills' (86-bandits) carry `outpost` (the place's id) and keep the
+// same rule; their banners are their own.
 const CAMP_RESPAWN = 1800;
 function campSpawnOf(m) { const tx = Math.floor(m.home.x / TILE), ty = Math.floor(m.home.y / TILE); return MONSTER_SPAWNS.find(s => (s.camp || s.outpost) && s.tx === tx && s.ty === ty) || null; }
 function isCampMonster(m) { return !!campSpawnOf(m); }

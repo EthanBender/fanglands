@@ -275,10 +275,12 @@
     return { bad, dry, ring: EDGE };
   }
 
-  // ---------- the beat-gap report (§6; report-only in Stage 4) ----------
+  // ---------- the beat-gap report (§6; report-only in Stage 4, held on R1, R2 and R3 from Stage 5f) ----------
   // along each main road, the beats within 10 tiles of its centre line: a STOP is something to do (a person who talks, a
   // monster's spawn, a signpost, a built place's box, a shop or quest marker); a GLANCE is a landmark on screen (a stop,
   // a building, a reserved place's stakes, the river or the sea, a bridge, a wall). Reports the longest gap of each.
+  // the roads Stage 5 brings under the limits (§13 STAGE 5: "after 5f, the beat-gap limits hold on R1, R2 and R3")
+  const BEAT_HELD = ['r1_cave', 'r2_sea', 'r3_long'], BEAT_LIMIT = { stop: 73, glance: 36 };
   function beatGaps() {
     const segs = [], beats = [];
     const BRIDGE = Tn('BRIDGE'), WALLISH = new Set([T.TOWN_WALL, Tn('CLIFF'), Tn('PALISADE')].filter(v => v >= 0));
@@ -308,7 +310,7 @@
   let SNAP = null;
   { const _generateWorld = generateWorld; generateWorld = function () { const r = _generateWorld.apply(this, arguments); SNAP = map.slice(); return r; }; }
 
-  window.SPREAD_CHECKS = { walkClock, TRIPS, WALK_HELD, SEAM_EXEMPT, spacing, ports, gateFloods, scarpSeal, transects, roadsClear, spawnsOffRoads, edgeRing, beatGaps, walkTiles, flood, EDGE };
+  window.SPREAD_CHECKS = { BEAT_HELD, BEAT_LIMIT, walkClock, TRIPS, WALK_HELD, SEAM_EXEMPT, spacing, ports, gateFloods, scarpSeal, transects, roadsClear, spawnsOffRoads, edgeRing, beatGaps, walkTiles, flood, EDGE };
 
   // ---------- the self-tests ----------
   HOOKS.selfTest.push((check, F, h) => {
@@ -339,8 +341,11 @@
         check(PF + "every aggressive spawn stands 6+ tiles off a main road's centre line, but the fights the road leads to (the camp, the outposts, the bandit hills, the lair, the Ashfields' dragons on the Ash Road)", r.near.length === 0, r); }
       { const r = edgeRing();
         check(PF + "ADDENDUM C: the map's outer 8-tile ring on the east and south holds no place, port, building, person, wall or cliff (the east sea aside, water end to end), so land can be added at an edge", r.bad.length === 0 && r.dry === 0, r); }
-      { const r = beatGaps();
-        check(PF + 'the beat-gap report runs (report-only in Stage 4: stakes are not stops; Stage 5 brings the Cave, Long and Sea Roads under 73 / 36 tiles)', r.length === A.MAIN_ROADS.length && r.every(q => q.length > 0), r); }
+      // (Stage 5 is built: the Cave, Sea and Long Roads hold the limits, a stop at most every 73 tiles and a glance at most every
+      // 36, each beat within 10 tiles of the road; the other main roads are reported, and Stage 6 holds them all)
+      { const r = beatGaps(), held = r.filter(q => BEAT_HELD.includes(q.road)), bad = held.filter(q => q.stopGap > BEAT_LIMIT.stop || q.glanceGap > BEAT_LIMIT.glance);
+        check(PF + 'the beat gaps (section 6): on the Cave Road, the Sea Road and the Long Road a stop comes at most every 73 tiles and a glance at most every 36, each within 10 tiles of the road (the other main roads are reported until Stage 6)',
+          r.length === A.MAIN_ROADS.length && r.every(q => q.length > 0) && held.length === BEAT_HELD.length && !bad.length, { r, bad }); }
       // regionAt asks the outlines directly (section 12): no bisect through REGIONS.find on the way
       { const nf = Object.getOwnPropertyDescriptor(REGIONS, 'find'); let calls = 0;
         Object.defineProperty(REGIONS, 'find', { value: function () { calls++; return nf.value.apply(this, arguments); }, writable: true, configurable: true, enumerable: false });

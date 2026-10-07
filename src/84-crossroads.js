@@ -394,8 +394,10 @@
       const solid = things.every(([, x, y]) => SOLID.has(tiles[idx(x, y)]) && tiles[idx(x, y)] === SOLID_T() && inB(B, x, y));
       const board = boardWords();
       const hay = DECO.cells('hay').filter(([x, y]) => inB(B, x, y)).length;
-      check(P + 'no creature spawns inside the inn\'s ground; the yard has its well, trough and hay, the notice board stands by the road (nothing pinned yet), each solid',
-        !inside.length && kinds.has('well') && kinds.has('trough') && kinds.has('board') && things.length === 3 && solid && /Nothing is pinned/.test(board) && hay === 2,
+      // (86-bandits pins its WANTED notice for the Bandit Hills' bandits; without it, nothing is pinned)
+      const pinned = window.BANDITS ? /Bandit Hills/.test(board) && !/Nothing is pinned/.test(board) : /Nothing is pinned/.test(board);
+      check(P + 'no creature spawns inside the inn\'s ground; the yard has its well, trough and hay, the notice board stands by the road (86-bandits\' notice pinned to it), each solid',
+        !inside.length && kinds.has('well') && kinds.has('trough') && kinds.has('board') && things.length === 3 && solid && pinned && hay === 2,
         { inside, things, board, hay }); }
 
     // 7. the rail and the signpost: a RAILS entry on a HITCH tile in its own ground; the four-way signpost shows four

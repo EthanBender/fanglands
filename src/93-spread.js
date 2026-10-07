@@ -47,6 +47,8 @@
     ash_wastes: "Builders' stakes. The Ash Wastes are not open yet.",
     sylvaris_growth: "Builders' stakes. Sylvaris is growing.",
     blood_portal: "Builders' stakes. Something will open here one day.",
+    // the bandits' hideout in the Bandit Hills' rock (86-bandits stakes its mouth; an instance later)
+    bandit_hideout: "Builders' stakes. The Bandit Hideout is coming.",
   };
   // a name whose last word is plural takes "are" ("The Bandit Hills are coming."), the rest "is"
   const isAre = name => /[^s']s$/.test(name.split(' ').pop()) ? 'are' : 'is';

@@ -469,8 +469,9 @@ const TOWNSFOLK = (() => {
         // 74 in the approved sample, and 6 more since: the Windward Market's sellers and shoppers (the Cloud Kingdom polish, 2026-10-03);
         // and 4 more: the riverside's Wilf, Tamsin the miller, Odo and Nan Gully (the Great Spread, Stage 5b); and 3 more: the
         // Crossroads Inn's Mother Hobb, Jory the pedlar and Marigold the drover (Stage 5c); and 3 more: Ansel the beacon keeper,
-        // Hilde the trapper and Corvin the hunter (Stage 5d); and 2 more: Bramble the scout and Brin the drover (Stage 5e)
-        ids.length === 92 && !bad.length && !missed.length && !dup.length && !small.length, { n: ids.length, bad: bad.slice(0, 5), missed, dup, small }); }
+        // Hilde the trapper and Corvin the hunter (Stage 5d); and 2 more: Bramble the scout and Brin the drover (Stage 5e); and 1
+        // more: Wat the carter (Stage 5f)
+        ids.length === 93 && !bad.length && !missed.length && !dup.length && !small.length, { n: ids.length, bad: bad.slice(0, 5), missed, dup, small }); }
 
     // 2. every person the game draws reaches the new look by id: each NPCS entry through the core's drawNpc, and every
     // place's own people in real frames (Hollowford's square and the guild, the ferry, Deepholm, Sylvaris, Aerie and the
