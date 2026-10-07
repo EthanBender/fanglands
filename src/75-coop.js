@@ -22,7 +22,7 @@
   const REMOTE_STALE = 15;    // seconds without presence before a remote knight is forgotten
   const KNIGHT_R = 13;
 
-  const S = { map: 'over', keeper: null, puppets: null, parked: {}, remotes: {}, counter: 0, snapAcc: 0, here: [], idxArr: null, idxLen: -1, byNid: new Map(), calls: {}, pending: null, sentAt: -1e9, restAt: {}, lootless: false, hand: null };
+  const S = { map: 'over', keeper: null, puppets: null, parked: {}, remotes: {}, counter: 0, snapAcc: 0, here: [], idxArr: null, idxLen: -1, byNid: new Map(), calls: {}, pending: null, sentAt: -1e9, restAt: {}, lootless: false, hand: null, paid: {}, hitAt: {} };
   // ?debug=tick (docs/ONLINE.md, Stage 2): the world's tick and how often its stream lands (kept out of S, which is COOP.state)
   const DBG = { k: null, rows: 0, times: [] };
   // While the world keeps this map ('@world:<map>', Stage 2): the last row it sent of each monster by nid (kept after the
@@ -169,6 +169,7 @@
     const f = m.facing || { x: 1, y: 0 };
     const row = [m.nid, m.type, Math.round(m.x), Math.round(m.y), r2(m.hp || 0), r2(m.maxHp || 0), typeof m.state === 'string' ? m.state : 'idle', r2(f.x || 0), r2(f.y || 0), m.moving ? 1 : 0, r2(m.hurtT || 0), m.dead ? 1 : 0, r2(m.attackT || 0), r2(m.stunT || 0)];
     if (!m.dead && CREDIT.has(m.type)) { const h = hittersOut(m); if (h) { while (row.length < 20) row.push(null); row.push(h); } }
+    if (m.dead) m.untold = false;   // a row has told every screen of this death (sendHand passes on the ones no row told)
     return row;
   }
   function snapshot(knights) {
@@ -272,6 +273,7 @@
       const dead = !!e[11];
       if (!dead && p.dead && time < p.localDeadUntil) { p.seen = time; continue; }   // our own blow just felled it; give the keeper a moment to agree
       if (dead !== p.dead) p.deadT = 0;
+      p.rowDead = dead;   // a row told every screen of it (handoff: a death only a kill message told is passed on)
       p.dead = dead; p.hp = hp; if (maxHp > 0) p.maxHp = maxHp; p.state = typeof state === 'string' ? state : 'idle';
       p.facing.x = fx; p.facing.y = fy; p.moving = !!moving; p.hurtT = hurt; p.attackT = attackT; p.stunT = stunT; p.respawnT = 1e9;
       p.seen = time; p.gone = false; p.seed = false;
@@ -346,17 +348,23 @@
       S.keeper = n;
     }
   }
-  // the old keeper's side of a hand-over: each named boss it ran that was hurt or hit, with its hp and its count now
+  // the old keeper's side of a hand-over: each named boss it ran that was hurt or hit, with its hp and its count now; and each
+  // monster that died on this game after the last row it sent ([nid, 0, {}]: a paused keeper sends no rows, so a friend's blow
+  // that felled a boss here reached only the knights it paid, and the knight taking the map still had it standing). The deaths of
+  // named bosses go first, then the named bosses standing, then other deaths, latest first; HAND_MAX in all.
   function sendHand() {
     if (!online()) return;
-    const list = [];
+    const deadBoss = [], live = [], deadOther = [];
     for (const m of monsters) {
-      if (m.dead || m.remote || m.phantom || !m.nid || !CREDIT.has(m.type)) continue;
+      if (m.remote || m.phantom || !m.nid) continue;
+      if (m.dead) { if (m.untold) (CREDIT.has(m.type) ? deadBoss : deadOther).push(m); continue; }
+      if (!CREDIT.has(m.type)) continue;
       const h = hittersOut(m);
       if (!h && !(m.hp < m.maxHp)) continue;
-      list.push([m.nid, r2(m.hp || 0), h || {}]);
-      if (list.length >= HAND_MAX) break;
+      live.push([m.nid, Math.max(0.01, r2(m.hp || 0)), h || {}]);
     }
+    const latest = (a, b) => (b.diedAt || 0) - (a.diedAt || 0);
+    const list = deadBoss.sort(latest).map(m => [m.nid, 0, {}]).concat(live, deadOther.sort(latest).map(m => [m.nid, 0, {}])).slice(0, HAND_MAX);
     if (list.length) NET.send({ t: 'hand', list });
   }
   // the new keeper's side: from the knight it took the map from, once, within HAND_WAIT. The count is merged; the hp the old
@@ -370,13 +378,31 @@
     for (const e of msg.list.slice(0, HAND_MAX)) {
       if (!Array.isArray(e) || typeof e[0] !== 'string') continue;
       const m = find(e[0]);
-      if (!m || m.remote || m.phantom || m.dead || !CREDIT.has(m.type) || m.handHp === undefined) continue;
+      if (!m || m.remote || m.phantom || m.dead) continue;
+      // hp 0: it died on the old keeper's game after its last row. It goes down here too, paying nobody (that game paid it)
+      if (e[1] === 0) { layDown(m, true); monsterDied(m, 'hand', H.from); used++; continue; }
+      if (!CREDIT.has(m.type) || m.handHp === undefined) continue;
       mergeHitters(m, hittersIn(e[2]));
       const hp = num(e[1]);
       if (hp !== null && hp >= 0 && hp < m.handHp) m.hp = Math.max(1, m.hp - (m.handHp - hp));
       delete m.handHp; used++;
     }
     return used > 0;
+  }
+  // a monster that died on another game (the old keeper's) goes down on this one as that game's kill left it, and pays nothing
+  // here: a named boss's fight is over (credited, no count), an instance boss stays down for the visit, a called boss rests from
+  // now when it has just died (rest: the hand), and the next row tells every screen
+  function layDown(m, rest) {
+    const d = MONSTER_DEFS[m.type] || {};
+    m.dead = true; m.hp = 0; m.deadT = 0; m.stunT = 0; m.lastHitBy = null; m.moving = false; m.state = 'idle';
+    m.respawnT = (d.respawn || 25) + Math.random() * 10;
+    if (isCampMonster(m)) m.respawnT = Math.max(m.respawnT, CAMP_RESPAWN);
+    const I = window.INSTANCES, inst = I && I.active && I.active() ? I.get(I.active()) : null;
+    if (inst && inst.boss === m.type) m.respawnT = Infinity;
+    if (CREDIT.has(m.type)) { m.credited = true; m.hitters = {}; delete m.handHp; }
+    if (rest) for (const id of Object.keys(HOOKS.bossCall)) { const h = HOOKS.bossCall[id]; if (h && h.type === m.type && h.map === S.map) S.restAt[id] = time; }
+    m.untold = true; m.diedAt = time;
+    S.snapAcc = SNAP_EVERY;
   }
   function handoff() {
     const real = S.parked[S.map] || [];
@@ -385,7 +411,8 @@
     for (const m of real) if (m.handHp !== undefined) delete m.handHp;
     const byNid = new Map(); for (const m of real) if (m.nid) byNid.set(m.nid, m);
     for (const p of S.puppets) {
-      if (p.gone) continue;
+      // a puppet that stopped being listed: this game's own copy stands as it was, unless the last word on it was its death
+      if (p.gone) { const m = p.deathSeen ? byNid.get(p.nid) : null; if (m && !m.dead && !m.remote && m.type === p.type) { layDown(m); m.deadT = 9; } continue; }
       let m = byNid.get(p.nid);
       if (!m) { if (p.dead) continue; m = makeReal(p.type, p.x, p.y, p.nid, p.home); real.push(m); byNid.set(p.nid, m); }
       m.x = p.x; m.y = p.y; m.hp = p.hp; m.maxHp = p.maxHp; m.dead = p.dead; m.deadT = p.deadT; m.state = p.state; m.facing = { x: p.facing.x, y: p.facing.y };
@@ -396,6 +423,8 @@
       if (!m.dead && CREDIT.has(m.type)) { if (m.credited) { m.credited = false; m.hitters = {}; } mergeHitters(m, p.hitters); if (S.hand) m.handHp = r2(m.hp || 0); }
       if (m.dead) { const d = MONSTER_DEFS[m.type]; m.respawnT = (d.respawn || 25) + Math.random() * 10; if (isCampMonster(m)) m.respawnT = Math.max(m.respawnT, CAMP_RESPAWN); }
       else m.respawnT = 0;
+      // a death this screen heard of from a kill message (or its own blow) and no row told: this game's hand passes it on
+      m.untold = !!m.dead && !p.rowDead; if (m.untold) m.diedAt = time;
     }
     monsters = real; S.puppets = null; delete S.parked[S.map]; S.idxLen = -1; S.snapAcc = SNAP_EVERY;
   }
@@ -587,6 +616,8 @@
   // ---------- hits and kills ----------
   const _hitMonster = hitMonster;
   hitMonster = function (m, dmg, knock, fromBomb, source) {
+    // this knight's own blow on a named boss (its pay rule: paidOnce)
+    if (m && m.nid && !m.phantom && CREDIT.has(m.type) && source !== 'monster' && source !== 'remote') S.hitAt[S.map + '|' + m.nid] = time;
     if (m.remote) {
       if (source !== 'monster' && source !== 'remote' && online()) NET.send({ t: 'hit', nid: m.nid, dmg: Math.max(0, Math.min(MAX_DMG, Math.round(num(dmg) || 0))), knock: Math.round(num(knock) === null ? 14 : knock), bomb: !!fromBomb });
       return _hitMonster(m, dmg, knock, fromBomb, source);
@@ -617,7 +648,22 @@
   // one kill on this knight's game, through every kill hook, with the pay gate: a knight still resting from his last paid
   // kill of a named boss is paid nothing for this one (the drops, the purse, the dragon item and the kill bonus all look at
   // m.noPay; core rollDrops is held back below while S.lootless)
+  // A knight is paid for a named boss's death once per fight he hit in: a kill of the same boss (on this map, within CREDIT_FOR)
+  // after one that paid him, with no blow of his own on it since, is the same death told twice (a hand-over that rebuilt it from
+  // a count sent before it died) and pays nothing. A real new fight always has his blow in it: 3 for a share, the last for a kill.
+  const payKey = m => S.map + '|' + m.nid;
+  function paidOnce(m) {
+    if (!m || !m.nid || !CREDIT.has(m.type)) return false;
+    const k = payKey(m), at = S.paid[k], hit = S.hitAt[k];
+    if (at === undefined || time < at || time - at > CREDIT_FOR) return false;
+    return !(hit !== undefined && hit > at && hit <= time);
+  }
   function payKill(m) {
+    if (m && m.nid && CREDIT.has(m.type)) {
+      S.paid[payKey(m)] = time;
+      for (const k of Object.keys(S.paid)) if (time < S.paid[k] || time - S.paid[k] > CREDIT_FOR) delete S.paid[k];
+      for (const k of Object.keys(S.hitAt)) if (S.paid[k] === undefined && (time < S.hitAt[k] || time - S.hitAt[k] > CREDIT_FOR)) delete S.hitAt[k];
+    }
     let gate = false;
     const e = CREDIT.has(m.type) ? entryOf(m.type) : null;
     if (e && typeof e[1].resting === 'function') { try { gate = !!e[1].resting(m); } catch (err) { gate = false; } }
@@ -631,6 +677,8 @@
   killMonster = function (m) {
     // the keeper decides drops, XP, credit and the death itself: no HOOKS.monsterDeath here (it fires on the keeper's word)
     if (m.remote) { m.dead = true; m.deadT = 0; m.respawnT = 1e9; m.localDeadUntil = time + 0.5; return; }
+    // a death no row has told yet (rowOf clears it; sendHand passes it on if this game loses the map first)
+    if (!m.phantom) { m.untold = true; m.diedAt = time; }
     let share = null;
     // the keeper remembers when a called boss fell on this map: its rest starts here, whoever landed the blow
     if (!m.phantom && isKeeper()) for (const id of Object.keys(HOOKS.bossCall)) { const h = HOOKS.bossCall[id]; if (h && h.type === m.type && h.map === S.map) S.restAt[id] = time; }
@@ -649,7 +697,7 @@
     } else payKill(m);
     if (share) {
       for (const n of share.remote) NET.send({ t: 'kill', nid: m.nid, type: m.type, x: Math.round(m.x), y: Math.round(m.y), to: n });
-      if (share.me) payKill(phantomOf(m));
+      if (share.me && !paidOnce(m)) payKill(phantomOf(m));
     }
   };
   killMonster.__inner = _killMonster;
@@ -693,7 +741,8 @@
         p.dead = true; p.deadT = 0; p.respawnT = 1e9; p.localDeadUntil = time + 0.5;
         if (!p.deathSeen) { p.deathSeen = true; monsterDied(p, 'kill', typeof msg.to === 'string' ? msg.to : NET.me, typeof msg.k === 'string' || typeof msg.k === 'number' ? msg.k : null); }
       }
-      payKill(phantomOf({ type: msg.type, nid, x, y }));
+      const ph = phantomOf({ type: msg.type, nid, x, y });
+      if (!paidOnce(ph)) payKill(ph);
     });
     NET.on('boss_call', onBossCall);
     NET.on('hand', onHand);
@@ -1160,6 +1209,55 @@
         check(P + 'credit over a hand-over: the keeper\'s row of a named boss carries its count, its hand on losing the map carries hp and count, the friend\'s puppet holds the count, and the boss coming back has both: Ann (3+ hits) is credited; a hand from anyone else, a second hand, a bad count or a prototype name changes nothing',
           rowOk && plain && handOk && held && back && fromBo === false && boLeft && merged && again === false && once && m.dead && kills.length === 1 && kills[0].to === 'Ann' && hookRuns.filter(t => t === 'brood_mother').length === 1,
           { rowOk, row: r && r.slice(14), plain, handOk, hands, held, ph: p && p.hitters, back, hp: m.hp, boLeft, merged, once, kills: kills.map(k => k.to), hookRuns });
+        for (let i = monsters.length - 1; i >= 0; i--) if (tempTypes.has(monsters[i].nid)) monsters.splice(i, 1);
+        S.idxLen = -1; }
+      // (C11) a boss that died on a paused keeper's game is not fought (or paid) again by the knight it hands the map to. A paused
+      // keeper sends no rows, so a friend's blow that fells the boss there reaches only the knights it pays; the one taking the
+      // map still had it standing, with a count from before the death. (On 6 Oct 2026 that knight finished the 'ghost' and the
+      // keeper and the killer were paid a second Brood Mother, 10 silk and all.) (a) the old keeper's hand names the death
+      // ([nid, 0, {}]) and, on the new keeper, it lays the boss down at once, paying nobody;
+      // (b) behind that, a kill message for a boss this game was already paid for, with no blow of its own on it since, pays
+      // nothing, and one after a blow pays as ever.
+      { push({ t: 'keeper', map: 'over', n: 'Cohen' });
+        remote('Ann', 'over', player.x + 2 * TILE, player.y); remote('Bo', 'over', player.x + 2 * TILE, player.y + TILE);
+        const m = make('brood_mother', 'Cohen:t11'); m.hp = 40;
+        for (let i = 0; i < 3; i++) { hitMonster(m, 1, 0); hit('Ann', m, 1); }
+        hit('Bo', m, 1);
+        const p0 = paused; paused = true; sent.length = 0; hookRuns.length = 0;
+        hit('Ann', m, 60);
+        const paidThen = sentOf('kill').map(k => k.to).join(',') + '|' + hookRuns.join(',');
+        push({ t: 'keeper', map: 'over', n: 'Bo' });
+        paused = p0;
+        const hand = sentOf('hand')[0], h0 = hand && hand.list && hand.list[0];
+        const told = !!h0 && h0[0] === 'Cohen:t11' && h0[1] === 0 && Object.keys(h0[2]).length === 0;
+        // the other side: Bo's game runs the map; its row of a boss still standing (33 hp, a count of Ann 3, Cohen 3, Bo 1)
+        const credit = { Ann: [3, 1], Cohen: [3, 1], Bo: [1, 2] };
+        push({ t: 'mon', n: 'Bo', list: [['Bo:t12', 'brood_mother', Math.round(player.x + 3 * TILE), Math.round(player.y), 33, 140, 'chase', 1, 0, 0, 0, 0, 0, 0, null, null, null, null, null, null, credit]] });
+        tempTypes.add('Bo:t12');
+        push({ t: 'keeper', map: 'over', n: 'Cohen' });
+        const g = COOP.find('Bo:t12'), standing = !!g && !g.remote && !g.dead && g.hp === 33 && !!g.hitters && g.hitters.Ann.n === 3;
+        sent.length = 0; hookRuns.length = 0;
+        push({ t: 'hand', n: 'Bo', list: [['Bo:t12', 0, {}]] });
+        const down = !!g && g.dead && g.credited === true && Object.keys(g.hitters || {}).length === 0 && g.hp <= 0;
+        const ghostPay = sentOf('kill').length + hookRuns.filter(t => t.indexOf('brood_mother') === 0).length;
+        // (b) a kill message for a boss already paid here, no blow since: nothing; after a blow on it: paid
+        push({ t: 'keeper', map: 'over', n: 'Ann' });
+        const row13 = hp => ['Ann:t13', 'count_ashvane', Math.round(player.x + 3 * TILE), Math.round(player.y), hp, 300, 'chase', 1, 0, 0, 0, 0, 0, 0];
+        push({ t: 'mon', n: 'Ann', list: [row13(200)] }); tempTypes.add('Ann:t13');
+        const q = COOP.find('Ann:t13');
+        const killMsg = () => push({ t: 'kill', nid: 'Ann:t13', type: 'count_ashvane', x: Math.round(q.x), y: Math.round(q.y), to: 'Cohen' });
+        hookRuns.length = 0; const time0 = time;
+        hitMonster(q, 1, 0); time += 0.5; killMsg();
+        const first = hookRuns.filter(t => t === 'count_ashvane:phantom').length;
+        time += 1; push({ t: 'mon', n: 'Ann', list: [row13(150)] }); killMsg();
+        const twice = hookRuns.filter(t => t === 'count_ashvane:phantom').length;
+        time += 1; push({ t: 'mon', n: 'Ann', list: [row13(150)] }); hitMonster(q, 1, 0); time += 0.5; killMsg();
+        const again = hookRuns.filter(t => t === 'count_ashvane:phantom').length;
+        time = time0;
+        check(P + 'a boss that died on a paused keeper\'s game: the keeper and the killer are paid once; its hand names the death; the knight it hands the map to lays the boss down paying nobody; a kill message for a boss already paid, with no blow since, pays nothing, and after a blow pays',
+          paidThen === 'Ann|brood_mother:phantom' && told && standing && down && ghostPay === 0 && first === 1 && twice === 1 && again === 2,
+          { paidThen, hand: hand && hand.list, standing, down, g: g && { dead: g.dead, hp: g.hp, credited: g.credited, hitters: g.hitters }, ghostPay, first, twice, again });
+        push({ t: 'keeper', map: 'over', n: 'Cohen' });
         for (let i = monsters.length - 1; i >= 0; i--) if (tempTypes.has(monsters[i].nid)) monsters.splice(i, 1);
         S.idxLen = -1; }
     } finally {

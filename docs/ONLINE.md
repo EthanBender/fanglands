@@ -142,7 +142,7 @@ between knights on the same map; chat and the roster go to everyone.
 | `gift_ok` / `gift_no` | `gid` | — | the receiver took it / could not (full pack); `gift_no` makes the server send `gift_back` |
 | `boss_call` | `id, first?` | 0.5/s, burst 2 | ask the keeper of your map to wake a named boss (`id` matches `^[a-z_]{1,24}$`; `first: true` when it is your own first fight; see *Named bosses* below). Dropped when you are the keeper, nobody keeps the map, or the id is bad |
 | `boss_wait` | `to, id, left` | 1/s, burst 3 | keeper: the boss `to` asked for is resting on this map, `left` seconds more (relayed like `kill`: only from the keeper, only to a knight on its map) |
-| `hand` | `list: [[nid, hp, {name: [hits, age]}], ...]` | 1/s, burst 3 | the game that kept your map until a moment ago (the world gave it to a knight who plays): each named boss it ran, its hp and its helper count now (see *Named bosses*). Relayed to the keeper of your map; dropped from the keeper itself or a world-run map's. At most 8 bosses; `nid` a string of at most 64, `hp` 0 to 10,000,000; at most 8 names of at most 24 characters, `hits` a whole number 1 to 10,000, `age` 0 to 60 seconds; anything else is left out |
+| `hand` | `list: [[nid, hp, {name: [hits, age]}], ...]` | 1/s, burst 3 | the game that kept your map until a moment ago (the world gave it to a knight who plays): each named boss it ran, its hp and its helper count now, and each monster that died on its game after its last row as `[nid, 0, {}]` (see *Named bosses*). Relayed to the keeper of your map; dropped from the keeper itself or a world-run map's. At most 8 bosses; `nid` a string of at most 64, `hp` 0 to 10,000,000; at most 8 names of at most 24 characters, `hits` a whole number 1 to 10,000, `age` 0 to 60 seconds; anything else is left out |
 | `ping` | — | — | keepalive every 25 s |
 | `mute` `unmute` `kick` `ban` `unban` `modlist` `spawn` `spawn_clear` `party` `party_end` `light` `claim` | | | see *Admins and drop parties* |
 | `trade_ask` `trade_answer` `trade_offer` `trade_accept` `trade_confirm` `trade_full` `trade_close` `trade_ack` | | | see *Trading* |
@@ -328,6 +328,19 @@ together. Two rules make that safe on a shared map; `src/75-coop.js` owns both.
   is). So a knight who landed her hits, opened the menu and came back to watch her friends finish it is credited, and the
   boss never heals at a hand-over. (5 Oct 2026: before this the new keeper's boss had no count, so the knight who had kept
   the map lost her kill and the boss went back up by the blows taken while she was in the menu.)
+- **A death goes with the map too.** A paused keeper still runs its friends' blows, so a friend's blow can fell a boss on its
+  game while it streams no rows: the kill reaches only the knights it pays, and a knight with fewer hits still has the boss
+  standing on his screen. The hand also names each monster that died on the old keeper's game after the last row it sent
+  (`m.untold`; a dead row clears it), as `[nid, 0, {}]`: named bosses' deaths first, then the named bosses standing, then
+  other deaths, latest first, 8 in all. A death the new keeper heard of only from a kill message (or its own blow) and no row
+  told is passed on the same way if it loses the map in turn. The new keeper lays such a monster down at once, paying nobody
+  (that game paid it): dead, a named boss's fight over (`credited`, no count), a called boss resting from then, an instance
+  boss down for the visit, and its next row tells every screen. A puppet the stream stopped listing whose last word was its
+  death goes down on the new keeper as well, rather than standing up as this game left it. Behind both, a knight's game pays
+  a named boss's death once per fight it hit in: a kill message (or the keeper's own share) for a boss this game was paid for
+  within the last 60 s, on this map, with no blow of its own on it since, pays nothing (`paidOnce`): a real new fight always
+  has his blow in it, 3 for a share and the last for a kill. (6 Oct 2026: a third knight given the map finished the 'ghost'
+  of a boss that had died on the paused keeper's game, and the keeper and the killer were paid a second Brood Mother.)
 
 ## The bridge (bringing a knight from the old address)
 

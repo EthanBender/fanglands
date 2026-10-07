@@ -1488,6 +1488,48 @@ async function main() {
     A.NET.connect(); wire.flush(); tick(40);
   }
 
+  // ---- H3. a boss that died on a paused keeper's game is not fought (or paid) again (the real Room only) ----
+  // A third knight, Cal, joins for this one. Ann keeps the spider den; Ann and Cal land 3 hits each on the Brood Mother, Ben 1.
+  // Ann opens the menu (a paused game sends no rows) and Cal's blow fells the boss on her game: Ann and Cal are paid, Ben (1
+  // hit) hears nothing and still has it standing. Cal walks out; the world gives Ben the map. Before 6 Oct 2026 Ben's boss
+  // stood up real at its last hp with Ann's count, Ben finished the 'ghost', and Ann was paid a second Brood Mother. Now Ann's
+  // game hands the death over with the map and Ben's boss goes down, paying nobody.
+  if (useRoom) {
+    calm();
+    room.store.addAccount('Cal');
+    const C = makeContext(wire); C.FANGLANDS.newGame(); C.__peace = true;
+    both.push(C);
+    await login(C, 'Cal'); tick(10);
+    for (const g of both) ev(g, "if (INSTANCES.active()) INSTANCES.leave()"); tick(20);
+    ev(A, "INSTANCES.enter('spider_den')"); tick(20); ev(B, "INSTANCES.enter('spider_den')"); ev(C, "INSTANCES.enter('spider_den')"); tick(30);
+    both.forEach((g, i) => { g.FANGLANDS.tp(14 + i, 22); ev(g, 'player.maxHp = Math.max(player.maxHp, 999); player.hp = player.maxHp'); });
+    tick(30);
+    const denKept = A.COOP.isKeeper() && A.COOP.map() === 'spider_den' && B.COOP.keeper() === 'Ann' && C.COOP.keeper() === 'Ann';
+    for (const g of both) ev(g, "window.__h3 = 0; window.__h3f = m => { if (m && m.type === 'brood_mother') window.__h3++; }; HOOKS.kill.push(window.__h3f);");
+    const k0 = both.map(g => ev(g, 'player.kills'));
+    const bm = g => ev(g, "(() => { const m = monsters.find(o => o.type === 'brood_mother'); return m ? { dead: !!m.dead, remote: !!m.remote, hp: m.hp } : null; })()");
+    ev(A, "(() => { const m = monsters.find(o => o.type === 'brood_mother'); if (m) { m.hp = 40; m.stunT = 0; } })()"); tick(10);
+    for (let i = 0; i < 3; i++) { hitBoss(A, 'brood_mother', 1); tick(3); hitBoss(C, 'brood_mother', 1); tick(6); }
+    hitBoss(B, 'brood_mother', 1); tick(30);
+    ev(A, 'paused = true');
+    hitBoss(C, 'brood_mother', 60); tick(3);
+    const felled = { ann: bm(A), ben: bm(B), cal: bm(C) };
+    ev(C, "INSTANCES.leave()");
+    let benKeeps = null;
+    for (let f = 0; f < 600 && benKeeps === null; f++) { tick(1); if (B.COOP.isKeeper()) benKeeps = f; }
+    let swings = 0;
+    for (; swings < 40; swings++) { const m = bm(B); if (!m || m.dead) break; hitBoss(B, 'brood_mother', 5); tick(9); }
+    tick(30); ev(A, 'paused = false'); tick(30);
+    const paid = both.map(g => ev(g, 'window.__h3')), kills = both.map((g, i) => ev(g, 'player.kills') - k0[i]), onBen = bm(B);
+    line('H3. Ann keeps the den and opens the menu; Cal\'s blow fells the Brood Mother on her game (Ann and Cal paid; Ben, 1 hit, still sees it); Cal walks out and the world gives Ben the map: Ann\'s game hands over the death, Ben\'s boss goes down without a swing paying anyone, and nobody is paid twice (Ann 1, Ben 0, Cal 1)',
+      denKept && !!felled.ann && felled.ann.dead && !!felled.ben && !felled.ben.dead && benKeeps !== null && swings === 0 && !!onBen && onBen.dead && !onBen.remote
+        && paid.join() === '1,0,1' && kills.join() === '1,0,1',
+      { denKept, felled, benKeeps, swings, onBen, paid, kills });
+    for (const g of both) ev(g, "HOOKS.kill.splice(HOOKS.kill.indexOf(window.__h3f), 1); paused = false; if (INSTANCES.active()) INSTANCES.leave()");
+    tick(20);
+    C.NET.disconnect(); wire.flush(); both.pop(); tick(20);
+  }
+
   // ---- --sim: Deepholm switched to 'world' (docs/ONLINE.md, "The shared world", Stage 2) ----
   if (useSim) {
     line('S0. with the world\'s copy wired in and every map on keeper, no copy was ever built and nothing went to sim_log', Object.keys(simHost.bootTimes).length === 0 && simBook.recent(5).length === 0, { boots: simHost.bootTimes, log: simBook.recent(5) });

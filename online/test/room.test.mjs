@@ -576,6 +576,10 @@ test('hand: a keeper who went quiet loses the map to the knight who plays; its h
   // and at most 8 bosses go on
   w.t += 2000; w.say(a, { t: 'hand', list: Array.from({ length: 12 }, (_, i) => ['s' + i, 10, {}]) });
   assert.equal(b.last('hand').list.length, 8);
+  // a monster that died on the old keeper's game after its last row goes on as hp 0 with no count (the new keeper lays it down)
+  b.clear();
+  w.t += 2000; w.say(a, { t: 'hand', list: [['s95', 0, {}], ['g4', 0, {}]] });
+  assert.deepEqual(b.of('hand'), [{ t: 'hand', n: 'Cohen', list: [['s95', 0, {}], ['g4', 0, {}]] }]);
 });
 
 test('a keeper on another map does not receive boss_call', () => {
