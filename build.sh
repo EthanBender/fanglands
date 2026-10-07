@@ -16,6 +16,9 @@ rm -f .build-check.js
 # The Great Spread's literals gate (docs/spread/README.md), repo-wide since Stage 3: no file of src/ or tools/ may hold a bare
 # map coordinate ("wrap it: ATLAS.frame('<place>') or ATLAS.world"), bar a file an open peer branch holds (docs/spread/held.json).
 node tools/literals.mjs --gate || { echo "build.sh: a file of src/ or tools/ has a bare map coordinate (tools/literals.mjs --gate)" >&2; exit 1; }
+# The Great Spread's changeTile classification gate (Stage 4c, docs/spread/changetile.json): every changeTile call is counted
+# and classified for the save migration; a story tile needs a HOOKS.remake, so a new quest's world change cannot be left behind.
+node tools/changetile-gate.mjs || { echo "build.sh: a changeTile call is not classified for the save migration (tools/changetile-gate.mjs)" >&2; exit 1; }
 # The Atlas (docs/ONLINE.md, "The shared world", Stage 1): online/src/atlas.json, made from this index.html, committed with it.
 # online/test/atlas-drift.mjs fails a deploy whose atlas.json does not match the game it ships with.
 node tools/atlas.mjs --quiet || { echo "build.sh: the Atlas could not be made from index.html (tools/atlas.mjs)" >&2; exit 1; }
