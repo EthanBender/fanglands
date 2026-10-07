@@ -21,9 +21,11 @@ node --test online/test/
 # included), and the screen in a real browser when a local world answers on 127.0.0.1:8787 (the tool's header says how to start
 # one; it never runs against a real world)
 [ -f tools/mmo-sim-teacher.js ] && node tools/mmo-sim-teacher.js
+# only when asked (TEACHER_BROWSER=1) and a local world of THIS tree answers: any other local world on 8787 (another
+# worktree's wrangler dev, with its own admin key) would fail the run for reasons that are not this build's
 if [ -f tools/teacher-browser.mjs ]; then
-  if curl -sf --max-time 3 http://127.0.0.1:8787/api/status > /dev/null; then node tools/teacher-browser.mjs
-  else echo "teacher-browser: no local world on 127.0.0.1:8787, so the real-browser checks were not run (see tools/teacher-browser.mjs)"; fi
+  if [ "${TEACHER_BROWSER:-}" = "1" ] && curl -sf --max-time 3 http://127.0.0.1:8787/api/status > /dev/null; then node tools/teacher-browser.mjs
+  else echo "teacher-browser: not run (set TEACHER_BROWSER=1 with this tree's local world on 127.0.0.1:8787; see tools/teacher-browser.mjs)"; fi
 fi
 # the shared world (docs/ONLINE.md, "The shared world"): each gate runs once its stage has built it; a red one never deploys
 [ -f tools/sim-suite.mjs ] && node tools/sim-suite.mjs
