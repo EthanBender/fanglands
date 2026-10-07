@@ -312,7 +312,7 @@ window.FANGLANDS = {
       check('friendly fire: the bulldozer charge kills an hp-1 goblin in its path (drops roll)', ok, info);
       Object.assign(gob, gs); gob.stunT = 0; drops = drops.filter(d => dist(d.x, d.y, tc(o.x), tc(o.y)) > 3 * TILE); }
     { // the Goblin Camp (02-world's CAMP_GROUND, read, not copied): flagged spawns, 30-minute respawn that waits for the knight to be 40+ tiles off, one CLEARED banner per clear
-      const inCamp = s => s.tx >= CAMP_GROUND.x0 && s.tx <= CAMP_GROUND.x1 && s.ty >= CAMP_GROUND.y0 && s.ty <= CAMP_GROUND.y1; const camp = MONSTER_SPAWNS.filter(s => s.camp); const cm = monsters.filter(isCampMonster);
+      const inCamp = s => s.tx >= CAMP_GROUND.x0 && s.tx <= CAMP_GROUND.x1 && s.ty >= CAMP_GROUND.y0 && s.ty <= CAMP_GROUND.y1; const camp = MONSTER_SPAWNS.filter(s => s.camp); const cm = monsters.filter(isGoblinCampMonster);
       const flagged = camp.length >= 12 && camp.every(inCamp) && MONSTER_SPAWNS.every(s => !!s.camp === inCamp(s)) && cm.length === camp.length;
       const snap = cm.map(m => ({ m, dead: m.dead, hp: m.hp, respawnT: m.respawnT, deadT: m.deadT, state: m.state, x: m.x, y: m.y }));
       F.tp(...ATLAS.frame('drill_field').p(60, 40)); quest.campCleared = false; levelBanner = null; const last = cm.find(m => m.type === 'goblin');

@@ -109,6 +109,9 @@
       if (r.call) p.call = r.call;
       for (const f of ['pvp', 'safe', 'loose']) if (typeof r[f] === 'boolean') p[f] = r[f];
     }
+    // a Stage 5 place built as a gang fight says so (markBuilt's `combat`: 86-outposts' rings are multi, as the camp is)
+    const built = window.ATLAS && window.ATLAS.BUILT;
+    if (built) for (const [id, info] of built) if (info.combat && byId[id]) byId[id].combat = info.combat;
     // the overworld grid: every place painted lowest priority first, so the highest one owns each tile
     const grid = new Uint8Array(MAP_W * MAP_H).fill(255);
     const painted = places.filter(p => p.map === OVER && p.kind !== 'reserved').sort((a, b) => a.pri - b.pri || a.i - b.i);
@@ -800,7 +803,7 @@
 
   // the worldRev footprints (§10 "worldRev sweeps"): a later stage that changes ground a knight may have built on (Stage 5's
   // places, Stage 6's roads) adds REVS[n] = { boxes: [[x0, y0, x1, y1], ...] } (the new map's coordinates) and bumps
-  // WORLD_REV to n; a save with an older worldRev is swept in those boxes only (97-spread's SPREAD.sweep). 1: 87-critters; 2: 85-riverside; 3: 84-crossroads; 4: 86-wildplaces.
+  // WORLD_REV to n; a save with an older worldRev is swept in those boxes only (97-spread's SPREAD.sweep). 1: 87-critters; 2: 85-riverside; 3: 84-crossroads; 4: 86-wildplaces; 5: 86-outposts.
   const REVS = {};
 
   Object.assign(A, {

@@ -281,8 +281,8 @@
         const { tx, ty } = frontTile(player, 40);
         const rid = inMap(tx, ty) ? A.builtAt(tx, ty) || A.reservedAt(tx, ty) : null;
         // (a built place keeps its ground: its people, paths and yards are not a knight's to build on)
-        // (a name ending in s takes a bare apostrophe: "Beacon Hills' ground")
-        if (rid && A.isBuilt(rid)) { const nm = NAMES[rid][1].replace(/^The /, 'the '); notify(`This is ${nm}${/s$/.test(nm) ? "'" : "'s"} ground. Build somewhere else.`); return; }
+        // (a name ending in s takes a bare apostrophe: "Beacon Hills' ground"; "A goblin outpost" reads "a goblin outpost's")
+        if (rid && A.isBuilt(rid)) { const nm = NAMES[rid][1].replace(/^(The|A) /, w => w.toLowerCase()); notify(`This is ${nm}${/s$/.test(nm) ? "'" : "'s"} ground. Build somewhere else.`); return; }
         if (inMap(tx, ty) && (rid || A.onMainRoad(tx, ty))) { notify('Builders have staked this ground.'); return; }
       }
       return _placeAction.apply(this, arguments);

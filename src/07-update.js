@@ -118,7 +118,7 @@ function update(dt) {
         const sp = safeSpot(m.home.x, m.home.y, m.r, 'beast'); // a wreck, a plank or a regrown tree on the home tile must not embed the monster
         if (!sp) { m.respawnT = 5; continue; }
         m.dead = false; m.hp = m.maxHp; m.x = sp.x; m.y = sp.y; m.angry = def.aggro; m.state = 'idle'; burst(m.x, m.y, 'rgba(255,255,255,0.6)', 10, 60);
-        if (camp && quest.campCleared) quest.campCleared = false; // the camp is filling again: the next full clear earns the banner again
+        if (camp && quest.campCleared && isGoblinCampMonster(m)) quest.campCleared = false; // the camp is filling again: the next full clear earns the banner again
       }
       continue;
     }

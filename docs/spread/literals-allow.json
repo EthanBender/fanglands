@@ -911,5 +911,6 @@
   {"file": "87-critters.js", "literal": "3 * TILE", "decl": "sight", "reason": "the crow's, the giant rat's, the snake's and the adder's sight (3 tiles): a range, not a position"},
   {"file": "87-critters.js", "literal": "4 * TILE", "decl": "sight", "reason": "the wild dog's sight (4 tiles, spec section 4: aggro at sight 4): a range, not a position"},
   {"file": "86-wildplaces.js", "literal": "4 * TILE", "decl": "sight", "reason": "the bear's sight (4 tiles: she charges at 4): a range, not a position"},
-  {"file": "86-wildplaces.js", "literal": "TILE * 4", "decl": "TOWER_REACH", "reason": "TOWER_REACH: how far a beacon tower's drawing reaches past its base, in pixels (the cull), not a position"}
+  {"file": "86-wildplaces.js", "literal": "TILE * 4", "decl": "TOWER_REACH", "reason": "TOWER_REACH: how far a beacon tower's drawing reaches past its base, in pixels (the cull), not a position"},
+  {"file": "86-outposts.js", "literal": "TILE * 3", "decl": "LOOKOUT_REACH", "reason": "LOOKOUT_REACH: how far a goblin lookout's drawing reaches past its base, in pixels (the cull), not a position"}
 ]
