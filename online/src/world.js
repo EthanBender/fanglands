@@ -91,7 +91,7 @@ export class World {
     this.room = new Room({
       hooks: this.watch.hooks,
       now: () => this.now(),
-      log: (name, text, at, masked) => this.logChat(name, text, at, masked),
+      log: (name, text, at, masked, teacher) => this.logChat(name, text, at, masked, teacher),
       wake: ms => this.ctx.storage.setAlarm(Date.now() + ms).catch(e => console.error('alarm', e)),
       store: this.store,
       random: cryptoRandom,
@@ -579,10 +579,13 @@ export class World {
 
   // ---------- the chat log ----------
   // masked: the word filter starred something in it; its id goes in chat_masked (teachers.js) so the teacher view flags it
-  logChat(name, text, at, masked) {
+  // teacher: a teacher's line from the teacher view (room.js teacherSay); its id goes in chat_teacher, so the teacher view and
+  // /admin's chat log draw it as the teacher's
+  logChat(name, text, at, masked, teacher) {
     this.sql.exec('INSERT INTO chat (at, name, text) VALUES (?, ?, ?)', at, name, text);
     if (masked) this.sql.exec('INSERT OR IGNORE INTO chat_masked (id) SELECT MAX(id) FROM chat');
-    if (++this.chatWrites % 500 === 0) { this.sql.exec('DELETE FROM chat WHERE id NOT IN (SELECT id FROM chat ORDER BY id DESC LIMIT ?)', CHAT_KEPT); this.sql.exec('DELETE FROM chat_masked WHERE id < (SELECT MIN(id) FROM chat)'); }
+    if (teacher) this.sql.exec('INSERT OR IGNORE INTO chat_teacher (id) SELECT MAX(id) FROM chat');
+    if (++this.chatWrites % 500 === 0) { this.sql.exec('DELETE FROM chat WHERE id NOT IN (SELECT id FROM chat ORDER BY id DESC LIMIT ?)', CHAT_KEPT); this.sql.exec('DELETE FROM chat_masked WHERE id < (SELECT MIN(id) FROM chat)'); this.sql.exec('DELETE FROM chat_teacher WHERE id < (SELECT MIN(id) FROM chat)'); }
   }
 
   // ---------- the socket ----------
@@ -645,8 +648,9 @@ export class World {
     if (call === 'online' && method === 'GET') return json(this.room.online());
     if (call === 'chat' && method === 'GET') {
       const limit = Math.max(1, Math.min(5000, parseInt(url.searchParams.get('limit'), 10) || 500));
-      const rows = this.rows('SELECT at, name, text FROM chat ORDER BY id DESC LIMIT ?', limit).reverse();
-      return json(rows.map(r => ({ at: r.at, n: r.name, text: r.text })));
+      const rows = this.rows('SELECT c.at, c.name, c.text, (t.id IS NOT NULL) AS teacher FROM chat c LEFT JOIN chat_teacher t ON t.id = c.id ORDER BY c.id DESC LIMIT ?', limit).reverse();
+      // a teacher's line (the teacher view's chat box) says so; every other line is exactly {at, n, text}
+      return json(rows.map(r => r.teacher ? { at: r.at, n: r.name, text: r.text, teacher: true } : { at: r.at, n: r.name, text: r.text }));
     }
     if (call === 'invite' && method === 'GET') return json({ invite: this.invite() });
     if (call === 'invite' && post) {

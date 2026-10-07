@@ -822,3 +822,68 @@ test('W12. an admin\'s knight may be watched (R2-1, read-only); NEGATIVE: a teac
   assert.deepEqual([K.view(W.w, scr, 'Sam').code, K.view(W.w, scr, 'Nobody').code], ['gone', 'gone']);
   assert.equal(scr.last('w_no').text, 'Nobody is not on now.');
 });
+
+test('S1. a teacher says a line (owner, 7 Oct): every kid gets it under the teacher\'s own name as an admin\'s line with teacher: true; the screens get it as w_chat; the chat log keeps it under her name (chat_teacher), and a screen opened later and /admin\'s chat log both mark it', async () => {
+  const W = await world(['Sam', 'Leo', 'MudGoll']);
+  const A = await K.addTeacher(W.w, 'Admin', 'quiet-harbour-oak-21'); const al = await K.teacherLogin(W.w, A.name, A.pass);
+  const scr = await K.screen(W.w, al.token), other = await K.screen(W.w, W.token);
+  const sam = await K.online(W.w, W.tok.Sam), leo = await K.online(W.w, W.tok.Leo);
+  // the name in the frame is ignored: the line is always the session's
+  const r = act(W.w, scr, { t: 'w_say', text: '  Time to   pack up  ', n: 'Sam', name: 'Sam', role: 'player' });
+  assert.deepEqual(r, { t: 'w_ok', req: r.req, text: '' });
+  for (const s of [sam, leo]) assert.deepEqual(s.last('chat'), { t: 'chat', n: 'Admin', text: 'Time to pack up', at: clock.t, role: 'admin', teacher: true });
+  for (const s of [scr, other]) assert.deepEqual(s.last('w_chat'), { t: 'w_chat', at: clock.t, n: 'Admin', text: 'Time to pack up', role: 'admin', masked: false, teacher: true });
+  const row = W.db.prepare('SELECT * FROM chat ORDER BY id DESC LIMIT 1').get();
+  assert.deepEqual([row.name, row.text], ['Admin', 'Time to pack up']);
+  assert.ok(W.db.prepare('SELECT 1 AS y FROM chat_teacher WHERE id = ?').get(row.id));
+  // no teacher_acts row, no mod_log row, no knight made, never a knight in the room
+  assert.equal(W.db.prepare("SELECT COUNT(*) AS n FROM teacher_acts").get().n, 0);
+  assert.equal(W.db.prepare("SELECT COUNT(*) AS n FROM accounts WHERE name_lc = 'admin'").get().n, 0);
+  assert.ok(!W.w.room.byName.has('admin'));
+  // a kid's line next: no mark
+  clock.t += 2000; K.say(W.w, sam, { t: 'chat', text: 'ok' });
+  assert.deepEqual(leo.last('chat'), { t: 'chat', n: 'Sam', text: 'ok', at: clock.t, role: 'player' });
+  assert.equal(scr.last('w_chat').teacher, undefined);
+  clock.t += 2000;
+  const later = await K.screen(W.w, W.token);
+  const back = later.last('w_all').chat.slice(-2);
+  assert.deepEqual(back[0], { at: row.at, n: 'Admin', text: 'Time to pack up', role: 'admin', masked: false, teacher: true });
+  assert.deepEqual(Object.keys(back[1]), ['at', 'n', 'text', 'role', 'masked']);
+  const log = (await parent(W.w, 'GET', '/api/admin/chat')).data;
+  assert.deepEqual(log.slice(-2), [{ at: row.at, n: 'Admin', text: 'Time to pack up', teacher: true }, { at: clock.t - 2000, n: 'Sam', text: 'ok' }]);
+});
+
+test('S2. a teacher\'s line: the word filter stars it (never a strike), 120 letters at most; a pause does not stop it; one per 1.5 s and 20 a minute; empty is refused; NEGATIVE: a kid\'s chat with teacher, role or n set is still his own plain line', async () => {
+  const W = await world(['Sam', 'Leo']);
+  const scr = await K.screen(W.w, W.token);
+  const sam = await K.online(W.w, W.tok.Sam), leo = await K.online(W.w, W.tok.Leo);
+  let r = act(W.w, scr, { t: 'w_say', text: 'what the fuck ' + 'a'.repeat(200) });
+  assert.equal(r.t, 'w_ok');
+  const l = leo.last('chat');
+  assert.ok(!l.text.includes('fuck') && l.text.length <= 120 && l.n === 'Mrs Smith', JSON.stringify(l));
+  assert.equal(scr.last('w_chat').masked, true);
+  assert.equal(W.db.prepare('SELECT COUNT(*) AS n FROM mod_log WHERE act = ?').get('strike').n, 0);
+  // too soon
+  clock.t += 500; r = act(W.w, scr, { t: 'w_say', text: 'again' }); assert.deepEqual([r.code, r.text], ['slow', 'Wait a moment before the next line.']);
+  // empty, or not text
+  clock.t += 1100; r = act(W.w, scr, { t: 'w_say', text: '   ' }); assert.equal(r.code, 'empty');
+  clock.t += 1100; r = act(W.w, scr, { t: 'w_say', text: 5 }); assert.equal(r.code, 'empty');
+  // a pause stops the kids, never a teacher
+  clock.t += 1100; r = act(W.w, scr, { t: 'w_pause', span: '15m' }); assert.equal(r.t, 'w_ok');
+  clock.t += 2000; K.say(W.w, sam, { t: 'chat', text: 'can I talk' }); assert.equal(sam.last('muted').by, 'pause');
+  clock.t += 2000; r = act(W.w, scr, { t: 'w_say', text: 'Listen up please' }); assert.equal(r.t, 'w_ok');
+  assert.equal(leo.last('chat').text, 'Listen up please'); assert.equal(sam.last('chat').text, 'Listen up please');
+  // 20 a minute
+  let n = 0; for (let i = 0; i < 25; i++) { clock.t += 1600; const x = act(W.w, scr, { t: 'w_say', text: 'line ' + i }); if (x.t === 'w_ok') n++; }
+  assert.ok(n < 25 && n >= 15, String(n));
+  // a kid cannot forge a teacher's line
+  clock.t += 600000; r = act(W.w, scr, { t: 'w_chaton' });
+  clock.t += 2000; K.say(W.w, sam, { t: 'chat', text: 'I am the teacher', teacher: true, role: 'admin', n: 'Mrs Smith' });
+  assert.deepEqual(leo.last('chat'), { t: 'chat', n: 'Sam', text: 'I am the teacher', at: clock.t, role: 'player' });
+  assert.equal(scr.last('w_chat').teacher, undefined);
+  // a kid's socket sending w_say does nothing
+  const before = leo.all('chat').length;
+  clock.t += 2000; K.say(W.w, sam, { t: 'w_say', text: 'hi from a kid' });
+  assert.equal(leo.all('chat').length, before);
+  assert.equal(W.db.prepare('SELECT COUNT(*) AS n FROM chat_teacher t JOIN chat c ON c.id = t.id WHERE c.name = ?').get('Sam').n, 0);
+});
