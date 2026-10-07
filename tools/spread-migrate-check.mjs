@@ -23,6 +23,11 @@
 //                     It holds password hashes: this tool reads `saves` and `save_pins` and nothing else, and prints
 //                     knight names, stages and counts only.
 //   --json FILE       the full per-save report as JSON
+//   --rev-base FILE   the worldRev sweep (§10, Stage 5 and 6): every save is first moved into world 2 by the PREVIOUS
+//                     build (FILE, an index.html of an older WORLD_REV: what the live world's knights hold now), and that
+//                     world-2 save of the older rev is what this build loads and sweeps. On top, the end-of-story save
+//                     gets a plank on the middle of every footprint box this build adds (and one far from all of them):
+//                     each inside one comes back to the knight as a plank, the far one stays where it is.
 //   [index.html]      the build to test (default: this tree's)
 // With no input flag it runs --fixture and --matrix. Exit 1 on any failed save.
 // ============================================================================
@@ -56,6 +61,21 @@ for (const inp of inputs) {
   }
 }
 if (!saves.length) { console.log('spread-migrate-check: no saves'); process.exit(1); }
+
+// ---------- the worldRev sweep: the saves as the previous build left them (world 2, its WORLD_REV) ----------
+const revBase = val('--rev-base', null);
+let revInfo = null;
+if (revBase) {
+  const gb = boot(revBase), evb = code => vm.runInContext(code, gb);
+  evb(String.raw`{ let a = 0x5EED; Math.random = () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+    var REVB = { one: raw => { const K = title.slotKey(1); localStorage.setItem(K, raw); dialog.queue.length = 0; dialog.cur = null; title.startSlot(1); return localStorage.getItem(K); } };`);
+  const baseRev = +evb('WORLD_REV');
+  for (const s of saves) {
+    try { s.save = evb(`REVB.one(${JSON.stringify(s.save)})`); s.revFrom = JSON.parse(s.save).worldRev; } catch (e) { s.revErr = String(e && e.message || e); }
+  }
+  revInfo = { file: revBase, baseRev };
+  for (const s of saves) s.coverage = false;   // proof 2 is the world-1 move's (the previous build made it); a sweep has its own planks below
+}
 
 // ---------- the game ----------
 const g = boot(html);
@@ -193,12 +213,34 @@ ev(String.raw`
 // ---------- run ----------
 // the fresh game's walks: a new knight on a fresh world (the baseline the town's walks proof compares against)
 ev(`localStorage.removeItem(title.slotKey(1)); title.startSlot(1); title.active = false; CHECK.fresh = CHECK.reach().got; CHECK.fresh.size`);
+// the planks on the footprint (--rev-base): one on the middle of every box this build adds, and one far from all of them
+if (revInfo) {
+  const fx = saves.find(s => s.src === 'fixture');
+  if (fx) {
+    const plan = JSON.parse(ev(`(() => { const boxes = []; for (let r = ${revInfo.baseRev} + 1; r <= WORLD_REV; r++) { const R = ATLAS.REVS[r]; if (R && R.boxes) boxes.push(...R.boxes); }
+      const mid = boxes.map(b => [Math.round((b[0] + b[2]) / 2), Math.round((b[1] + b[3]) / 2)]);
+      const inB = (x, y) => boxes.some(b => x >= b[0] - 1 && x <= b[2] + 1 && y >= b[1] - 1 && y <= b[3] + 1);
+      let far = null; for (let r = 0; r < 40 && !far; r++) for (let dx = -r; dx <= r && !far; dx++) { const x = mid[0][0] + 12 + dx, y = mid[0][1] + 12 + r; if (inMap(x, y) && !SOLID.has(map[idx(x, y)]) && map[idx(x, y)] !== T.WATER && !inB(x, y) && !ATLAS.reservedAt(x, y)) far = [x, y]; }
+      return JSON.stringify({ mid, far, W: MAP_W }); })()`));
+    const d = JSON.parse(fx.save), seen = new Set((d.mapDiffs || []).map(e => e[0]));
+    for (const [x, y] of plan.mid.concat([plan.far])) { const i = y * plan.W + x; if (!seen.has(i)) (d.mapDiffs = d.mapDiffs || []).push([i, 'PLANK']); }
+    saves.push({ src: 'rev', name: 'planks-on-footprint', save: JSON.stringify(d), planks: plan });
+  }
+}
 const results = [];
 const t0 = Date.now();
 for (const s of saves) {
   let r;
   try { r = JSON.parse(ev(`CHECK.one(${JSON.stringify(s.save)}, ${!!s.coverage})`)); }
   catch (e) { r = { ok: false, fail: ['threw: ' + String(e && e.message || e).split('\n')[0]] }; }
+  if (s.revErr) { r.ok = false; r.fail = (r.fail || []).concat(['the previous build could not move it: ' + s.revErr]); }
+  if (revInfo && s.revFrom !== revInfo.baseRev && s.src !== 'rev') { r.ok = false; r.fail = (r.fail || []).concat(['the previous build stamped worldRev ' + s.revFrom + ', not ' + revInfo.baseRev]); }
+  if (s.planks) {
+    const pl = JSON.parse(ev(`JSON.stringify({ mids: ${JSON.stringify(s.planks.mid)}.map(([x, y]) => tileName(map[idx(x, y)])), far: tileName(map[idx(${s.planks.far[0]}, ${s.planks.far[1]})]), list: (SPREAD.last && SPREAD.last.list || []).filter(e => e[2] === 'PLANK').length, kind: SPREAD.last && SPREAD.last.kind })`));
+    const back = (r.rep && r.rep.refunds) ? Object.values(r.rep.refunds).reduce((n, o) => n + (o.plank || 0), 0) : 0;
+    r.planks = Object.assign(pl, { back });
+    if (pl.mids.some(t => t === 'PLANK') || pl.far !== 'PLANK' || back !== s.planks.mid.length) { r.ok = false; r.fail = (r.fail || []).concat(['the footprint planks: ' + JSON.stringify(r.planks)]); }
+  }
   if (s.coverage && r.coverage) { const c = r.coverage; if (!c.ok) { r.ok = false; r.fail = (r.fail || []).concat(['coverage: ' + JSON.stringify({ missing: c.missing, storyLeft: c.thistledown.storyLeft })]); } }
   results.push(Object.assign({ src: s.src, name: s.name, ver: s.ver }, r));
 }
@@ -208,7 +250,8 @@ const words = o => Object.keys(o || {}).map(k => `${o[k]} ${k}`).join(', ') || '
 const refundWords = rf => rf ? [['bank', rf.bank], ['pack', rf.pack], ['owed', rf.owed]].filter(([, o]) => Object.keys(o).length).map(([w, o]) => `${w}: ${words(o)}`).join('; ') || '-' : '-';
 let src = null;
 for (const r of results) {
-  if (r.src !== src) { src = r.src; console.log(`\n== ${src === 'real' ? 'the real saves' : src === 'matrix' ? 'the synthetic matrix (proof 1)' : 'the end-of-story save (proof 2)'} ==`); }
+  if (r.src !== src) { src = r.src; console.log(`\n== ${src === 'real' ? 'the real saves' : src === 'matrix' ? 'the synthetic matrix (proof 1)' : src === 'rev' ? 'the worldRev sweep: planks on the footprint' : 'the end-of-story save (proof 2)'}${revInfo ? ` (each moved first by ${path.basename(revInfo.file)}, WORLD_REV ${revInfo.baseRev})` : ''} ==`); }
+  if (r.planks) console.log(`      planks: ${r.planks.back} back to the knight, the footprint tiles now ${[...new Set(r.planks.mids)].join('/')}, the far one ${r.planks.far}`);
   const rep = r.rep || {};
   console.log(`${r.ok ? 'PASS' : 'FAIL'}  ${String(r.name).padEnd(20)}${r.ver !== undefined ? (' v' + r.ver).padEnd(7) : ''} stage ${r.stageBefore} -> ${r.stageAfter}, wakes ${rep.town ? 'in Thistledown' : 'in the cave'} at ${rep.wake}`);
   console.log(`      refunds ${refundWords(rep.refunds)}; machines parked ${words(rep.parked)}${rep.far ? ` (within ${rep.far} of the Bulldozer bay)` : ''}; mare ${rep.mare ? `tied at ${rep.mare} (${rep.mareRing} from her rail)` : '-'}; remakes ${words(rep.remade)}; dropped ${words(Object.fromEntries(Object.entries(rep.dropped || {}).filter(([, v]) => v)))}`);

@@ -587,6 +587,216 @@ new baseline; spread-migrate-check 26 of 26 (the matrix and the end-of-story sav
 changes, 0 lost machines, items or coins, every walk kept); `tools/jiggle.mjs --spread-only --spread-gate` green (transport
 1276 moved, 0 red; plate 8883/8883; suite ALL 1405 PASS).
 
+## Stage 5a: THE STARTING CREATURES (feat/spread5, 7 Oct 2026)
+
+`src/87-critters.js` (the rules; on the server's copy) and `src/87-critterart.js` (their look, the icons, the book's words,
+the legs a falling body shows; pictures only, in build-sim's STRIP_FILES). Spec §4 "Starting creatures".
+
+| Creature | Lv, hp | Fights | Where (new map) | Drops | Kill xp |
+| --- | --- | --- | --- | --- | --- |
+| crow | 2, 8 | when hit | the story signpost's meadow: 107,40 107,45 112,37 | crow feather (new), a stolen coin | 32 |
+| giant rat | 3, 12 | when hit | the cave meadow: 33,18 35,21 40,17 | coins, bread, potato and wheat seed | 48 |
+| snake | 4, 14 | when hit | Miller's Pond's shore: 75,52 78,57 76,62 | snakeskin (new) | 56 |
+| adder | 6, 18 | when hit | the pond's quiet west shore: 66,55 | snakeskin, always | 72 |
+| wild dog | 6, 18 | at sight 4 | packs of 3: west fields 122,35 124,36 122,37; east fields 219,59 221,60 219,61 | raw beef, wool | 72 |
+
+- Points are written in place frames (the signpost's, the pond's) or as world points (open land). Every spawn is on open
+  ground with nothing a new game clears in its 3 x 3 (no tree, rock, flower or mushroom), where 92's outline and its
+  region's box agree; Atlas zones goblin_fields (rats, crows, dogs) and miller_pond (snakes, adder).
+- Wild dogs: `roam: 2` (07-update: a monster with `def.roam` idles within that many tiles and turns for home the moment it
+  is past them; no new dice). Each dog stands 9.7 to 12.3 tiles off the nearest main road's centre line (the self-test
+  wants 8.5+ and more than roam + sight + the road's half-width, 7.5), so a knight on the road is never seen; the west
+  pack is the Cave Road's beat at about 110 (its nearest dog 9.7 from R1, within 10).
+- XP (42-playthrough's melee rows): crow 11,520/h and giant rat 17,280/h at level 1 (the goblin's 22,553/h), snake
+  17,280/h from 3, adder 6,480/h and a pack of wild dogs 34,560/h from 5, under the wolf's 48,084/h at 6.
+- The look: drawn in the approved sample's hand through `MONSTER_ART.H` and registered with `MONSTER_LOOK.addType` (new in
+  78-monsterlook; its self-test now counts the sample's 47 plus the added); crow, snake and adder from above (16 picture
+  facings), rat and dog from the side. Boxes measured as 78's were (`~/.fanglands/work/spread/s5a/measure.cjs`, which
+  reproduces 78's own wolf, spider and boar boxes). `DEATHS.LEGS` is exported (79-deaths): a falling crow shows two
+  legs, a snake none. Icons: crow feather, snakeskin.
+
+**HOOKS.built (new, 00-core; run by 93-spread right after its stakes).** The first build put the spawns in a
+`HOOKS.world` pass at 87's place: 92-worldshape and 93-ashedge, which run later, keep each spawn's ring clear while they
+draw their own dice tile by tile, so 16 spawns moved flowers and trees on 2,042 tiles across the map (and FIXED_SOLID on
+164). Spawned in `HOOKS.built` (after every carving pass and the stakes, before 95's snapshot and 96's Atlas), not one
+tile changes. **Stages 5b..5f must build their places there too** (and take their own stakes up there).
+
+**The footprint: WORLD_REV 1.** `ATLAS.REVS[1]` is the 3 x 3 round each of the 16 spawns (87-critters declares it): a
+knight's own plank or wall standing there in a world-2 save of rev 0 comes back to him (SPREAD.sweep), so no creature
+wakes inside it. `node tools/spread-footprint.mjs <previous index.html>` (new): against master 2e2c023 the world is 0
+tiles changed (map and variants), regions, buildings and people unchanged, 16 spawns added, all inside the footprint.
+The Atlas hash is unchanged (bd8d810602a3fcac); atlas.json's spawn list gains the 16.
+
+**The migration with the sweep.** `tools/spread-migrate-check.mjs --rev-base <previous index.html>` (new): every save is
+first moved into world 2 by the previous build (rev 0, what the live knights hold), then loaded and swept by this one;
+on the end-of-story save a plank on the middle of every footprint box (and one far from them) checks the sweep: 16
+planks back to the knight, the far one kept. Fixture + matrix 27/27; the real saves (the 7 Oct pre-spread-live export,
+locally) 94/94 both straight (world 1 to rev 1) and through rev 0, 0 stage changes, 0 lost machines, items or coins.
+
+**Proved on this build:** `./build.sh` (literals 0 bare, boot budget); headless ALL 1415; `--play` ALL 1416, the Fang dead
+(one earlier run failed 76-admin's phone-size ADMIN chip layout check once; the rerun and every other run passed it);
+online 430; mmo-sim 43, `--room` 43, `--sim` 47; dom-keys 16; mmo-sim-admin 8; mmo-sim-party 18; mmo-sim-teacher 9;
+mmo-sim-world 16; sim-suite 28; build-sim `--strip --reads`; atlas-drift; the footprint; the migration as above. The fingerprint
+baseline is this build's (7e1ddf8b81203ce0: the 16 spawns, their drawings and the new exports), for 5b's diff.
+
+## Stage 5b: THE RIVERSIDE (feat/spread5, 7 Oct 2026)
+
+`src/85-riverside.js` (the three places) and `src/83-deco.js` (DECO, Stage 5's one tile). Spec §4 "New places".
+
+| Place | What is there (place frame: `ATLAS.planFrame(id)`, offsets from the box's top-left) | People | Creatures |
+| --- | --- | --- | --- |
+| The Old Bridge 128..146 x 86..102 | the crossing in stone, three wide (DECO 'stone_bridge' with parapets, over Stage 4's planks); reeds on both banks; a rail; the watchtower ruin, its chest and the south signpost are Stage 4's | Wilf the stonemason (his story a line at a time) | snakes 128,91 and 146,91, an adder 143,90 (lv 4, 6; 6+ off R3 and R5) |
+| Millbrook 78..96 x 78..94 | farmhouse with an oven, a red barn, the watermill (its wheel turns in a pit off a dead-end leat from the river, drawn in HOOKS.draw), Odo's wheat (21 DECO 'wheat' cells on SOIL), a sheep paddock, 8 tiles of soil any knight may plant, a hedge; a rail | Tamsin the miller (two sheaves of wheat make a sack of flour, all at once; her shop: flour 10, wheat seed 2, bread 8), Odo the farmer | crows 79,92 82,91 83,93 (lv 2), giant rats 89,90 96,90 (lv 3), sheep in the paddock |
+| Saltmere 250..268 x 64..80 | five stilt huts (BUILDINGS over the water, posts drawn beneath), a boardwalk and a jetty two wide (DOCK) with four lobster grounds off its end, four drying racks, fishing rings on the water, a marsh band of pools, sand bars and reeds on its land side (x 242..249); a rail | Nan Gully (her stall sells rods, lobster pots, shrimp and trout; buys every fish at full price) | giant rats on the jetty 256,74 257,76 (lv 3) |
+
+- **Built, not reserved.** `ATLAS.markBuilt(id, { sub })` at 85's load: the REGIONS line names the place (93-spread),
+  signposts drop "(builders at work)", `placeAction` says "This is Millbrook's ground. Build somewhere else.", the beat
+  report counts the box a stop. The anchor stays `kind: 'reserved'`, so every pass before `HOOKS.built` sees the same ground.
+- **On the finished land.** Everything is laid in a `HOOKS.built` pass: the stakes come up (each tile back to its
+  `under`), the plans, the leat, the buildings and people (taken out of BUILDINGS and NPCS by a `HOOKS.world.unshift`
+  pass at the start of every world: the earlier passes keep rings clear round people and buildings with dice), the
+  spawns (each marked `s.by`), the marsh and a light ring of worn ground (its own `mulberry32` stream).
+- **DECO** is made by the first cell put, after PROP, so no older tile id moves (the self-test checks PROP < DECO <= 255).
+  Kinds: stone_bridge (`bridge: true`), reeds, wheat, hedge, rack. The scarp seal, the river channel, roads-clear and
+  92's bridge count read `DECO.isBridge`.
+- **People's looks**: 83-townsart's 'riverside' family (wilf, tamsin_miller, odo, nan_gully; 83-townsfolk counts 84).
+  "Tamsin the miller" shares a first name with Tamsin the baker (the spec's name); her id is `tamsin_miller`.
+- **Other files**: 61-markers (made again after `HOOKS.built` by 93-spread's runner; one dock marker per built place:
+  Saltmere's, so 5 docks); 51-mounts (Fennick's unsold mare stands only at his own rail, not at every HITCH); 11-main
+  (the animals count adds Millbrook's sheep); 87-critters (its own spawns and its test crow and dog are its own); 44-wiki
+  (the two shops' places). The Ferry Piles wreck under the arches (§4) is not built (not in 5b's list).
+
+**The footprint: WORLD_REV 2.** `ATLAS.REVS[2]` is each box plus its 6-tile ring, the leat and the marsh band.
+`node tools/spread-footprint.mjs <spread5-87-critters index.html>`: 498 tiles changed (map and variants), 0 outside;
+3 regions changed (their sub line), 8 buildings, 4 people and 12 spawns added, all inside.
+
+**The migration with the sweep.** `--rev-base` (the 5a build, rev 1): fixture + matrix 27/27 (6 footprint planks back
+to the knight, the far one kept). The real saves (the 7 Oct pre-spread-live export, locally) 94/94 straight (world 1 to
+rev 2) and 94/94 through rev 1; 0 stage changes, 0 lost machines, items or coins.
+
+**Proved on this build:** `./build.sh` (literals 0 bare, changetile, compass, boot budget); headless ALL 1426; `--play`
+ALL 1427, the Fang dead; online 430; mmo-sim 43, `--room` 43, `--sim` 47; dom-keys 16; mmo-sim-admin 8; mmo-sim-party 18;
+mmo-sim-teacher 9; mmo-sim-world 16; sim-suite 28; build-sim `--strip --reads`; atlas-drift (hash 0d05465b015316dd);
+the footprint; the migration as above. The beat gaps are unchanged and under the limits (R1 19, R2 23, R3 29). Shots:
+`~/.fanglands/work/spread/s5b/shots/` (laptop 1280x800 and iPad 1024x768); full map `s5b/fullmap-5b.png`. The
+fingerprint baseline is this build's (a061a1ba1ff94e2e), for 5c's diff.
+
+## Stage 5c: THE CROSSROADS INN (feat/spread5, 7 Oct 2026)
+
+`src/84-crossroads.js`. Spec §4 "New places". Points in `ATLAS.planFrame('crossroads_inn')` (offsets from 152,116).
+
+| Where | What is there | People |
+| --- | --- | --- |
+| the junction, 152..168 x 116..125 | the clearing round the Long Road, the Ash Road and the Drovers' Track (trees, rocks, flowers and mushrooms to grass; ore and berry bushes kept); the four-way signpost (Stage 4's, at the yard port: THISTLEDOWN, HOLLOWFORD, FANG'S LAIR, OUTPOST) | Jory the pedlar (wanders) |
+| the inn 'xinn', 152..163 x 126..133 | 12 x 8, two rooms: the door from the road into the common room (Mother Hobb's counter, her oven, three tables, a shelf), a doorway (rug) into the back room (three beds, a rug, a shelf, a table) | Mother Hobb, at her counter |
+| the yard, 164..168 x 126..133 | the notice board at its corner by the road, the hitching rail and a trough beside it, a well, two hay bales (DECO 'hay'), a fence on its far sides | Marigold the drover (wanders) |
+
+- **The room.** Mother Hobb: with five coins, while the room is not his yet or he is hurt, she takes five, heals him to
+  full and gives him the room (`player.xinnRested`); then her kitchen opens (meat pie 25, bread 8, baked potato 6, cooked
+  beef 12). A bed in the inn then holds his spirit like the Barrel & Boar's: 06-systems' bed reads a BUILDINGS row's
+  `inn: { flag, keeper }` (unpaid: "Pay Mother Hobb for the room first."; Dorran's paid room does not open hers).
+- **The notice board** says "Nothing is pinned to it yet." until a notice is pushed to `CROSSROADS.NOTICES` (a string or
+  a function): 86-bandits pins the Bandit Toll's there. Its paper shows on the board.
+- **Past the stakes.** The roads cross the staked box's middle and leave three free rows under them, so the inn and the
+  yard run to row 134. `ATLAS.markBuilt(id, { box })` (01-atlas `builtAt`, read by 93-spread's `placeAction`: "This is
+  the Crossroads Inn's ground. Build somewhere else.", tested in the yard past the stakes); the REGIONS line grows to
+  152..168 x 116..134 in the `HOOKS.built` pass (the banner, the Atlas zone, atlas.json and the map) and goes back to the
+  staked box before every world, with the inn and the people, in a `generateWorld` wrapper ahead of the core's own
+  generation. (First try: taken out only by a `HOOKS.world.unshift` pass, the inn was laid by the core's building loop at
+  the next world's start and 4,888 tiles re-rolled across the map; the footprint caught it.) The anchor's box is unchanged.
+- **Solid things.** The well, the trough and the board stand on 95-thistledown's TD_PROP tile (solid; outside the town's
+  plan it has no town kind) with 84's own side table (`CROSSROADS.THINGS`), drawn over the ground beneath and read in 84's
+  hooks. DECO and Stage 4's PROP are both walkable. No new tile id.
+- **The signpost** shows four arms (`markBuilt(id, { arms: 4 })`; 93-spread's `SIGN_ARMS` packs them 14 px apart).
+- **People's looks**: 83-townsart's 'crossroads' family (mother_hobb, jory, marigold; 83-townsfolk counts 87). Every line
+  is short, with no compass word; Jory and Marigold tell theirs a line at a time (role 'wayfarer').
+- **No spawns** inside the grown box (tested). Stage 4's wolf at 175,131 roams 7 tiles east of the yard (outside the ring).
+- **Other files**: 00-core (WORLD_REV 3), 01-atlas (`builtAt`, markBuilt's `box`), 06-systems (an inn's bed), 93-spread
+  (four arms; `placeAction` reads `builtAt`), 83-townsart, 83-townsfolk, 44-wiki (the kitchen's place).
+
+**The footprint: WORLD_REV 3.** `ATLAS.REVS[3]` is the grown box plus its 6-tile ring (146..174 x 110..140).
+`node tools/spread-footprint.mjs <spread5-85-riverside index.html>`: 202 tiles changed (map and variants), 0 outside;
+the region line changed (its sub and its grown box), 1 building and 3 people added, no spawns changed.
+
+**The migration with the sweep.** `--rev-base` (the 5b build, rev 2): fixture + matrix 27/27 (the footprint plank back
+to the knight, the far one kept). The real saves (the 7 Oct pre-spread-live export, locally) 94/94 straight (world 1 to
+rev 3) and 94/94 through rev 2; 0 stage changes, 0 lost machines, items or coins.
+
+**Proved on this build:** `./build.sh` (literals 0 bare, changetile, compass, boot budget: node 1,080 ms, Chromium 4x
+1,998 ms); headless ALL 1434; `--play` ALL 1435, the Fang dead (one earlier `--play` run under the full gate load failed
+76-admin's layout check once, "no chip" at the phone sizes, and passed on the rerun with nothing changed: a plaque column
+crowded at that moment, not this stage's); online 430; mmo-sim 43, `--room` 43, `--sim` 47; dom-keys 16; mmo-sim-admin 8;
+mmo-sim-party 18; mmo-sim-teacher 9; mmo-sim-world 16; sim-suite 28; build-sim `--strip --reads`; atlas-drift (hash
+c31849ec6edcba72); the footprint; the migration as above. The beat gaps hold (R1 19, R2 23, R3 29; R6's stop gap 47 -> 44
+with the inn a stop). The wiki has the place's page (its three people and Mother Hobb's Kitchen). Shots:
+`~/.fanglands/work/spread/s5c/shots/` (junction, inn inside, back room, yard; laptop 1280x800 and iPad 1024x768); full
+map `s5c/fullmap-5c.png`. The fingerprint baseline is this build's (f1e530104ef79574), for 5d's diff.
+
+## Stage 5d: BEACON HILLS AND THE HUNTERS' LODGE (feat/spread5, 7 Oct 2026)
+
+`src/86-wildplaces.js`. Spec §4 "New places". Points in `ATLAS.planFrame('beacon_hills')` (offsets from 112,4) and
+`ATLAS.planFrame('hunters_lodge')` (offsets from 100,104); the towers at the Beacon Path's ports.
+
+| Place | What is there | People | Creatures |
+| --- | --- | --- | --- |
+| Beacon Hills 112..142 x 4..24 | a horseshoe ridge whose rim is all rock face (CLIFF); the only way up is a switchback of three legs at its foot (its top at 119,14); three stone beacon towers on the crest, each three wide and two deep with its door over its port (the Low Beacon 116,12, the High Beacon 128,8, the Far Beacon 139,15), a dirt path tower to tower; a woodpile; a rail at the foot (114,21) | Ansel the beacon keeper (his story a line at a time) | crows 122,9 and 137,10 on the crest (lv 2); snakes 128,14 and 132,16 (lv 4) and an adder 126,16 (lv 6) in the bay between the ridge's arms |
+| The Hunters' Lodge 100..112 x 104..114 | the lodge 'hlodge' (7 x 5: hearth, shelves, Hilde's counter, table, bed, bearskin rug; its door to the path), two skin racks and a woodpile (DECO), a range of three straw targets (108,104 110,104 112,104) with a worn line to stand on, a rail (101,110); the Lodge's signpost (Stage 4's) stays | Hilde the trapper (inside), Corvin the hunter (by the range) | none in the box |
+| the bear den 100..109 x 119..128 | a rock hollow in the wood past the Wolfwood Road, open on its far side, bones on its floor | | a bear 104,123 (new 'bear', lv 14) |
+
+- **Climbing a tower.** E at a tower's door (from its port): every map marker within 60 tiles is marked seen
+  (`quest.markers.seen`; 11, 13 and 16 markers lie within reach of the three), the first climb of each tower trains
+  Agility (25 xp), a little banner then flies on that tower, and the Voice says how many new places went on the map.
+  `quest.wild.climbed` holds which (ids, no positions). With all three climbed Ansel gives 40 coins, once.
+- **Lit at night.** Each tower's fire basket roars at night and smoulders by day; the light is `HOOKS.nightLights`
+  (35-night's overworld dark: the fire and a door lantern per tower). 89-lighting's `LIGHTS.add` paints only inside an
+  instance's scene (its `activeScene()` is null on the overworld), so it is not used here.
+- **The switchback.** The rim has no gap but the switchback: with its top shut, no tower is reached from the cave mouth
+  (tested). The network's track `r1b_beacon` (01-atlas) still runs straight between the ports: TRACKS lay the dirt at world
+  start and every earlier pass reads them, so the path on the ground is the place's own. Only main roads are linted for
+  solids; the crest path is walked by the self-test.
+- **The services.** Hilde's Furs: buys wolf and bear pelts, snakeskin, boar tusks and wool at full price (sells raw and
+  cooked beef); `shop.buysWords` (10-hud, new) says "Hilde only buys pelts and skins." where every shop said Fennick's
+  words (Nan Gully's now says fish). Corvin: the first word gives a goblin trap and how to set it (`quest.wild.trapGift`),
+  then Corvin's Traps (goblin trap 50, shortbow 50, stone arrows 1). The range: an arrow that strikes a target is caught
+  a step ahead of the core's solid-tile stop; it rolls as the dummy does (Ranged xp = the hit) and the arrow lands at the
+  target's foot.
+- **The bear**: 'bear' lv 14, 55 hp, att 15, max hit 9, def 11, attacks at sight 4, roam 2 (07-update's `def.roam`),
+  respawn 90 s, always a bear pelt (new item, 60), beef or coins; kill xp 360 (42-playthrough's row via HOOKS.xpSource).
+  9.2 tiles off the Wolfwood Road's centre line (more than roam + sight + 1.5). The look (87-critterart, measured as 5a's:
+  box [-34, -26, 34, 24 / -45, -26, 45, 24], sheet `~/.fanglands/work/spread/s5d/bearsheet.png`), the bear pelt's icon,
+  the book's page.
+- **The solid things** (towers and targets) stand on 95-thistledown's TD_PROP tile with 86's side table (as 84's well);
+  a tower's six cells share one record and it is drawn once, sorted at its foot. Racks, woodpiles and bones are DECO.
+- **Aprons.** The first build failed 92-worldshape's walled-off check (48 tiles, 11 rocks and an iron ore shut in: a
+  boulder or face hard by a tree line, and the lodge closing the bank under the scarp). Every rock face, boulder and the
+  lodge's walls now clear the trees and rocks on the open ground beside them.
+- **The goblin** 02-world stood at 129,12 (now the ridge's bay) moves to the meadow below the ridge, 129,27 (inside the
+  footprint ring); Beacon Hills holds only its crows and snakes.
+- **People's looks**: 83-townsart's 'wildplaces' family (ansel, hilde_trapper, corvin_hunter; two new held props, a wolf
+  pelt and a jaw trap). The game already has a Hilde (Deepholm) and a Guildmaster Corvin (the Cloud Kingdom): the ids
+  carry the trade, as `tamsin_miller` did. 83-townsfolk counts 90.
+- **Other files**: 00-core (WORLD_REV 4), 01-atlas (the REVS comment), 10-hud (`buysWords`), 85-riverside (Nan Gully's
+  words), 93-spread (a name ending in s: "This is Beacon Hills' ground."), 44-wiki (the two shops' place), literals-allow
+  (the bear's sight, the tower's cull reach).
+
+**The footprint: WORLD_REV 4.** `ATLAS.REVS[4]` is each box plus its 6-tile ring (106..148 x -2..30, 94..118 x 98..120)
+and the den (100..109 x 119..128). `node tools/spread-footprint.mjs <spread5-84-crossroads index.html>`: 495 tiles changed
+(map and variants), 0 outside; 2 region lines changed (their sub), 1 building and 3 people added, 6 spawns added and the
+goblin moved, all inside.
+
+**The migration with the sweep.** `--rev-base` (the 5c build, rev 3): fixture + matrix 27/27 (3 footprint planks back to
+the knight, the far one kept). The real saves (the 7 Oct pre-spread-live export, locally) 94/94 straight (world 1 to
+rev 4) and 94/94 through rev 3; 0 stage changes, 0 lost machines, items or coins.
+
+**Proved on this build:** `./build.sh` (literals 0 bare, changetile, compass, boot budget: node 1,103 ms, Chromium 4x
+1,981 ms); headless ALL 1444; `--play` ALL 1445, the Fang dead; online 430; mmo-sim 43, `--room` 43, `--sim` 47; dom-keys
+16; mmo-sim-admin 8; mmo-sim-party 18; mmo-sim-teacher 9; mmo-sim-world 16; sim-suite 28; build-sim `--strip --reads`;
+atlas-drift (hash db56616d3a595996); the footprint; the migration as above. The beat gaps hold (R1 19, R2 23, R3 29, R5
+14, R6 44). The wiki has both places' pages (Beacon Hills: Ansel, its crows, snakes and adder; the Lodge: Hilde's Furs and
+Corvin's Traps) and the bear's. Shots: `~/.fanglands/work/spread/s5d/shots/` (the switchback, the crest by day and by
+night, the Far Beacon, the lodge, inside it, the range, the den; laptop 1280x800 and iPad 1024x768); full map
+`s5d/fullmap-5d.png`. The fingerprint baseline is this build's (c3b66a6060ec1272), for 5e's diff.
+
 ## Proving "nothing visible changed" (spec §9.4)
 
 ```

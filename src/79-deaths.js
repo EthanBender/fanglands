@@ -773,7 +773,7 @@ const DEATHS = (() => {
   });
 
   Object.assign(API, {
-    DUR, BOSS_DUR, FLASH, HOLD, POP, KIND, BOSS_TYPES,
+    DUR, BOSS_DUR, FLASH, HOLD, POP, KIND, BOSS_TYPES, LEGS,   // LEGS: a later animal's legs as it rolls over (87-critterart: a bird's two, a snake's none)
     list: () => corpses.slice(), of: m => (m && m[DA] && corpses.includes(m[DA])) ? m[DA] : null,
     spawn, pose, uOf, kindOf, isBoss, holding, popAt, draw: drawCorpse, drawFlash,
     hidden: d => !!d && d[PIN] > 0, popping: d => !!d && d[PIN] === 0 && d[PT] !== undefined, waiting: () => pending.length,

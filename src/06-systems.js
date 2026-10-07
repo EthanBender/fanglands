@@ -398,7 +398,9 @@ function useAction() {
   if (t === T.WORKSHOP) { openPanel('station', 'workshop'); return; }
   if (t === T.ALCHEMY) { openPanel('station', 'alchemy'); return; }
   if (t === T.LODESTONE) { player.home = safeSpot(tc(tx), tc(ty) + TILE, 13, 'person') || { x: tc(tx), y: tc(ty) + TILE }; notify('Home set here. Press H to return (5 minute cooldown).'); save(); return; }
-  if (t === T.BED) { const near = nearestTileOfType(tx, ty, T.LODESTONE, 6); if (b && b.id !== undefined && !player.home) { /* inn / house beds */ } if (near || (b && b.id === 'inn' && player.innRested)) { player.bedSpawn = { x: tc(tx), y: tc(ty) }; player.hp = player.maxHp; say(near ? 'You sleep. The lodestone hums. You will wake here if you fall.' : 'You sleep well. You will wake here if you fall.', 'The Voice'); save(); } else notify(b && b.id === 'inn' ? 'Pay Dorran for the room first.' : 'A bed needs a lodestone within a few tiles to hold your spirit. Craft one at a workbench.'); return; }
+  // an inn's bed holds the spirit once its room is paid for: the Barrel & Boar's (Dorran's innRested), or a building row's
+  // own `inn: { flag, keeper }` (84-crossroads' inn: player.xinnRested, Mother Hobb)
+  if (t === T.BED) { const near = nearestTileOfType(tx, ty, T.LODESTONE, 6); const inn = b && (b.id === 'inn' ? { paid: player.innRested, keeper: 'Dorran' } : b.inn ? { paid: !!player[b.inn.flag], keeper: b.inn.keeper } : null); if (near || (inn && inn.paid)) { player.bedSpawn = { x: tc(tx), y: tc(ty) }; player.hp = player.maxHp; say(near ? 'You sleep. The lodestone hums. You will wake here if you fall.' : 'You sleep well. You will wake here if you fall.', 'The Voice'); save(); } else notify(inn ? `Pay ${inn.keeper} for the room first.` : 'A bed needs a lodestone within a few tiles to hold your spirit. Craft one at a workbench.'); return; }
   if (t === T.WRECK) { repairMech(tx, ty); return; }
   if (t === T.MECH) { enterMech(tx, ty); return; }
   if (t === T.TRAP) { changeTile(tx, ty, T.GRASS); giveOrDrop('goblin_trap', 1, player.x, player.y); return; }

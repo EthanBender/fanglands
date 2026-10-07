@@ -932,7 +932,9 @@
 
     // ---- 6. the wood is a step down, and the ways over it are counted ----
     { const BR = Tn('BRIDGE'), DK = Tn('DOCK');
-      const open = flood(new Set(), START), shut = flood(new Set([BR, DK].filter(v => v >= 0)), START);
+      // (a bridge built in stone since, 85-riverside's Old Bridge, is DECO: every DECO cell is shut with the planks, which
+      // only shuts more)
+      const open = flood(new Set(), START), shut = flood(new Set([BR, DK, window.DECO ? DECO.id : -1].filter(v => v >= 0)), START);
       const np = (name, q) => [name, q[0], q[1]];
       const south = [np('Old Wren', port('wren.wren')), np("the knight's grave", port('graveyard.grave')), np('Hollowford', port('hollowford.barrelbeast')), np("Warden Brann's gate", WARD.p(60, 94)), np("Sylvaris' gap", port('sylvaris.gap'))];
       const stillOpen = south.filter(([n, x, y]) => at(shut, x, y)).map(e => e[0]);

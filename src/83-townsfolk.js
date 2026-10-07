@@ -466,8 +466,11 @@ const TOWNSFOLK = (() => {
       }
       const missed = ids.filter(id => !((STATS.by[id] || 0) > (by0[id] || 0)));
       check(P + 'every one of the ' + ids.length + ' people in the approved sample is drawn in the new look by id (the sample\'s own drawing, 150+ calls each), at 8 facings standing, walking, talking, seated and in the air, with nothing thrown and every save put back; no two of them draw the same',
-        // 74 in the approved sample, and 6 more since: the Windward Market's sellers and shoppers (the Cloud Kingdom polish, 2026-10-03)
-        ids.length === 80 && !bad.length && !missed.length && !dup.length && !small.length, { n: ids.length, bad: bad.slice(0, 5), missed, dup, small }); }
+        // 74 in the approved sample, and 6 more since: the Windward Market's sellers and shoppers (the Cloud Kingdom polish, 2026-10-03);
+        // and 4 more: the riverside's Wilf, Tamsin the miller, Odo and Nan Gully (the Great Spread, Stage 5b); and 3 more: the
+        // Crossroads Inn's Mother Hobb, Jory the pedlar and Marigold the drover (Stage 5c); and 3 more: Ansel the beacon keeper,
+        // Hilde the trapper and Corvin the hunter (Stage 5d)
+        ids.length === 90 && !bad.length && !missed.length && !dup.length && !small.length, { n: ids.length, bad: bad.slice(0, 5), missed, dup, small }); }
 
     // 2. every person the game draws reaches the new look by id: each NPCS entry through the core's drawNpc, and every
     // place's own people in real frames (Hollowford's square and the guild, the ferry, Deepholm, Sylvaris, Aerie and the

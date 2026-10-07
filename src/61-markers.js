@@ -186,8 +186,10 @@
     for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) {
       const def = byId.get(map[idx(x, y)]); if (!def) continue;
       if (def.cluster) {
-        if (docks.some(d => Math.hypot(d.x - x, d.y - y) <= def.cluster)) continue;
-        const m = put(def.kind, x, y, dockLabel(x, y)); if (m) docks.push(m);
+        // (a place built on the new ground has one dock marker however long its boardwalk: Saltmere's)
+        const built = window.ATLAS && ATLAS.isBuilt ? (id => id && ATLAS.isBuilt(id) ? id : null)(ATLAS.reservedAt(x, y)) : null;
+        if (docks.some(d => Math.hypot(d.x - x, d.y - y) <= def.cluster || (built && d.built === built))) continue;
+        const m = put(def.kind, x, y, dockLabel(x, y)); if (m) { m.built = built; docks.push(m); }
         continue;
       }
       put(def.kind, x, y, def.label);
@@ -488,7 +490,7 @@
         const smithBelow = all().some(m => m.kind === 'shop' && m.label === (SHOPS.dwarf && SHOPS.dwarf.name));
         check(P + 'every instance door is a way down under the name of the place; the shaft and the wind shrine are marked, and what moved into Deepholm is marked at the shaft rather than lost',
           doors.length >= 2 && bad.length === 0 && shaft === true && shrine === true && movedUnderground && smithBelow
-          && ups >= 1 && downs >= doors.length + 1 && docks === 4,
+          && ups >= 1 && downs >= doors.length + 1 && docks === 4 + (window.RIVERSIDE ? 1 : 0),   // + Saltmere's (85-riverside)
           { doors, bad, shaft, shrine, ladder, cart, movedUnderground, smithBelow, ups, downs, docks }); }
       // ---- quest givers ----
       { const boardId = tileId('BOARD'); const boards = [];

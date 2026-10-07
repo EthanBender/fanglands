@@ -4211,6 +4211,172 @@ const TOWNSFOLK_ART = (() => {
       after: (g, C) => { if (C.back) return; const B = C.B, y = B.hip + C.step * 1.8 + 1.6; rr(g, B.gap - 1.2, y, 2.4, 1.3, 0.4); g.fillStyle = '#f2dcb0'; g.fill(); outline(g, 0.25); g.fillStyle = 'rgba(160,110,70,0.5)'; g.fillRect(B.gap - 0.3, y + 0.2, 0.6, 0.9); },
     },
   });
+  // ---------- the riverside (the Great Spread, Stage 5b: 85-riverside): Wilf at the Old Bridge, Tamsin and Odo in ----------
+  // Millbrook, Nan Gully in Saltmere. Drawn by the sample's own hand (npc specs, the same pieces as Thistledown's people)
+  addPeople('riverside', {
+    // ---------- Wilf the stonemason, who mended the Old Bridge in stone: a dusty grey tunic, a leather apron, a flat ----------
+    // cap, a short grey beard, a mason's hammer
+    wilf: {
+      build: 'adult', size: 1.02, geo: { w: 8.4 }, skin: SKIN.ruddy,
+      face: { eye: '#2a2a3a', brow: '#8a8278', browW: 1.2, lines: true, nose: 'big', noseC: '#c98a6a', mouth: 'smile', age: 'elder' },
+      hair: { style: 'short', c: '#a8a098' },
+      beard: { style: 'short', c: '#a8a098' },
+      hat: { kind: 'cap', c: '#5a5650' },
+      body: { kind: 'tunic', c: '#8a8680', under: '#d9cfb8', rolled: '#d9cfb8', sleeve: '#7a7670', belt: '#3a2a1c', buckle: '#8f96a3', pouch: '#5a4030' },
+      over: [{ kind: 'leather', c: '#7a5434' }],
+      legs: { c: '#5a5046', boot: '#3a2a1c', cuff: '#7a6a5a', patch: '#6a6056' },
+      held: { kind: 'tool', tool: 'hammer', c: '#7d8087' },
+      torso: (g, C) => { g.fillStyle = 'rgba(230,226,214,0.35)'; for (const [x, y, r] of [[-3.6, C.B.waist + 1.8, 1.1], [2.8, C.B.sh + 2.6, 0.9], [0.4, C.B.hem - 1.4, 1]]) { ell(g, x, y, r, r * 0.7, 0.3); g.fill(); } },
+    },
+    // ---------- Tamsin the miller: a sky-blue dress, a white apron dusted with flour, a cream kerchief over brown curls, ----------
+    // flour on her cheek, a fresh loaf from her own flour
+    tamsin_miller: {
+      build: 'adult', skin: SKIN.light,
+      face: { eye: '#3a5a7a', lash: '#2a1a10', brow: '#5a3a1a', freckles: true, eyes: 'happy', mouth: 'smile', lip: '#b05a5a', blush: 'rgba(235,130,120,0.45)' },
+      hair: { style: 'curly', c: '#6a4426' },
+      hat: { kind: 'kerchief', c: '#efe6d0', dots: '#c9b890' },
+      body: { kind: 'dress', c: '#5a86b0', under: '#f4ecdc', rolled: '#f4ecdc', sleeve: '#4e7aa2', belt: '#3a5a7a' },
+      over: [{ kind: 'apron', c: '#f6f2e8', stain: '#e8e2d2' }],
+      legs: { boot: '#4a3020' },
+      held: { kind: 'bread' },
+      head: (g, C) => { if (C.back) return; g.fillStyle = 'rgba(250,248,240,0.75)'; ell(g, -3.6, C.B.hy + 2.4, 1.3, 0.8, 0.3); g.fill(); },
+    },
+    // ---------- Odo the farmer: a wide straw hat, a sun-browned face, a brown beard, a green smock under a leather ----------
+    // vest, muddy boots, his hoe
+    odo: {
+      build: 'adult', size: 1.05, geo: { w: 8.8 }, skin: SKIN.tan,
+      face: { eye: '#2a1a10', brow: '#4a2e14', browW: 1.2, mouth: 'grin', nose: 'button', lines: true },
+      hair: { style: 'short', c: '#5a3a1a' },
+      beard: { style: 'full', c: '#5a3a1a' },
+      hat: { kind: 'straw', c: '#d9c88a' },
+      body: { kind: 'tunic', c: '#5a7a3e', under: '#e0d4b0', laces: true, rolled: '#e0d4b0', sleeve: '#506e38', belt: '#3a2614', buckle: '#8f96a3', pouch: '#6b4a2a' },
+      over: [{ kind: 'vest', c: '#7a5434', button: '#3a2614' }],
+      legs: { c: '#6a5a44', boot: '#4a3020', cuff: '#8a6a4a', patch: '#7a6a54' },
+      held: { kind: 'tool', tool: 'hoe', c: '#7d8087' },
+      after: (g, C) => { if (C.back) return; g.fillStyle = 'rgba(90,64,34,0.55)'; for (const s of [-1, 1]) { ell(g, s * C.B.gap, C.B.hip + C.B.leg - 0.6, 1.8, 0.8); g.fill(); } },
+    },
+    // ---------- Nan Gully the fishmonger: an old woman of the marsh, a sea-grey shawl over a blue dress, a striped ----------
+    // apron, a red kerchief over white hair, and a lobster held up by its middle
+    nan_gully: {
+      build: 'adult', size: 0.97, skin: SKIN.warm,
+      face: { eye: '#2a3a4a', lash: '#2a1a10', brow: '#d9d0c0', lines: true, age: 'elder', eyes: 'narrow', mouth: 'grin', lip: '#9a4a42', nose: 'long' },
+      hair: { style: 'bun', c: '#e8e2d6' },
+      hat: { kind: 'kerchief', c: '#b8352b', dots: '#f2ece0' },
+      body: { kind: 'dress', c: '#3a5a7a', under: '#ece4d2', sleeve: '#344f6c', belt: '#2a3a4a' },
+      over: [{ kind: 'apron', c: '#dfe6e8', bib: false, stain: '#b8c8cc' }, { kind: 'shawl', c: '#8a9498' }],
+      legs: { boot: '#3a2a22' },
+      held: { kind: 'hf_lobster' },
+    },
+  });
+  // ---------- the Crossroads Inn (the Great Spread, Stage 5c: 84-crossroads): Mother Hobb the cook, and the two ----------
+  // travellers who wander the junction. Drawn by the sample's own hand (npc specs, the same pieces as Thistledown's people)
+  addPeople('crossroads', {
+    // ---------- Mother Hobb: a round, rosy old cook, white hair in a bun under a cream coif, a rust dress, a stew-spotted ----------
+    // apron, a pie in one hand and a steaming bowl in the other
+    mother_hobb: {
+      build: 'adult', size: 1.04, geo: { w: 9.6, gap: 4 }, skin: SKIN.ruddy,
+      face: { eye: '#3a2a1a', lash: '#2a1a10', brow: '#d8d0c4', lines: true, age: 'elder', eyes: 'happy', mouth: 'smile', lip: '#a04a42', nose: 'button', blush: 'rgba(230,110,100,0.55)' },
+      hair: { style: 'bun', c: '#d8d0c4' },
+      hat: { kind: 'coif', c: '#f2ece0' },
+      body: { kind: 'dress', c: '#a0522d', under: '#f4ecdc', rolled: '#f4ecdc', sleeve: '#8e4826', belt: '#5a2a16' },
+      over: [{ kind: 'apron', c: '#f4f0e6', stain: 'rgba(150,80,30,0.35)' }],
+      legs: { boot: '#3a2418' },
+      held: { kind: 'td_pie' },
+      off: { kind: 'td_bowl' },
+    },
+    // ---------- Jory the pedlar: a plum travelling coat, a knitted cap, a stubbly grin, a walking staff and a great ----------
+    // pack on his back, a pot and a roll of cloth tied to it
+    jory: {
+      build: 'adult', size: 1.0, skin: SKIN.tan,
+      face: { eye: '#2a1a10', brow: '#4a2a14', browW: 1.1, mouth: 'grin', nose: 'long', lines: true },
+      hair: { style: 'short', c: '#7a4a24' },
+      beard: { style: 'stubble', c: '#5a3a1a' },
+      hat: { kind: 'wool', c: '#7a3a4a' },
+      body: { kind: 'coat', c: '#6a5a8a', under: '#d9cfb8', sleeve: '#5e4f7c', belt: '#3a2614', buckle: '#c9a64a', pouch: '#6b4a2a' },
+      legs: { c: '#4a4038', boot: '#3a2a1c', cuff: '#6a5a4a', patch: '#5a5046' },
+      held: { kind: 'staff', c: '#7a5a34', len: 28 },
+      behind: (g, C) => { const B = C.B; rr(g, -B.w - 1.6, B.sh - 4.6, (B.w + 1.6) * 2, 13, 2.2); g.fillStyle = vfill(g, '#8a6a42', B.sh - 5, B.sh + 9, 0.2, -0.25); g.fill(); outline(g, 0.5);
+        ell(g, B.w - 0.4, B.sh - 5.4, 2.6, 1.8); g.fillStyle = metal(g, '#9a9ea6', B.sh - 7, B.sh - 4); g.fill(); outline(g, 0.4);
+        rr(g, -B.w - 2.2, B.sh - 7.4, 5.4, 3.2, 1.4); g.fillStyle = '#b8352b'; g.fill(); outline(g, 0.35); },
+      back: (g, C) => { const B = C.B; rr(g, -B.w - 1.2, B.sh - 3.6, (B.w + 1.2) * 2, B.waist - B.sh + 5.2, 2); g.fillStyle = vfill(g, '#8a6a42', B.sh - 4, B.waist + 2, 0.2, -0.25); g.fill(); outline(g, 0.5);
+        g.strokeStyle = '#5a3c22'; g.lineWidth = 0.9; for (const y of [B.sh + 1.4, B.waist - 1]) { g.beginPath(); g.moveTo(-B.w - 1.2, y); g.lineTo(B.w + 1.2, y); g.stroke(); } },
+    },
+    // ---------- Marigold the drover: a blue kerchief over copper braids, freckles, a moss-green tunic under a leather ----------
+    // jerkin, stout boots, and her shepherd's crook
+    marigold: {
+      build: 'adult', size: 0.98, skin: SKIN.light,
+      face: { eye: '#3a5a3a', lash: '#2a1a10', brow: '#a8642a', freckles: true, eyes: 'round', mouth: 'smile', lip: '#b05a5a', blush: 'rgba(235,130,110,0.4)' },
+      hair: { style: 'braids', c: '#c9843a' },
+      hat: { kind: 'kerchief', c: '#3f5f8a', dots: '#e8dcc0' },
+      body: { kind: 'tunic', c: '#7a8a4a', under: '#ece2c8', laces: true, rolled: '#ece2c8', sleeve: '#6e7e42', belt: '#3a2614', buckle: '#a8a090', pouch: '#5a3a22' },
+      over: [{ kind: 'leather', c: '#8a5a34' }],
+      legs: { c: '#5a4a36', boot: '#3a2a1c', cuff: '#7a5a3a', patch: '#6a5a44' },
+      held: { kind: 'staff', c: '#8a6a3a', len: 30, top: (g, top) => { g.lineCap = 'round'; g.strokeStyle = OUT; g.lineWidth = 2.6; g.beginPath(); g.moveTo(0, top + 3); g.lineTo(0, top - 1); g.arc(-2.8, top - 1, 2.8, 0, Math.PI * 1.15, true); g.stroke();
+        g.strokeStyle = '#8a6a3a'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(0, top + 3); g.lineTo(0, top - 1); g.arc(-2.8, top - 1, 2.8, 0, Math.PI * 1.15, true); g.stroke(); } },
+    },
+  });
+
+  // ---------- the wild places (the Great Spread, Stage 5d: 86-wildplaces): Ansel the beacon keeper on the ridge, and ----------
+  // Hilde the trapper and Corvin the hunter at the Hunters' Lodge. Drawn by the sample's own hand (npc specs)
+  // a wolf pelt over her arm: grey fur, a paler belly, the legs hanging
+  PROPS.wl_pelt = (g, C, o) => {
+    g.save(); g.rotate(0.15);
+    g.beginPath(); g.moveTo(-4.2, -3.6); g.quadraticCurveTo(0, -5.2, 4.4, -3.4); g.lineTo(3.6, 1.6); g.lineTo(4.8, 6.4); g.lineTo(2.4, 4.2); g.lineTo(0.6, 7.6); g.lineTo(-1, 4.4); g.lineTo(-3.6, 6.6); g.lineTo(-3, 1.4); g.closePath();
+    g.fillStyle = vfill(g, '#8a8078', -5, 7, 0.2, -0.25); g.fill(); outline(g, 0.5);
+    g.fillStyle = 'rgba(235,228,214,0.55)'; ell(g, 0.2, 0.2, 1.8, 3); g.fill();
+    g.strokeStyle = 'rgba(60,54,48,0.6)'; g.lineWidth = 0.35; for (const x of [-2.6, -0.8, 1.2, 3]) { g.beginPath(); g.moveTo(x, -3.6); g.lineTo(x + 0.4, -1.6); g.stroke(); }
+    g.restore();
+  };
+  // a steel jaw trap, held up by its chain: two toothed jaws open on the spring plate
+  PROPS.wl_trap = (g, C, o) => {
+    g.save(); g.lineCap = 'round';
+    g.strokeStyle = '#5a5e66'; g.lineWidth = 0.7; g.beginPath(); g.moveTo(0, -1); g.lineTo(0.4, 2.2); g.stroke();
+    for (let k = 0; k < 3; k++) { ell(g, 0.2 + k * 0.1, -0.6 + k * 1.1, 0.5, 0.7); g.strokeStyle = '#7d8087'; g.lineWidth = 0.4; g.stroke(); }
+    const cy = 6.2;
+    ell(g, 0.4, cy, 2.2, 1.2); g.fillStyle = metal(g, '#8f96a3', cy - 1.2, cy + 1.2); g.fill(); outline(g, 0.35);
+    for (const s of [-1, 1]) { g.beginPath(); g.arc(0.4 + s * 2.6, cy, 3, s < 0 ? Math.PI * 0.5 : -Math.PI * 0.5, s < 0 ? Math.PI * 1.5 : Math.PI * 0.5); g.strokeStyle = OUT; g.lineWidth = 1.5; g.stroke(); g.strokeStyle = '#a9adb5'; g.lineWidth = 0.8; g.stroke();
+      g.fillStyle = '#d8dce2'; for (let k = 0; k < 3; k++) { const a = (s < 0 ? Math.PI : 0) + (k - 1) * 0.7; const x = 0.4 + s * 2.6 + Math.cos(a) * 2.6, y = cy + Math.sin(a) * 2.6; g.beginPath(); g.moveTo(x, y); g.lineTo(x - s * 1.1, y - 0.4); g.lineTo(x - s * 1.1, y + 0.4); g.closePath(); g.fill(); } }
+    g.restore();
+  };
+  addPeople('wildplaces', {
+    // ---------- Ansel the beacon keeper: a weathered old man in a long brown coat and a knitted cap, a white beard, his ----------
+    // lamplighter's pole with its little flame at the top
+    ansel: {
+      build: 'adult', size: 1.0, geo: { w: 8.2 }, skin: SKIN.ruddy,
+      face: { eye: '#2a2a3a', brow: '#d8d2c6', browW: 1.2, lines: true, age: 'elder', nose: 'big', noseC: '#c98a6a', mouth: 'smile' },
+      hair: { style: 'short', c: '#cfcac0' },
+      beard: { style: 'full', c: '#e2ddd2' },
+      hat: { kind: 'wool', c: '#8a3a2a' },
+      body: { kind: 'coat', c: '#7a5a3a', under: '#d9cfb8', sleeve: '#6e5034', belt: '#3a2614', buckle: '#c9a64a', pouch: '#5a3a22' },
+      legs: { c: '#4a4038', boot: '#3a2a1c', cuff: '#6a5a4a', patch: '#5a5046' },
+      held: { kind: 'sky_lamppole' },
+    },
+    // ---------- Hilde the trapper: a broad, cheerful woman of the wood, auburn braids under a fur-edged hood, a moss ----------
+    // tunic under a leather jerkin, and a wolf pelt over her arm
+    hilde_trapper: {
+      build: 'adult', size: 1.02, geo: { w: 8.8 }, skin: SKIN.tan,
+      face: { eye: '#3a4a2a', lash: '#2a1a10', brow: '#8a4a1e', freckles: true, eyes: 'happy', mouth: 'grin', lip: '#a04a42', blush: 'rgba(230,120,100,0.4)' },
+      hair: { style: 'braids', c: '#b8742e' },
+      hat: { kind: 'hood', c: '#6a4a2e' },
+      body: { kind: 'tunic', c: '#5a6a3a', under: '#e6dcc0', laces: true, rolled: '#e6dcc0', sleeve: '#4e5e34', belt: '#3a2614', buckle: '#8f96a3', pouch: '#6b4a2a' },
+      over: [{ kind: 'leather', c: '#7a5434' }],
+      legs: { c: '#5a4a36', boot: '#3a2a1c', cuff: '#7a5a3a', patch: '#6a5a44' },
+      held: { kind: 'wl_pelt' },
+    },
+    // ---------- Corvin the hunter: a lean man in a green hood, a dark trimmed beard, a leather vest over a brown tunic, ----------
+    // a steel jaw trap held up by its chain
+    corvin_hunter: {
+      build: 'adult', size: 1.03, skin: SKIN.light,
+      face: { eye: '#2a3a2a', brow: '#3a2a1a', browW: 1.1, mouth: 'smile', nose: 'long', lines: true },
+      hair: { style: 'short', c: '#3a2a1a' },
+      beard: { style: 'short', c: '#3a2a1a' },
+      hat: { kind: 'hood', c: '#3e5a32' },
+      body: { kind: 'tunic', c: '#6a5038', under: '#d9cfb8', rolled: '#d9cfb8', sleeve: '#5e4632', belt: '#2a1e12', buckle: '#a8a090', pouch: '#4a3422' },
+      over: [{ kind: 'vest', c: '#4a3a28', button: '#2a1e12' }],
+      legs: { c: '#3e4630', boot: '#2e2218', cuff: '#5a4a36', patch: '#4a5238' },
+      held: { kind: 'wl_trap' },
+    },
+  });
 
   // ---------- pieces only one person uses ----------
   // Fennick's wide felt hat: a dented crown, a red band, a blue feather swept back
@@ -4316,7 +4482,7 @@ const TOWNSFOLK_ART = (() => {
 
   // every person's name as the sample's people list has it (today.json), for the talking pose; the game's own name for
   // a person wins where the call site hands it in
-  const NPC_NAMES = {"sera": "Sera", "garrick": "Garrick", "marta": "Marta", "aldous": "Aldous the banker", "rosalind": "Rosalind", "brakka": "Brakka the smith", "pim": "Pim the tinker", "dorran": "Dorran the innkeeper", "duke": "Duke Ferrin", "hale": "Sergeant Hale", "tobin": "Tobin", "greta": "Greta", "fennick": "Fennick the trader", "wren": "Old Wren", "v1": "Ada", "v2": "Bram", "v3": "Cass", "v4": "Dunn", "v5": "Elsie", "v6": "Finn", "osric": "Gatewarden Osric", "ambrose": "Ambrose the bell-ringer", "hettie": "Hettie the apple seller", "mabel": "Mabel the candle maker", "moll": "Moll the flower seller", "wynn": "Wynn", "tess": "Tess", "robin": "Robin", "death2": "Death", "tam": "Old Tam", "nell": "Nell", "pip": "Pip", "hob": "Hob", "wenna": "Wenna", "harl": "Harl the ferryman", "pete": "Pete", "thrain": "King Thrain", "brunhild": "Brunhild the smith", "dagny": "Dagny", "orik": "Orik", "hilde": "Hilde", "aelith": "Queen Aelith", "lira": "Lira the archery master", "thessaly": "Thessaly the weaver", "faelan": "Faelan", "seraphel": "Queen Seraphel", "halcyon": "Master Halcyon", "pell": "Keeper Pell", "quill": "Quill Windward", "skyla": "Skyla Fleetwing", "ferris": "Old Ferris", "aldric": "Captain Aldric", "tamsin": "Tamsin the baker", "mossbeard": "Mossbeard", "aubade": "Sister Aubade", "corvin": "Guildmaster Corvin", "merriweather": "Merriweather", "orla": "Warden Orla", "brisk": "Warden Brisk", "lark": "Lark", "bellweather": "Bellweather the lamplighter", "brannoc": "Brannoc the porter", "fen": "Fen", "tilly": "Tilly", "wick": "Wick the messenger", "pippa": "Pippa the fruit seller", "maudie": "Maudie the weaver", "plume": "Old Plume the feather seller", "crockett": "Crockett the potter", "hazel": "Hazel", "wim": "Wim", "tinkerton": "Tinkerton", "grubb": "Grubb the cook", "nix": "Nix the scrapper", "snaggle": "Old Snaggle", "pipsqueak": "Pip-squeak", "gnash": "King Gnash", "mudge": "Mudge", "skritch": "Skritch", "ratchet": "Ratchet"};
+  const NPC_NAMES = {"sera": "Sera", "garrick": "Garrick", "marta": "Marta", "aldous": "Aldous the banker", "rosalind": "Rosalind", "brakka": "Brakka the smith", "pim": "Pim the tinker", "dorran": "Dorran the innkeeper", "duke": "Duke Ferrin", "hale": "Sergeant Hale", "tobin": "Tobin", "greta": "Greta", "fennick": "Fennick the trader", "wren": "Old Wren", "v1": "Ada", "v2": "Bram", "v3": "Cass", "v4": "Dunn", "v5": "Elsie", "v6": "Finn", "osric": "Gatewarden Osric", "ambrose": "Ambrose the bell-ringer", "hettie": "Hettie the apple seller", "mabel": "Mabel the candle maker", "moll": "Moll the flower seller", "wynn": "Wynn", "tess": "Tess", "robin": "Robin", "death2": "Death", "tam": "Old Tam", "nell": "Nell", "pip": "Pip", "hob": "Hob", "wenna": "Wenna", "harl": "Harl the ferryman", "pete": "Pete", "thrain": "King Thrain", "brunhild": "Brunhild the smith", "dagny": "Dagny", "orik": "Orik", "hilde": "Hilde", "aelith": "Queen Aelith", "lira": "Lira the archery master", "thessaly": "Thessaly the weaver", "faelan": "Faelan", "seraphel": "Queen Seraphel", "halcyon": "Master Halcyon", "pell": "Keeper Pell", "quill": "Quill Windward", "skyla": "Skyla Fleetwing", "ferris": "Old Ferris", "aldric": "Captain Aldric", "tamsin": "Tamsin the baker", "mossbeard": "Mossbeard", "aubade": "Sister Aubade", "corvin": "Guildmaster Corvin", "merriweather": "Merriweather", "orla": "Warden Orla", "brisk": "Warden Brisk", "lark": "Lark", "bellweather": "Bellweather the lamplighter", "brannoc": "Brannoc the porter", "fen": "Fen", "tilly": "Tilly", "wick": "Wick the messenger", "pippa": "Pippa the fruit seller", "maudie": "Maudie the weaver", "plume": "Old Plume the feather seller", "crockett": "Crockett the potter", "hazel": "Hazel", "wim": "Wim", "tinkerton": "Tinkerton", "grubb": "Grubb the cook", "nix": "Nix the scrapper", "snaggle": "Old Snaggle", "pipsqueak": "Pip-squeak", "gnash": "King Gnash", "mudge": "Mudge", "skritch": "Skritch", "ratchet": "Ratchet", "wilf": "Wilf the stonemason", "tamsin_miller": "Tamsin the miller", "odo": "Odo the farmer", "nan_gully": "Nan Gully", "mother_hobb": "Mother Hobb", "jory": "Jory the pedlar", "marigold": "Marigold the drover", "ansel": "Ansel the beacon keeper", "hilde_trapper": "Hilde the trapper", "corvin_hunter": "Corvin the hunter"};
   const H = { lerp, ease, OUT, shade, hex, rr, ell, outline, vfill, rfill, metal, shadow, face4 };
   return { NEW_NPC, NPC_FAMILY, NPC_SPEC, NPC_NAMES, npc, drawPerson, npcFromToday, BUILDS, SKIN, HAIR, H, mark: f => { NPC_MARK = f || null; } };
 })();

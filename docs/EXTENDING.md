@@ -16,8 +16,13 @@ Everything a feature needs is reachable through globals and the `HOOKS` registry
   Shapes available to `drawItemIcon`: coins log rock bar plank door bed lodestone bench trap scrap
   powder silk wool pelt tusk seed potato meat fish bread pie rod sword dagger axe battleaxe
   warhammer pickaxe hoe hammer bow arrow bomb helm body legs shield. Unknown shapes draw a disc.
-- `MONSTER_DEFS.my_monster = { name, level, r, hp, att, maxHit, def, speed, aggro, sight, respawn, drops, human?, harmless?, thrower?, mech? }`
+- `MONSTER_DEFS.my_monster = { name, level, r, hp, att, maxHit, def, speed, aggro, sight, respawn, drops, human?, harmless?, thrower?, mech?, roam? }`
+  (`roam`: the tiles from home it idles within, and it turns for home the moment it is past them; default 4, a person 6)
   and a sprite via `HOOKS.drawMonster.my_monster = (g, e, hurt) => {...}` (g is already translated to the monster's position; draw around 0,0; `e.facing`, `e.walkT`, `e.moving`, `e.attackT`).
+  Every monster is drawn in the monster refit's look (78-monsterlook), whose self-test refuses a type with no drawing in it: a
+  new type is drawn in the sample's hand (`MONSTER_ART.H`'s helpers) and registered with `MONSTER_LOOK.addType(type, { draw,
+  size, box, r, pic, top })` from a pictures-only file listed in tools/build-sim.mjs STRIP_FILES (87-critterart is the
+  example: its box measured every 16th of a turn, standing, walking and biting, 3 px all round).
   Its death is drawn by `src/79-deaths.js` from the same sprite: one of six kinds, `beast` (falls onto its side, kicks, fades),
   `person` (falls back, the weapon clatters away), `undead` (crumbles into dust and bones), `machine` (sparks, smokes, breaks apart),
   `dragon` (crashes down, a last breath of smoke) or `golem` (cracks and splits into rubble). Name it in the def with
@@ -37,6 +42,16 @@ Everything a feature needs is reachable through globals and the `HOOKS` registry
 - World: `BUILDINGS.push({...})` (same shape as the existing ones; `stone`, `door`/`doorTop`, `f` furniture),
   `NPCS.push(initNpc({ id, name, x, y, tunic, hair, role, ... }))`, `REGIONS.unshift({ name, sub, x0, y0, x1, y1 })`,
   and `HOOKS.world.push((rnd, api) => { ... })` to carve terrain: `api.setTile/tileAt/spawnList(type, [[x,y],...])/road(points, tile, width, chance)/pen(...)`.
+  **New things on the finished land go in `HOOKS.built`, not `HOOKS.world`** (the Great Spread's Stage 5 places and creatures):
+  `HOOKS.built.push((rnd, api) => { ... })` (the same api) runs after every carving pass (92-worldshape, 93-ashedge) and the
+  spread's stakes (93-spread), before 95-thistledown's snapshot and 96-atlas's build. Those carving passes draw their own dice
+  tile by tile round every spawn, building and person, so one spawn added before them moved flowers and trees across 2,042
+  tiles of the map (Stage 5a, found by tools/spread-footprint.mjs); added in `HOOKS.built`, only what the pass lays changes.
+  A pass there uses its own `mulberry32` stream, never `rnd`. A Stage 5 or 6 change that touches ground a knight may have built
+  on declares its footprint (`ATLAS.REVS[n] = { boxes }`), bumps `WORLD_REV` (00-core) and passes
+  `node tools/spread-footprint.mjs <the previous build's index.html>` (every changed tile, person, building, region and spawn
+  inside the boxes plus 6) and `node tools/spread-migrate-check.mjs --rev-base <that index.html>` (the saves the live world's
+  knights hold, swept).
   The map is `MAP_W`×`MAP_H` = 400×280 tiles (the Great Spread, Stage 4a). **Built land is named by anchors, never by
   numbers**: every place is an Atlas anchor (`ATLAS.ANCHORS`: its box with `ATLAS.box(id)`, its named points with
   `ATLAS.port(id)`), the land between places is the stretched world (`ATLAS.world`), and the grounds are REGIONS (the
@@ -47,6 +62,36 @@ Everything a feature needs is reachable through globals and the `HOOKS` registry
   the Crossroads Inn, Beacon Hills, the Hunters' Lodge, the goblin outposts, the Bandit Hills). Builders' stakes stand
   round each; `placeAction` refuses them and every main road (`ATLAS.onMainRoad`). A new place fills its reserved box (or
   is given a new anchor in `src/01-atlas.js`), declares its rail with `RAILS.add` (51-mounts), and moves nothing else.
+  **Building a reserved place** (Stage 5; `src/85-riverside.js` is the worked example): at load, `ATLAS.markBuilt(id,
+  { sub })` (before 93-spread names the REGIONS: the banner and the map say the place, not the builders; its signposts drop
+  "(builders at work)"; `placeAction` says "This is Millbrook's ground."). The anchor stays reserved, so every world pass
+  before `HOOKS.built` sees exactly the ground it saw before. Write its points in `ATLAS.planFrame(id)` (offsets from the
+  plan box's top-left: `F.p(3, 4)`, `F.pt({...})`, `F.box([...])`), so the place moves with its box. In its
+  `HOOKS.built` pass: take its own stakes up (`SPREAD_GROUND.PROPS` cells whose `place` is the id: set the tile back to
+  `under` and delete the entry), lay its ground, push its BUILDINGS and NPCS rows and paint them (take them out again in a
+  `HOOKS.world.unshift` pass, so the earlier passes, which keep rings clear round people and buildings with dice, never
+  see them), spawn its creatures (mark each spawn `s.by`). People need a look in 83-townsart (`addPeople`, a family of
+  their own; 83-townsfolk's check counts the people). The markers are made again after `HOOKS.built` (93-spread).
+  Take your rows out BEFORE `generateWorld` too (wrap it, as `src/84-crossroads.js` does): the core's own generation lays
+  every BUILDINGS row ahead of any `HOOKS.world` pass, and the Crossroads Inn laid there re-rolled 4,888 tiles all over the
+  next world. A place whose ground must run past its stakes (the inn: the roads cross its box's middle) passes the grown
+  box to `ATLAS.markBuilt(id, { sub, box })`: `ATLAS.builtAt` (and so `placeAction`) keeps it, and the place grows its
+  REGIONS line to it in its `HOOKS.built` pass and puts it back in the same `generateWorld` wrapper (the core and every
+  earlier pass read `regionAt`). `markBuilt(id, { arms: 4 })` lets its signpost show four arms. An inn's bed: a BUILDINGS
+  row with `inn: { flag, keeper }` holds the spirit once `player[flag]` is set (06-systems' bed; the Barrel & Boar keeps
+  Dorran's `innRested`). Solid things (a well, a trough, a notice board) cannot be DECO or PROP (both walkable): 84 stands
+  them on 95-thistledown's TD_PROP tile (solid; outside the town's plan it has no kind of the town's) with a side table of
+  its own, drawn and read in its own hooks. A thing bigger than a tile (`src/86-wildplaces.js`' beacon towers: six cells,
+  one record) gives every cell the same record and draws once, sorted at its foot. New rock faces (CLIFF), boulders and
+  walls must not shut in ground a knight could reach before (92-worldshape's walled-off check counts every pocket, ore
+  and rock): 86 clears the trees and rocks on the open ground round each face, boulder and its lodge's walls (an apron).
+  A shop says what it buys with `buysWords` (10-hud; Fennick's words are the default). A rock face that makes a switchback
+  leaves the network's track straight between its ports (01-atlas TRACKS lay the dirt at world start, and every earlier
+  pass reads them): the path on the ground is the place's own, and its self-test walks it.
+  **DECO** (`src/83-deco.js`, Stage 5's one tile): open ground drawn as a kind from a side table (`DECO.kind(name,
+  { draw, use, ground, flat, bridge })`, `DECO.put(api, x, y, kind)` in a `HOOKS.built` pass, `DECO.at`, `DECO.cells`):
+  the Old Bridge's stone deck (`bridge: true`, counted as a crossing by the scarp-seal and river checks), reeds, wheat,
+  hedges, drying racks. The tile is made by the first cell put, after PROP, so no older tile id moves.
   East of the Sound (x 303–311) everything is ferry-only (Harl's ferry from the dock).
   `WALK_OVER` (a Set in 00-core) lets the player cross tiles it contains (e.g. `WALK_OVER.add(T.WATER)` while hover armour is worn).
 - Quests: `QUEST_DEFS.my = { name }`, `HOOKS.questText.my = () => '...'`, `HOOKS.activeQuests.push(() => cond ? ['my'] : [])`.

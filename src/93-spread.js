@@ -59,7 +59,7 @@
   // whose box lies inside the Grub Fields'). `atlas` keeps each one's Atlas id its anchor's.
   { const SUB = 'Builders have staked this ground';
     const boxes = A.reserved().filter(r => NAMES[r.id] && NAMES[r.id][0] && r.id !== 'ash_wastes')
-      .map(r => ({ name: NAMES[r.id][0], sub: SUB, atlas: r.id, x0: r.box[0], y0: r.box[1], x1: r.box[2], y1: r.box[3] }));
+      .map(r => ({ name: NAMES[r.id][0], sub: A.isBuilt(r.id) ? A.BUILT.get(r.id).sub : SUB, atlas: r.id, x0: r.box[0], y0: r.box[1], x1: r.box[2], y1: r.box[3] }));
     REGIONS.splice(0, 0, ...boxes);
     const jungle = REGIONS.findIndex(r => r.name === 'The Jungle');
     REGIONS.splice(jungle < 0 ? REGIONS.length - 1 : jungle, 0, { name: 'The Sound', sub: 'Deep water. Only the ferry crosses', atlas: 'sound', x0: G.sound[0], y0: G.sound[1], x1: G.sound[2], y1: G.sound[3] });
@@ -244,6 +244,11 @@
       set(best.x, best.y, T.SIGN); SP.signs.push([best.x, best.y, nx, ny]); S.signs++;
     }
   });
+  // the passes that build on the finished land (HOOKS.built: the Stage 5 places and creatures): right after the stakes, so a
+  // place can take its own up, and before 95-thistledown's snapshot and 96-atlas's build (both pushed by later files)
+  // (61-markers made its markers in an earlier pass, from the people and tiles then down: they are made again once the
+  // built places' people, shops and docks are there)
+  HOOKS.world.push((rnd, api) => { for (const f of HOOKS.built) f(rnd, api); if (HOOKS.built.length && window.MARKERS && MARKERS.rebuildWorld) MARKERS.rebuildWorld(); });
 
   // ---------- what a road's signpost shows on its arms (08-draw's drawSignProp asks) ----------
   // up to three arms, each a short name pointing left (west-ish) or right; the story's own signpost keeps its arms
@@ -254,8 +259,10 @@
     const i = ty * MAP_W + tx; if (ARMS.has(i)) return ARMS.get(i);
     const sign = SP.signs.find(q => q[0] === tx && q[1] === ty); let arms = null;
     if (sign) { const legs = A.signArms(tx, ty), seen = new Set(); arms = [];
-      for (const l of legs) { const w0 = l.to.replace(/\s*\(.*\)$/, '').replace(/^the /i, '').toUpperCase(), word = SHORT[w0] || w0.slice(0, 12); if (seen.has(word) || arms.length >= 3) continue; seen.add(word);
-        arms.push([-42 + arms.length * 16, word, false, /west/.test(l.dir)]); }
+      // (a built place may show four arms at its own crossroads: markBuilt's `arms`, 84-crossroads' four-way signpost)
+      const four = [...A.BUILT].some(([id, info]) => info.arms === 4 && A.builtAt(sign[2], sign[3]) === id), max = four ? 4 : 3, step = four ? 14 : 16, top = four ? -44 : -42;
+      for (const l of legs) { const w0 = l.to.replace(/\s*\(.*\)$/, '').replace(/^the /i, '').toUpperCase(), word = SHORT[w0] || w0.slice(0, 12); if (seen.has(word) || arms.length >= max) continue; seen.add(word);
+        arms.push([top + arms.length * step, word, false, /west/.test(l.dir)]); }
       if (!arms.length) arms = null; }
     ARMS.set(i, arms); return arms;
   };
@@ -272,7 +279,11 @@
     placeAction = function (id) {
       if (!window.__instance && !player.dead && !player.mech) {
         const { tx, ty } = frontTile(player, 40);
-        if (inMap(tx, ty) && (A.reservedAt(tx, ty) || A.onMainRoad(tx, ty))) { notify('Builders have staked this ground.'); return; }
+        const rid = inMap(tx, ty) ? A.builtAt(tx, ty) || A.reservedAt(tx, ty) : null;
+        // (a built place keeps its ground: its people, paths and yards are not a knight's to build on)
+        // (a name ending in s takes a bare apostrophe: "Beacon Hills' ground")
+        if (rid && A.isBuilt(rid)) { const nm = NAMES[rid][1].replace(/^The /, 'the '); notify(`This is ${nm}${/s$/.test(nm) ? "'" : "'s"} ground. Build somewhere else.`); return; }
+        if (inMap(tx, ty) && (rid || A.onMainRoad(tx, ty))) { notify('Builders have staked this ground.'); return; }
       }
       return _placeAction.apply(this, arguments);
     }; }
@@ -318,10 +329,11 @@
   HOOKS.selfTest.push((check, F, h) => {
     const P = 'spread: ', S = SP.stats;
     // every reserved place is staked, with a plaque that says what is coming
-    const res = A.reserved(), unstaked = res.filter(r => r.id !== 'wreck_rock' && !(S.stakes[r.id] > 0)).map(r => r.id), noPlaque = res.filter(r => !S.plaques[r.id]).map(r => r.id);
+    const res = A.reserved().filter(r => !A.isBuilt(r.id)), unstaked = res.filter(r => r.id !== 'wreck_rock' && !(S.stakes[r.id] > 0)).map(r => r.id), noPlaque = res.filter(r => !S.plaques[r.id]).map(r => r.id);
     const plaques = [...PROPS.entries()].filter(([, p]) => p.kind === 'plaque');
     const glass = plaques.find(([, p]) => p.place === 'alchemy'), barrow = plaques.find(([, p]) => p.place === 'necromancy');
-    check(P + "every reserved place has builders' stakes round it and a plaque (the Glasshouse's says \"Builders' stakes. The Glasshouse is coming.\", the Old Barrow's \"... The Old Barrow is coming.\"), and Wreck Rock's buoys float in the Grey Sea",
+    // (a place Stage 5 has built takes its own stakes up: 85-riverside and the rest test their own ground)
+    check(P + "every reserved place not yet built has builders' stakes round it and a plaque (the Glasshouse's says \"Builders' stakes. The Glasshouse is coming.\", the Old Barrow's \"... The Old Barrow is coming.\"), and Wreck Rock's buoys float in the Grey Sea",
       !unstaked.length && !noPlaque.length && !!glass && !!barrow && plaqueText('alchemy') === "Builders' stakes. The Glasshouse is coming." && plaqueText('necromancy') === "Builders' stakes. The Old Barrow is coming." && S.buoys >= 4,
       { unstaked, noPlaque, stakes: S.stakes, buoys: S.buoys, skipped: S.skipped });
     // the plaques' grammar: a plural name is "are" (the review of c34fddf read "The Bandit Hills is coming.")

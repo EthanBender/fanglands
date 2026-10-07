@@ -59,6 +59,11 @@ const HOOKS = {
   xpSource: [], // fn(add) — declare a feature's XP sources to the progression audit: add(skill, name, req, xp, secs, note)
   keyHelp: [], // { action, codes: ['KeyK'] } — a feature's desktop keys, listed by the Settings panel's Controls line // (g, x, y, w, h) → draw one 36 px button row in the pause menu (slots between Settings and New game)
   world: [],        // fn(rnd, api) — runs at the end of generateWorld; api = { setTile, tileAt, spawnList, road }
+  built: [],        // fn(rnd, api) — a pass on the FINISHED land (the Great Spread's Stage 5 places and creatures): after every
+                    // carving pass (92-worldshape's outlines, 93-ashedge) and the spread's stakes (93-spread, which runs these
+                    // right after its own pass), before 95-thistledown's snapshot and 96-atlas's build. Those carving passes
+                    // draw their own dice tile by tile, so a tile or a spawn added BEFORE them moves things all over the map;
+                    // added here, nothing but what the pass itself lays changes. Use your own mulberry32 stream, never rnd.
   update: [],       // fn(dt) — runs every tick after the core update
   draw: [],         // fn(g, items, cam) — push {y, draw} entries into the y-sorted world list
   hud: [],          // fn(g, narrow) — extra HUD after the core HUD, before panels
@@ -92,8 +97,12 @@ const HOOKS = {
 // nothing until the page is reloaded. WORLD_V 2 is the Great Spread's 400 x 280 map (a world-1 save is moved onto it by
 // 97-spread). WORLD_REV is the minor: a later stage that changes ground knights may have built on declares its footprint
 // in ATLAS.REVS[rev] and bumps it, and an older save is swept in those boxes only (97-spread's SPREAD.sweep).
+// Revs: 1 = Stage 5a, the starting creatures (87-critters: the ground each new spawn wakes on); 2 = Stage 5b, the riverside
+// places (85-riverside: the Old Bridge, Millbrook and Saltmere, each box with its dressing ring); 3 = Stage 5c, the
+// Crossroads Inn (84-crossroads: its box grown over the inn and the yard, with its dressing ring); 4 = Stage 5d, the wild
+// places (86-wildplaces: Beacon Hills and the Hunters' Lodge, each box with its dressing ring, and the bear's den).
 const WORLD_V = 2;
-const WORLD_REV = 0;
+const WORLD_REV = 4;
 let SAVE_LOCK = false;
 // a cell the knight could step onto but could not get across (an agility obstacle above his level): pathfinders go round it
 function pathBlocked(tx, ty, who) { for (const f of HOOKS.pathBlock) if (f(tx, ty, who)) return true; return false; }

@@ -248,7 +248,10 @@
     add('crafting', "Pim's powder run / Thessaly's wool (once each)", 1, 300, 0, 'notice board'); if (ITEMS.jungle_log) add('crafting', 'Queen Aelith (once)', 1, 150, 0, 'quest');
     add('range', 'arrows on a goblin (4 xp per damage)', 1, 4 * 3, 0.6, 'stone arrows, avg hit 3'); add('range', "Wren's silk (once)", 1, 60, 0, 'quest'); if (ITEMS.elven_arrow) add('range', "Lira's twenty (once)", 1, 500, 0, 'quest');
     for (const f of HOOKS.xpSource) { try { f(add); } catch (e) { } } // features declare their own (45-progression)
-    kill('goblin', 'goblin soldier', 1, 'walk + kill;'); kill('wolf', 'wolf', 6); kill('sapper', 'goblin sapper', 7); kill('brute', 'goblin brute', 9); kill('walker', 'goblin walker', 18);
+    kill('goblin', 'goblin soldier', 1, 'walk + kill;');
+    // the starting creatures (87-critters): the rungs between the cave spiders and the goblins, and on to the wolves
+    if (window.CRITTERS) { kill('crow', 'crow', 1, 'the signpost meadow;'); kill('giant_rat', 'giant rat', 1, 'the cave meadow;'); kill('snake', 'snake', 3, "Miller's Pond;"); kill('adder', 'adder', 5, "Miller's Pond;"); kill('wild_dog', 'wild dog (a pack of 3)', 5, 'the fields off the road;'); }
+    kill('wolf', 'wolf', 6); kill('sapper', 'goblin sapper', 7); kill('brute', 'goblin brute', 9); kill('walker', 'goblin walker', 18);
     // the square's beast dies once; the War Shed's (20-hollowford) is a rematch at most once every 300 s of the day clock
     if (MONSTER_DEFS.barrelbeast) add('melee', 'the War Shed Barrelbeast (one per 300 s)', 28, killXp('barrelbeast'), 300, '20-hollowford');
     if (MONSTER_DEFS.ash_drake) kill('ash_drake', 'ash drake', 30); if (MONSTER_DEFS.green_dragon) kill('green_dragon', 'green dragon', 45); if (MONSTER_DEFS.red_dragon) kill('red_dragon', 'red dragon', 60);
