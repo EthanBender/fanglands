@@ -55,6 +55,8 @@ export const STRIP_FILES = [
   '83-townsart', '83-townsfolk',
   // the mounts' look (the knight's machines in the monster refit's art, a friend's mount online): pictures only, no rules
   '84-mountlook',
+  // the world map's place names (the Great Spread, Stage 4b; ADDENDUM B): the map panel's labels, pictures only, no rules
+  '61-maplabels',
   // the teacher view's screen and its drawing of a kid's point of view (round 2): a page's, never the world's
   '79-teacherscreen', '79-view',
 ];
@@ -138,7 +140,7 @@ const PROBE_SRC = `function __simProbe() { return { now: Date.now(), date: new D
 // checks press. A check opens a panel and taps its buttons; the buttons are laid out by the drawing (08-draw, 09-render,
 // 10-hud, 59-hudkit), the title's own (14-title), and the playthrough bot (42-playthrough) is a test that plays the game
 // through its rules. Everything else on STRIP_FILES stays a stand-in, exactly as on the server.
-export const TEST_UI_FILES = ['08-draw', '09-render', '10-hud', '59-hudkit', '14-title', '42-playthrough'];
+export const TEST_UI_FILES = ['08-draw', '09-render', '10-hud', '59-hudkit', '14-title', '42-playthrough', '61-maplabels'];   // (61-maplabels: the map panel's names, drawn by 10-hud's map panel)
 
 export function buildSim({ html, strip = false, keepTests = false, testUi = false } = {}) {
   let script = html.slice(html.indexOf('<script>') + 8, html.lastIndexOf('</script>'));
@@ -261,8 +263,8 @@ export const STRIP_READS = {
     why: 'the HUD kit (59-hudkit): fonts, colours, text widths, panel rows, plaques, seats and safe insets, read by panel, plaque, chat-wrap and tap code (79-boygirl: its "Boy or girl?" card on the title, drawn only while the title is up); the two update-time reads are a held BLOCK seat, used only for the copy\'s own knight on a machine (55-riding returns first: the parked stand-in has no machine) and a pointer release (05-input, a copy has no pointer)',
   },
   title: {
-    files: ['17-tap', '54-graves', '71-login', '72-cloudsave', '72-deviceknights', '72-savelock', '75-coop', '76-admin', '77-dropparty', '78-trade', '79-boygirl', '82-knightgear', '91-royalmine', '96-rests', '99-boot'],
-    why: 'title.active reads false in a copy (STUB_SEED and the stand-in\'s start(), as for a knight past the title); 75-coop\'s alone stream (the teacher view\'s Watch: a watched kid alone on his map) stops on the title, and a copy is never watched (no world says view on to it); 96-rests reads title.slotKey and title.slot behind a typeof guard to name its time-away stamp (no slot in a copy, so no stamp is written or read); 79-boygirl wraps the title\'s door, slot start, open and knight sprite at load and reads a slot\'s save before it is loaded, none of which a copy ever calls (it starts with newGame(), never from the title); 82-knightgear gives the title\'s knight figure (title.KNIGHT) its gear at load, which only the title\'s drawing reads; the rest are the title\'s save slots (slotKey, slot) for login, cloud saves, device knights (72-deviceknights names and offers them on the login card) and admin, which a copy never uses (save() does nothing, NET.call throws), 72-savelock\'s look at the slot on disk inside save() and its slot-start wrapper (the lock is cleared when a slot starts), neither of which a copy ever reaches, the title frame for drawing, and 99-boot\'s frame(), which a copy never runs',
+    files: ['17-tap', '54-graves', '71-login', '72-cloudsave', '72-deviceknights', '72-savelock', '75-coop', '76-admin', '77-dropparty', '78-trade', '79-boygirl', '82-knightgear', '91-royalmine', '96-rests', '97-spread', '99-boot'],
+    why: 'title.active reads false in a copy (STUB_SEED and the stand-in\'s start(), as for a knight past the title; 97-spread opens its NEW WORLD page only off the title, and a copy has no quest.spread to tell); 75-coop\'s alone stream (the teacher view\'s Watch: a watched kid alone on his map) stops on the title, and a copy is never watched (no world says view on to it); 96-rests reads title.slotKey and title.slot behind a typeof guard to name its time-away stamp (no slot in a copy, so no stamp is written or read); 79-boygirl wraps the title\'s door, slot start, open and knight sprite at load and reads a slot\'s save before it is loaded, none of which a copy ever calls (it starts with newGame(), never from the title); 82-knightgear gives the title\'s knight figure (title.KNIGHT) its gear at load, which only the title\'s drawing reads; the rest are the title\'s save slots (slotKey, slot) for login, cloud saves, device knights (72-deviceknights names and offers them on the login card) and admin, which a copy never uses (save() does nothing, NET.call throws), 72-savelock\'s look at the slot on disk inside save() and its slot-start wrapper (the lock is cleared when a slot starts), neither of which a copy ever reaches, the title frame for drawing, and 99-boot\'s frame(), which a copy never runs',
   },
   cam: {
     files: ['17-tap', '24-dwarves', '78-trade', '88-aerie', '91-cloudkingdom', '91-royalmine', '95-thistledown', '79-deaths'],

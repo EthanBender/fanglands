@@ -92,8 +92,8 @@ test('migrate on the live schema: every old row stays byte for byte, the new col
     [{ name_lc: 'cohen', role: 'player', muted_until: 0 }, { name_lc: 'mudgoll', role: 'player', muted_until: 0 }, { name_lc: 'sam the brave', role: 'player', muted_until: 0 }]);
   // the new tables and indexes are there, empty; the old index is still there
   const names = sql.exec("SELECT type, name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name").toArray().map(r => r.type + ' ' + r.name);
-  assert.deepEqual(names, ['index crackers_by_lighter', 'index logins_by_name', 'index sessions_by_name', 'index trades_by_a', 'index trades_by_b', 'table accounts', 'table chat', 'table crackers', 'table logins', 'table mod_log', 'table parties', 'table save_pins', 'table saves', 'table sessions', 'table settings', 'table trades']);
-  for (const t of ['mod_log', 'save_pins', 'parties', 'crackers', 'logins', 'trades']) assert.equal(sql.exec(`SELECT COUNT(*) AS n FROM ${t}`).one().n, 0);
+  assert.deepEqual(names, ['index crackers_by_lighter', 'index logins_by_name', 'index sessions_by_name', 'index trades_by_a', 'index trades_by_b', 'table accounts', 'table chat', 'table crackers', 'table logins', 'table mod_log', 'table parties', 'table save_pins', 'table save_worlds', 'table saves', 'table sessions', 'table settings', 'table trades']);
+  for (const t of ['mod_log', 'save_pins', 'save_worlds', 'parties', 'crackers', 'logins', 'trades']) assert.equal(sql.exec(`SELECT COUNT(*) AS n FROM ${t}`).one().n, 0);
   assert.deepEqual(sql.exec('SELECT DISTINCT online_ms FROM accounts').toArray(), [{ online_ms: 0 }]);
   // word strikes have their own columns, all 0; the wrong-secret-word tries and lock are left exactly as they were
   assert.deepEqual(sql.exec('SELECT DISTINCT word_strikes, word_strike_at, words_locked_until, last_ip FROM accounts').toArray(), [{ word_strikes: 0, word_strike_at: 0, words_locked_until: 0, last_ip: '' }]);

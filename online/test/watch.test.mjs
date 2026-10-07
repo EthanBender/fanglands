@@ -82,13 +82,15 @@ test('16. a nap: the teacher socket comes back to the Watch (not closed 4001, no
 test('17-18. a knight row has exactly the 11 keys; the place is the world\'s own Atlas, never the game\'s region text', async () => {
   const W = await world(['Sam', 'Leo', 'Ada', 'Pip']);
   const scr = await K.screen(W.w, W.token);
-  await K.online(W.w, W.tok.Sam, { x: 130 * 48 + 10, y: 70 * 48 + 10, region: 'stupid butt land' });
+  // Sam stands on Hollowford's square (a port of the world's own Atlas: the Great Spread moved it)
+  const [hx, hy] = K.ATLAS_JSON.ports['hollowford.square'], HX = hx * 48 + 10, HY = hy * 48 + 10;
+  await K.online(W.w, W.tok.Sam, { x: HX, y: HY, region: 'stupid butt land' });
   await K.online(W.w, W.tok.Leo, { map: 'spider_den', x: 300, y: 200, region: 'poopy pants' });
   await K.online(W.w, W.tok.Ada, { map: 'house', x: 300, y: 200, region: 'my secret base' });
   await K.online(W.w, W.tok.Pip, { x: -5000, y: -5000, region: 'nowhere' });
   const rows = Object.fromEntries(scr.last('w_k').knights.map(r => [r.n, r]));
   for (const r of Object.values(rows)) assert.deepEqual(Object.keys(r), ROW_KEYS);
-  assert.equal(rows.Sam.place, 'Hollowford'); assert.equal(rows.Sam.x, 130 * 48 + 10);
+  assert.equal(rows.Sam.place, 'Hollowford'); assert.equal(rows.Sam.x, HX);
   assert.equal(rows.Leo.place, 'The Spider Den'); assert.equal(rows.Leo.x, null); assert.equal(rows.Leo.map, 'spider_den');
   assert.equal(rows.Ada.place, 'Their own island'); assert.equal(rows.Ada.map, 'house');
   assert.equal(rows.Pip.place, 'Somewhere in the world');
@@ -510,6 +512,23 @@ const srcOf = f => fs0.readFileSync(new URL('../src/' + f, import.meta.url), 'ut
 const DOC0 = fs0.readFileSync(new URL('../../docs/ONLINE.md', import.meta.url), 'utf8');
 const viewMsgs = s => s.all('view').map(m => m.on);
 
+// The Great Spread (docs/ONLINE.md, "The Great Spread on the server"): a kid still on an older world's page stands on the old
+// map, so his row never puts him on this map (no x, y; no place read from this Atlas), an instance is still named, and Watch
+// says his game is older
+test('the Great Spread: a kid on an older world\'s page has no x, y on the map and no overworld place; his instance is named; Watch says old', async () => {
+  const W = await world(['Sam', 'Leo']);
+  const scr = await K.screen(W.w, W.token);
+  const [hx, hy] = K.ATLAS_JSON.ports['hollowford.square'];
+  await K.online(W.w, W.tok.Sam, { x: hx * 48 + 10, y: hy * 48 + 10 }, VIEW_CAPS, '0000000000000000');
+  const leo = await K.online(W.w, W.tok.Leo, { map: 'spider_den', x: 300, y: 200 }, null, '0000000000000000');
+  clock.t += 1100; K.say(W.w, leo, { t: 'p', map: 'spider_den', x: 301, y: 200 });   // the next frame (one a second at most)
+  const rows = Object.fromEntries(scr.last('w_k').knights.map(r => [r.n, r]));
+  assert.deepEqual([rows.Sam.map, rows.Sam.place, rows.Sam.x, rows.Sam.y], ['over', 'Somewhere in the world', null, null]);
+  assert.deepEqual([rows.Leo.map, rows.Leo.place], ['spider_den', 'The Spider Den']);
+  const v = K.view(W.w, scr, 'Sam');
+  assert.deepEqual([v.t, v.map, v.old, v.keeper.map, v.keeper.n], ['w_vstart', 'over', true, 'over', 'Sam']);
+});
+
 test('W1. w_vstart is built from memory: 0 SQL beyond the lock (the second watch in 10 minutes, whose mod_log row is throttled)', async () => {
   const counter = { writes: 0, all: 0 };
   const W = await world(['Sam', 'Leo'], { counter });
@@ -519,7 +538,7 @@ test('W1. w_vstart is built from memory: 0 SQL beyond the lock (the second watch
   const scr = await K.screen(W.w, W.token);
   const first = K.view(W.w, scr, 'Sam');
   assert.equal(first.t, 'w_vstart'); assert.equal(first.n, 'Sam'); assert.equal(first.map, 'over'); assert.equal(first.keeper.n, 'Sam');
-  assert.equal(first.me.n, 'Sam'); assert.deepEqual(first.others.map(o => o.n), ['Leo']); assert.equal(first.monsters, 'live'); assert.equal(first.old, true);
+  assert.equal(first.me.n, 'Sam'); assert.deepEqual(first.others.map(o => o.n), ['Leo']); assert.equal(first.monsters, 'live'); assert.equal(first.old, false);   // his game names this world's Atlas (teacher-kit)
   const ws = W.w.wrap(scr), all0 = counter.all;
   clock.t += 2000;
   W.w.watch.message(ws, JSON.stringify({ t: 'w_view', req: 77, n: 'Sam' }));

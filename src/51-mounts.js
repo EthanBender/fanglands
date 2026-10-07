@@ -74,6 +74,29 @@
     if (POST) api.setTile(POST.x, POST.y, T_HITCH);
   });
 
+  // ---------- the rails (the spread spec, section 6 "The horse"; Stage 4b) ----------
+  // Every hitching rail the mare knows. Fennick's is first; each new place adds its own with RAILS.add when it is built
+  // (Stage 5), and the two reserved plots (ADDENDUM A) have theirs reserved now, with no post yet. When she is hurt out from
+  // under the knight, or he falls, she bolts to the NEAREST rail he has visited (stood within VISIT tiles of), and the Voice
+  // names that place. Fennick's rail always counts: she was bought there.
+  //   { id, place: the words for it ("Fennick's rail in Thistledown"), at: () => { x, y } | null (the post's tile), reserved }
+  const VISIT = 6;
+  const RAILS = window.RAILS = [];
+  RAILS.add = r => { if (!r || !r.id || RAILS.some(q => q.id === r.id) || typeof r.at !== 'function') return null; const e = Object.assign({ place: r.id, reserved: false }, r); RAILS.push(e); return e; };
+  RAILS.remove = id => { const i = RAILS.findIndex(q => q.id === id); if (i >= 0) RAILS.splice(i, 1); return i >= 0; };
+  RAILS.add({ id: 'thistledown', place: "Fennick's rail in Thistledown", at: () => POST });
+  RAILS.add({ id: 'alchemy', place: "the Glasshouse's rail", at: () => null, reserved: true });
+  RAILS.add({ id: 'necromancy', place: "the Old Barrow's rail", at: () => null, reserved: true });
+  const visited = () => { const h = H(); if (!Array.isArray(h.rails)) h.rails = ['thistledown']; return h.rails; };
+  RAILS.visited = id => id === 'thistledown' || visited().includes(id);
+  // the nearest built rail he has visited, from a point in pixels (Fennick's when no other is nearer, or none is built)
+  RAILS.nearest = (px, py) => {
+    let best = null;
+    for (const r of RAILS) { const p = r.at(); if (!p || !RAILS.visited(r.id)) continue; const d = dist(px, py, tc(p.x), tc(p.y)); if (!best || d < best.d) best = { r, d }; }
+    return best ? best.r : RAILS[0];
+  };
+  RAILS.of = (tx, ty) => RAILS.find(r => { const p = r.at(); return p && p.x === tx && p.y === ty; }) || null;
+
   // ---------- putting her down and picking her up ----------
   function horseAt() { const a = H().at; return (a && inMap(a[0], a[1]) && tileAt(a[0], a[1]) === T_HORSE) ? { tx: a[0], ty: a[1] } : null; }
   function liftHorse() { const at = horseAt(); if (at) changeTile(at.tx, at.ty, groundUnder()); H().at = null; H().under = null; }
@@ -94,11 +117,13 @@
     }
     return false;
   }
-  function sendToRail() {
+  // to a rail (Fennick's unless one is named)
+  function sendToRail(rail) {
     liftHorse();
-    if (POST) {
-      for (const [dx, dy] of [[0, 1], [1, 0], [-1, 0], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]]) if (parkAt(POST.x + dx, POST.y + dy)) return true;
-      if (parkNear(POST.x, POST.y, 4)) return true;
+    const p = (rail || RAILS[0]).at();
+    if (p) {
+      for (const [dx, dy] of [[0, 1], [1, 0], [-1, 0], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]]) if (parkAt(p.x + dx, p.y + dy)) return true;
+      if (parkNear(p.x, p.y, 4)) return true;
     }
     return parkNear(Math.floor(player.x / TILE), Math.floor(player.y / TILE), 4);
   }
@@ -279,9 +304,10 @@
     H().hp = 1;
     const free = safeSpot(player.x, player.y, BASE_R, 'player');
     if (free) { player.x = free.x; player.y = free.y; }
-    sendToRail(); handled = true;
+    const rail = RAILS.nearest(bx, by);
+    sendToRail(rail); handled = true;
     burst(bx, by, '#c9a36a', 26, 150); sfx('hurt');
-    say(`${NAME} has had enough of that. She throws you clear and bolts for Fennick's rail in Thistledown. She will be standing there, and she will need a rest before she carries you again.`, 'The Voice');
+    say(`${NAME} has had enough of that. She throws you clear and bolts for ${rail.place}. She will be standing there, and she will need a rest before she carries you again.`, 'The Voice');
     save();
   }
   // Wraps, so X, the touch EXIT button and every hit that lands all go the mare's way instead of the walker's.
@@ -299,19 +325,20 @@
     }; }
 
   // ---------- the rail: whistle her in and let her rest ----------
-  function whistle() {
+  function whistle(rail) {
+    rail = rail || RAILS[0];
     if (!H().owned) { say("A hitching rail, a rope, and a grey mare tied to it. Fennick keeps her here. He will sell her to anyone who has walked far enough to want her.", 'The Voice'); return; }
     if (riding()) { notify(`You are already on ${NAME}.`); return; }
-    const at = horseAt();
-    if (at && POST && Math.abs(at.tx - POST.x) <= 1 && Math.abs(at.ty - POST.y) <= 1) {
+    const at = horseAt(), p = rail.at();
+    if (at && p && Math.abs(at.tx - p.x) <= 1 && Math.abs(at.ty - p.y) <= 1) {
       H().hp = HORSE_HP; notify(`${NAME} is tied at the rail, rested and ready.`); save(); return;
     }
-    if (sendToRail()) { H().hp = HORSE_HP; sfx('ui'); notify(`You whistle. ${NAME} trots up to the rail.`); save(); }
+    if (sendToRail(rail)) { H().hp = HORSE_HP; sfx('ui'); notify(`You whistle. ${NAME} trots up to the rail.`); save(); }
     else notify('No room at the rail. Clear the ground beside the post.');
   }
   HOOKS.use.push((t, tx, ty) => {
     if (t === T_HORSE) { mount(tx, ty); return true; }
-    if (t === T_HITCH) { whistle(); return true; }
+    if (t === T_HITCH) { whistle(RAILS.of(tx, ty)); return true; }
     return false;
   });
 
@@ -320,11 +347,15 @@
   HOOKS.update.push(dt => {
     const r = riding();
     if (rideWas !== r && typeof tapCancel === 'function') tapCancel('manual'); // the old path was built for the wrong body
-    if (rideWas && !r && !handled) { // die() clears player.mech itself: she is loose, so she goes home
-      H().hp = Math.max(1, H().hp); sendToRail();
-      notify(`${NAME} ran for Fennick's rail in Thistledown.`); save();
+    if (rideWas && !r && !handled) { // die() clears player.mech itself: she is loose, so she goes to the nearest rail he knows
+      const rail = RAILS.nearest(player.x, player.y);
+      H().hp = Math.max(1, H().hp); sendToRail(rail);
+      notify(`${NAME} ran for ${rail.place}.`); save();
     }
     handled = false; rideWas = r;
+    // a rail is visited when the knight stands within VISIT tiles of its post (the overworld only)
+    if (H().owned && !window.__instance) { const tx = player.x / TILE, ty = player.y / TILE;
+      for (const q of RAILS) { if (q.id === 'thistledown' || RAILS.visited(q.id)) continue; const p = q.at(); if (p && Math.hypot(tx - p.x - 0.5, ty - p.y - 0.5) <= VISIT) { visited().push(q.id); save(); } } }
 
     const blocked = panel && !['skills', 'quests', 'map'].includes(panel);
     if (!blocked && !player.dead && (pressed.has('KeyG') || tapped('ride'))) tryRide();
@@ -991,5 +1022,30 @@
     if (typeof tapCancel === 'function') tapCancel('manual');
     closePanel(); h.peace(false);
     window.__forceTouch = wasTouch; dialog.cur = dc; dialog.queue.push(...dq);
+  });
+
+  // ---------- the rails: she bolts to the nearest rail the knight has visited (Stage 4b) ----------
+  HOOKS.selfTest.push((check, F, h) => {
+    const P = 'mounts: ', h0 = player.horse, dc = dialog.cur, dq = dialog.queue.slice();
+    h.peace(true); closePanel(); dialog.cur = null; dialog.queue.length = 0;
+    player.horse = { owned: true, hp: HORSE_HP, at: null, under: null };
+    // a second rail, as a new place's file adds one (RAILS.add), on open ground by the story signpost, far from Thistledown
+    const near = h.openSpot(...ATLAS.port('signpost.sign').map(Math.round), (x, y) => !SOLID.has(tileAt(x + 1, y)) && !SOLID.has(tileAt(x, y + 1)));
+    const post = { x: near.x, y: near.y };
+    const added = RAILS.add({ id: 'selftest', place: 'the test rail by the signpost', at: () => post });
+    const voice = () => { const d = [dialog.cur, ...dialog.queue].find(q => q && q.who === 'The Voice'); return d ? d.text : ''; };
+    // thrown off beside it before he has stood there: she runs for Fennick's (the only rail he has visited)
+    const throwNear = () => { if (riding()) dismount(true); liftHorse(); dialog.cur = null; dialog.queue.length = 0; F.tp(post.x, post.y + 2); player.mech = null; mount(); bolt(); const at = horseAt(); return { at: at && [at.tx, at.ty], said: voice() }; };
+    const first = throwNear();
+    const fen = RAILS[0].at(), toFennick = !!first.at && !!fen && Math.max(Math.abs(first.at[0] - fen.x), Math.abs(first.at[1] - fen.y)) <= 4 && /Fennick's rail in Thistledown/.test(first.said);
+    // he walks up to the new rail (within six tiles of its post): now it is the nearest he knows, and the Voice names it
+    F.tp(post.x, post.y + 2); F.step([]); const seen = RAILS.visited('selftest');
+    const second = throwNear(), toNew = !!second.at && Math.max(Math.abs(second.at[0] - post.x), Math.abs(second.at[1] - post.y)) <= 4 && /the test rail by the signpost/.test(second.said);
+    // the registry: Fennick's first, the two reserved plots' rails held (no post yet), the visited list saved on the horse
+    const reg = RAILS[0].id === 'thistledown' && ['alchemy', 'necromancy'].every(id => { const r = RAILS.find(q => q.id === id); return r && r.reserved && r.at() === null; }) && Array.isArray(player.horse.rails) && player.horse.rails.includes('selftest');
+    if (riding()) dismount(true); liftHorse(); RAILS.remove('selftest'); player.horse = h0 || { owned: false, hp: HORSE_HP, at: null, under: null };
+    dialog.cur = dc; dialog.queue.length = 0; dialog.queue.push(...dq); h.peace(false);
+    check(P + "thrown off, she bolts to the NEAREST rail he has visited and the Voice names it: Fennick's while the new rail is unvisited, the new one once he has stood by it (RAILS: Fennick's first, the Glasshouse's and the Old Barrow's reserved)",
+      !!added && toFennick && seen && toNew && reg, { first, second, seen, reg, post: [post.x, post.y], fennick: fen && [fen.x, fen.y] });
   });
 }

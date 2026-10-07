@@ -43,7 +43,9 @@ const REGIONS = [
   AT_WHOLE(AT_W.rect({ name: 'Goblin Fields', sub: 'The road east', x0: 21, y0: 0, x1: 159, y1: 61 })),
   { name: 'The Wilds', sub: 'Uncharted', x0: AT_W.tx(0), y0: AT_W.ty(0), x1: MAP_W - 1, y1: MAP_H - 1 },
 ];
-const regionAt = (tx, ty) => REGIONS.find(r => tx >= r.x0 && tx <= r.x1 && ty >= r.y0 && ty <= r.y1) || REGIONS[REGIONS.length - 1];
+// once 92-worldshape's outlines are on (after the world is built), ask them directly (the spread spec, section 12: no bisect
+// through REGIONS.find on every call); before that, and in any build without 92, the plain box test
+const regionAt = (tx, ty) => (window.WORLDSHAPE && WORLDSHAPE.on() ? WORLDSHAPE.regionAt(tx, ty) : REGIONS.find(r => tx >= r.x0 && tx <= r.x1 && ty >= r.y0 && ty <= r.y1) || REGIONS[REGIONS.length - 1]);
 
 // buildings: door on the bottom wall at x+door (or top wall at x+doorTop). f = furniture [tile, rx, ry] inside.
 const BUILDINGS = [
@@ -125,10 +127,25 @@ function generateWorld() {
         for (let dy = -width; dy <= width; dy++) for (let dx = -width; dx <= width; dx++) if (Math.abs(dx) + Math.abs(dy) <= width && rnd() < chance) { const t = tileAt(x + dx, y + dy); if (t === T.GRASS || t === T.DIRT) setTile(x + dx, y + dy, tile); } }
     }
   };
-  road(ATLAS.track('road_cave'));                          // the cave mouth, the signpost, the lane outside the west gate
-  road(ATLAS.track('road_quarry_spur'), T.DIRT, 0, 0.8);   // quarry spur
-  road(ATLAS.track('road_wolfwood'), T.DIRT, 0, 0.6);      // path into Wolfwood
-  road(ATLAS.track('road_camp'), T.DIRT, 0, 0.8);          // east to the camp
+  // the spread's network (ATLAS.TRACKS, §5): every road a continuous dirt track, laid whole (chance 1, so it draws no dice):
+  // a main road two tiles wide (a second row below a level stretch, a second column west of a steep one), a spur or path
+  // one. Everything after this reads them as roads (39 bridges them over the river and keeps solids off them, 92 leaves
+  // the scarp open where they cross it).
+  // (a one-wide spur that steps diagonally also takes the corner tile, so it is joined side to side: a knight cannot squeeze
+  // between two giants that only touch at their corners, and the Bandit Track through the jungle was such a squeeze)
+  const lay = (pts, wide) => {
+    let lx = null, ly = null;
+    const put = (px, py) => { const t = tileAt(px, py); if (t === T.GRASS || t === T.DIRT) setTile(px, py, T.DIRT); };
+    for (let s = 0; s < pts.length - 1; s++) {
+      const [ax, ay] = pts[s], [bx, by] = pts[s + 1], steps = Math.max(1, Math.round(Math.max(Math.abs(bx - ax), Math.abs(by - ay))));
+      const level = Math.abs(bx - ax) >= Math.abs(by - ay), ox = wide && !level ? -1 : 0, oy = wide && level ? 1 : 0;
+      for (let k = 0; k <= steps; k++) { const x = Math.round(ax + (bx - ax) * k / steps), y = Math.round(ay + (by - ay) * k / steps);
+        if (!wide && lx !== null && x !== lx && y !== ly) put(x, ly);
+        for (const [px, py] of [[x, y], [x + ox, y + oy]]) put(px, py);
+        lx = x; ly = y; }
+    }
+  };
+  for (const id of ATLAS.ROAD_IDS) if (id !== 'shaft_lane' && id !== 'path_farm') lay(ATLAS.track(id), ATLAS.MAIN_ROADS.includes(id) ? 1 : 0);
   // ---- ponds ---- (Miller's Pond, and the little one south of Thistledown; each shore's wobble read in its place's OLD
   // coordinates, so the pond keeps its shape wherever its place goes)
   for (const [F, [px, py], pr] of [[AT_POND, ATLAS.port('pond.centre'), 4.5], [TD, TD.p(134, 60), 3.2]]) for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) {

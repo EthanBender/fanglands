@@ -619,8 +619,9 @@
     // the overworld first: the recorder must hear the world's names and quest labels, or the checks below prove nothing
     F.tp(...DEN_CV.p(22, 12)); const world = drawMap(); closePanel();
     const worldWords = new Set(REGIONS.map(r => r.name.toUpperCase()).concat(mapTargets().map(t => t.label), M ? M.known().map(m => m.label) : []));
-    const heard = ['Old Wren', 'Tobin', 'THISTLEDOWN'].filter(w => world.texts.includes(w));
-    check('instance maps: out in the world the map names the regions and the quest targets (the recorder hears them)', heard.length === 3 && !!mapLayout && mapLayout.view.id === null, { heard, view: mapLayout && mapLayout.view.id });
+    // (out in the world a quest ring on a person prints no name: people are markers, not labels, src/61-maplabels.js)
+    const heard = ['THISTLEDOWN', 'HOLLOWFORD'].filter(w => world.texts.includes(w)), people = ['Old Wren', 'Tobin'].filter(w => world.texts.includes(w));
+    check('instance maps: out in the world the map names the places (the recorder hears them) and no person by their quest ring', heard.length === 2 && !people.length && !!mapLayout && mapLayout.view.id === null, { heard, people, view: mapLayout && mapLayout.view.id });
     const bad = [];
     for (const id of INSTANCES.list()) {
       const inst = INST[id];

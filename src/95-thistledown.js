@@ -214,19 +214,19 @@
   // the nearest cell round (cx, cy), rings 1..R, where a moved machine may stand: the city's own open ground, as the world
   // made it (nothing of the knight's on it), not by a door, a gate or a person, not in a building, nobody standing on it,
   // not on a guard's post, and never on the High Street itself (rows 31..33 stay clear from gate to gate for riders)
-  function parkSpot(cx, cy, R, open, clear) {
+  function parkSpot(cx, cy, R, open, clear, accept) {
     const posts = new Set(MONSTER_SPAWNS.filter(sp => inTown(sp.tx, sp.ty)).map(sp => idx(sp.tx, sp.ty)));
     for (let r = 1; r <= R; r++) {
-      let best = null;
+      const ring = [];
       for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
         if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
         const x = cx + dx, y = cy + dy, i = idx(x, y);
         if (!inTown(x, y) || !inPlan(x, y) || (y >= TD.y(31) && y <= TD.y(33)) || posts.has(i) || !open.has(base[pi(x, y)]) || tileAt(x, y) !== base[pi(x, y)] || mapDiffs.has(i) || clear.has(i)) continue;
         if (insideBuilding(x, y) || buildingAt(x, y) || !PLACEABLE_ON.has(tileAt(x, y))) continue;
         if (NPCS.some(n => circleHitsTile(n.px, n.py, 14, x, y)) || circleHitsTile(player.x, player.y, player.r, x, y)) continue;
-        const d = Math.hypot(dx, dy); if (!best || d < best.d) best = { x, y, d };
+        ring.push({ x, y, d: Math.hypot(dx, dy) });
       }
-      if (best) return best;
+      ring.sort((a, b) => a.d - b.d); for (const c of ring) if (!accept || accept(c.x, c.y)) return c;   // `accept`: 97-spread's walks proof
     }
     return null;
   }
@@ -2518,7 +2518,7 @@
     const giveBack = () => { while (borrowed.length) { const b = borrowed.pop(); setTile(b.tx, b.ty, b.t); if (b.had) mapDiffs.set(idx(b.tx, b.ty), b.d); else mapDiffs.delete(idx(b.tx, b.ty)); } };
     const keep = { x: player.x, y: player.y, quest: JSON.stringify(quest), inv: player.inv.map(s => s ? { ...s } : null), horse: player.horse ? JSON.parse(JSON.stringify(player.horse)) : player.horse,
       mech: player.mech, r: player.r, speed: player.speed, day: player.dayTime, region: player.region, cityV: player.cityV, visited: player.visitedVillage, bed: player.bedSpawn, home: player.home, bank: player.bank.map(s => ({ ...s })) };
-    const onFoot = () => { player.mech = null; player.r = 13; player.speed = 175; player.action = null; };
+    const onFoot = () => { player.mech = null; player.r = 13; player.speed = 175; player.action = null; }; const heroAway = () => { const c = player.companion, id = c && c.id; if (id) c.id = null; return () => { if (id) c.id = id; }; }; // a hero who follows can stand in front and take the E
     const setCoins = n => { while (coins() > 0) payCoins(coins()); if (n > 0) h.give('coins', n); };
     // villagers who wander, and monsters, out of the way of the checks (put back at the end)
     const npcKeep = NPCS.map(n => ({ n, px: n.px, py: n.py, wanderT: n.wanderT }));
@@ -2761,7 +2761,7 @@
         { bad: bad.slice(0, 6), groups: groups.length, loneProps: loneProps.map(g => g.key), loneHedges, walked, tapLine, west, plaques, first, lampsLive }); }
 
     // ---- C10b. a tap on a town thing near one of the town's people answers as the thing, from every side it can be reached ----
-    { leave(); onFoot(); drain(); const wrong = []; let tried = 0;
+    { leave(); onFoot(); drain(); const back = heroAway(); const wrong = []; let tried = 0;
       const stay = STAYERS();
       for (let y = TOWN.y0; y <= TOWN.y1; y++) for (let x = TOWN.x0; x <= TOWN.x1; x++) {
         const t = tileAt(x, y), k = kindAt(x, y);
@@ -2776,7 +2776,7 @@
           if (!d0 || d0.who !== want[0]) wrong.push([x, y, k, sx, sy, d0 ? d0.who : null]);
         }
       }
-      drain(); tapCancel('manual');
+      drain(); tapCancel('manual'); back();
       check(P + 'C10b a tap on a stall, a bench, a hedge, a lamp or a statue beside one of the town\'s people answers as the thing from every side it can be reached (the sellers too: E still talks over a counter)',
         tried >= 20 && !wrong.length, { tried, wrong: wrong.slice(0, 8) }); }
 
@@ -2805,7 +2805,7 @@
         lone >= 20 && sent >= 20 && scenery && !!hedgeMid && Object.values(viaTap).length === 3 && Object.values(viaTap).every(Boolean), { lone, sent, stuck, viaTap }); }
 
     // ---- C11. the coin toss ----
-    { drain(); clearFolk(...TD.p(111, 33), 8); clearMonsters(...TD.p(111, 33), 6); onFoot(); F.tp(...TD.p(111, 33)); F.face(...TD.p(111, 34)); setCoins(5); const q = Q(); q.tossArmed = 0; const t0 = q.tossed;
+    { drain(); clearFolk(...TD.p(111, 33), 8); clearMonsters(...TD.p(111, 33), 6); onFoot(); const back = heroAway(); F.tp(...TD.p(111, 33)); F.face(...TD.p(111, 34)); setCoins(5); const q = Q(); q.tossArmed = 0; const t0 = q.tossed;
       F.press('KeyE'); const l1 = texts()[0], c1 = coins(); drain();
       F.sim(30, []); F.press('KeyE'); const l2 = texts()[0], c2 = coins(), t2 = q.tossed; drain();
       setCoins(0); F.sim(10, []); F.press('KeyE'); const l3 = texts()[0], c3 = coins(), t3 = q.tossed; drain();
@@ -2813,7 +2813,7 @@
       setCoins(2); F.sim(400, []); F.press('KeyE'); const l4 = texts()[0], c4 = coins(); drain();
       // E five times running on a keyboard (it does not turn the page): one line on the page at a time, the newest toss
       setCoins(5); q.tossArmed = 0; const t5 = q.tossed; for (let k = 0; k < 5; k++) { F.press('KeyE'); F.sim(6, []); }
-      const page = texts(), c5 = coins(), quick = page.length === 1 && page[0] === TOSS[(q.tossed - 1) % 6] && q.tossed === t5 + 4 && c5 === 1; drain();
+      const page = texts(), c5 = coins(), quick = page.length === 1 && page[0] === TOSS[(q.tossed - 1) % 6] && q.tossed === t5 + 4 && c5 === 1; drain(); back();
       check(P + 'C11 the coin toss: one E gives the line and spends nothing; a second E within 6 s costs exactly 1 coin and counts the toss; with no coins it says so and nothing changes; after 6 s E gives the first line again; E pressed five times running shows one line, the newest toss, never a stack',
         /^The Great Fountain\. People toss a coin/.test(l1 || '') && c1 === 5 && l2 === TOSS[t0 % 6] && c2 === 4 && t2 === t0 + 1 && l3 === 'You have no coins to toss.' && c3 === 0 && t3 === t2 && /^The Great Fountain\. People toss/.test(l4 || '') && c4 === 2 && quick,
         { l1, c1, l2, c2, tossed: [t0, t2, t3], l3, c3, l4, c4, page, c5 }); }
@@ -3316,14 +3316,17 @@
       const ringShown = !!tap.marker && marks.some(i => i.y === -1e9 + 1);
       tapCancel('manual');
       // the Bell Tower rises over the north wall: a knight on the grass behind it, outside, sees through it
-      clearMonsters(...TD.p(112, 12), 6); F.tp(...TD.p(112, 12)); F.step([]); const open = !SOLID.has(tileAt(...TD.p(112, 12))) && Math.floor(player.y / TILE) === TD.y(12);
+      // (an open tile of that row behind the tower's own two columns, 111 and 112: the ground outside the wall is the open
+      // land's, and a tree may stand on one of them)
+      const behind = [TD.p(112, 12), TD.p(111, 12)].find(([x, y]) => !SOLID.has(tileAt(x, y))) || TD.p(112, 12);
+      clearMonsters(...behind, 6); F.tp(...behind); F.step([]); const open = !SOLID.has(tileAt(...behind)) && Math.floor(player.y / TILE) === TD.y(12);
       STATS.record = true; render(); STATS.record = false; const bellA = STATS.bellAlpha;
       F.tp(...TD.p(112, 33)); F.step([]); render(); const bellFront = STATS.bellAlpha;
       // a friend online on that grass is seen through it by a knight standing in front of the tower (73-players' REMOTE)
       let friendA = null, alone = null;
       if (window.PLAYERS && PLAYERS.remote) {
         F.tp(...TD.p(112, 19)); F.step([]); render(); alone = STATS.bellAlpha;
-        PLAYERS.remote.__bellTest = { n: '__bellTest', map: PLAYERS.mapId(), x: tc(TD.x(112)), y: tc(TD.y(12)), shown: { x: tc(TD.x(112)), y: tc(TD.y(12)) }, dead: false, r: 13 };
+        PLAYERS.remote.__bellTest = { n: '__bellTest', map: PLAYERS.mapId(), x: tc(behind[0]), y: tc(behind[1]), shown: { x: tc(behind[0]), y: tc(behind[1]) }, dead: false, r: 13 };
         try { KN.t = NaN; render(); friendA = STATS.bellAlpha; } finally { delete PLAYERS.remote.__bellTest; KN.t = NaN; }
       }
       check(P + 'C25 the city\'s ground sorts under every other ground mark: a tap to walk on the paving shows its ring and dots (nothing sorts under the ground); a knight on the grass behind the Bell Tower, outside the north wall, sees it drawn see-through (and from the fountain it is solid); a friend online on that grass makes it see-through for a knight in front of it',
@@ -3429,6 +3432,8 @@
   HOOKS.world.push(snap);
   window.CAPITAL = {
     PLAN, TILES, KIND, KIND_NAMES, base, STATS, CLOCK, WARD, migrate, paint, snap, Q, MIG, SNAP, kindAt, baseAt, pristineAt, keepClear,
+    // the Great Spread's save migration (97-spread) parks machines and the mare with these rings, and refunds by this lookup
+    parkSpot: (cx, cy, R, accept) => parkSpot(cx, cy, R, OPEN(), keepClear(), accept), placedItemFor,
     timeLine, spanWords, dialAngle, lineFor, tapName, useThing, heroName, TALK, BELLST, BARK, CAT, KIDS, kidAt, swanAt, smallFolk,
     CHUNKS, get chunkMax() { return chunkMax; }, drawHook, TOWERS, TORCHES, LAMP_TOP, TREE_R, GCODE, drawTownBuilding, rimFor, TOWN_GATE_CELLS,
   };

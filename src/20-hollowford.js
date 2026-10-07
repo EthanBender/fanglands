@@ -552,6 +552,18 @@
     } else if (hf.freed) say(pick(["We're in the square most of the day now. I come down for what we saved, and for the quiet.", 'A guild, knight. When there is a roof to put it under. Folk who do things, and a board to say what.', "Pip counted your hammer blows. He tells everyone. Three, he says. Three and the bars went.", 'The crew that ran is building another beast in their War Shed, on the road below their camp. If you ever want another go at it.']), n.name);
     else { say("We're digging out the well, once we're past these bars. When Hollowford has a roof again, there'll be a chair in it for you, knight.", n.name); say('The crew that ran is building another beast in their War Shed, on the road below their camp. If you ever want another go at it.', n.name); }
   };
+  // the Great Spread's save migration (97-spread), from quest state: freed survivors leave the bars down; the Barrelbeast's
+  // wreck lies where it lay (quest.hollowford.wreck, already moved onto the new map by the migration), or on the first
+  // free spot by the War Shed, while it still lay there on the old map (SPREAD.remaking.wreckLies; a rebuilt beast is a
+  // machine, which the migration parks round the Bulldozer bay). Outside a migration it only keeps a wreck that stands.
+  HOOKS.remake.push(Object.assign(() => {
+    const hf = HF(), WT = T.BEAST_WRECK ?? T.WRECK;
+    if (hf.freed) for (const [x, y] of BAR_TILES) if (tileAt(x, y) === T_BARS) changeTile(x, y, T.FLOOR);
+    const w = hf.wreck, lies = window.SPREAD && SPREAD.remaking ? !!SPREAD.remaking.wreckLies : false;
+    if (!Array.isArray(w) || !lies || tileAt(w[0], w[1]) === WT) return;
+    const spot = PLACEABLE_ON.has(tileAt(w[0], w[1])) && !insideBuilding(w[0], w[1]) ? w : WRECK_SPOTS.find(([x, y]) => PLACEABLE_ON.has(tileAt(x, y)));
+    if (spot) { changeTile(spot[0], spot[1], WT); hf.wreck = [spot[0], spot[1]]; }
+  }, { remakeOf: '20-hollowford' }));
   // the bars: locked while the beast walks; three hammer blows once it is dead
   const breakBars = () => {
     const hf = HF();
@@ -588,7 +600,7 @@
     const fill = (x0, y0, x1, y1, tile) => { for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) set(x, y, tile); };
     // the goblins dragged the Barrelbeast out through the south palisade; the gap is still there
     for (let x = CMP.x(149); x <= CMP.x(151); x++) set(x, CMP.y(40), T.DIRT);
-    const ROAD = ATLAS.track('road_hollowford');   // camp gap 150,39 -> 150,50 -> 146,58 -> 141,64 -> Hollowford's north entry
+    const ROAD = ATLAS.track('r4_goblin');   // the Goblin Road: the camp's south gap, the goblin bridge, Hollowford's north entry
     carve(ROAD, 1, T.DIRT); api.road(ROAD, T.DIRT, 2, 0.25);
     // clear the town footprint, then scorch it (worst at the centre)
     for (let y = R.y0; y <= R.y1; y++) for (let x = R.x0; x <= R.x1; x++) {
@@ -786,7 +798,7 @@
       // the wrecks standing on the overworld before any of this
       const wOut = wrecks();
       // B1: the door on the camp road
-      { const road = F.bfs(...ATLAS.track('road_hollowford')[1].map(Math.round), SHED_STEP[0], SHED_STEP[1]), doorTile = tileAt(SHED_DOOR[0], SHED_DOOR[1]) === T.DUNGEON_DOOR, walls = SHED_WALL.every(([x, y]) => SOLID.has(tileAt(x, y)));
+      { const road = F.bfs(...ATLAS.track('r4_goblin')[1].map(Math.round), SHED_STEP[0], SHED_STEP[1]), doorTile = tileAt(SHED_DOOR[0], SHED_DOOR[1]) === T.DUNGEON_DOOR, walls = SHED_WALL.every(([x, y]) => SOLID.has(tileAt(x, y)));
         const rows = window.PLAYTHROUGH ? PLAYTHROUGH.instanceConnectivity().filter(r => r.instance === 'The War Shed') : [];
         const entered = enterShed(), region = player.region;
         check(P + `the War Shed door at (${SHED_DOOR}) with step (${SHED_STEP}) is reachable from the road and enters war_shed; PLAYTHROUGH.instanceConnectivity passes`,

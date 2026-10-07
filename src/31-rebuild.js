@@ -113,29 +113,43 @@
     burst(tc(b.x + b.w / 2), tc(b.y + b.h / 2), '#d8a95e', 30, 140);
   };
   const isRuinGround = t => t === T.RUBBLE || t === T.ASHES || t === T.DIRT || t === T.BEAM || t === T.SCORCH;
-  const effects = {
-    sawmill() { changeTile(SAWMILL_POS.x, SAWMILL_POS.y, T_SAWMILL); say('The saw bites. One log in, three planks out. No more splitting them by hand, knight.', 'Nell'); },
-    square() {
-      for (let y = SQ.y0; y <= SQ.y1; y++) for (let x = SQ.x0; x <= SQ.x1; x++) if (isRuinGround(tileAt(x, y))) changeTile(x, y, T.COBBLE);
-      burst(tc(BOARD_POS.x), tc(BOARD_POS.y), '#8f929a', 30, 150);
-      say('Cobbles. Real cobbles, all the way to the well. Somewhere to stand at last.', 'Nell');
-    },
-    well() { changeTile(WELL_POS.x, WELL_POS.y, T_GOODWELL); burst(tc(WELL_POS.x), tc(WELL_POS.y), '#7ec8ff', 30, 140); say('Water. Cold and clean. Drink when you need it, knight, the well is yours as much as ours.', 'Nell'); },
-    house() {
-      build(buildingById('rb_house')); placePeople();
-      say("A roof. A real roof. Tam! Pip! Come up, we're sleeping under a roof tonight.", 'Nell');
-      say('And folk are coming back down the road. They heard the hammering.', 'Nell');
-    },
+  // each project's tiles, apart from what is said and paid when it is built: the Great Spread's save migration (97-spread)
+  // lays them again from quest.rebuild.done on the new map (HOOKS.remake below). Each one can run twice and change nothing.
+  const TILES_OF = {
+    sawmill() { changeTile(SAWMILL_POS.x, SAWMILL_POS.y, T_SAWMILL); },
+    square() { for (let y = SQ.y0; y <= SQ.y1; y++) for (let x = SQ.x0; x <= SQ.x1; x++) if (isRuinGround(tileAt(x, y))) changeTile(x, y, T.COBBLE); },
+    well() { changeTile(WELL_POS.x, WELL_POS.y, T_GOODWELL); },
+    house() { build(buildingById('rb_house')); },
     chapel() {
       for (let y = CHAPEL.y0 + 1; y < CHAPEL.y1; y++) for (let x = CHAPEL.x0 + 1; x < CHAPEL.x1; x++) { const t = tileAt(x, y); if (t === T.RUBBLE || t === T.ASHES || t === T.BEAM || t === T.SCORCH) changeTile(x, y, T.FLOOR); }
       for (const y of [86, 87, 88].map(HFF.y)) changeTile(CHAPEL.x1, y, T.CWALL);
       changeTile(BELL_POS.x, BELL_POS.y, T_BELL);
+    },
+    smithy() { build(buildingById('rb_smithy')); },
+    knight() { build(buildingById('rb_knight')); },
+  };
+  HOOKS.remake.push(Object.assign(() => { const r = RB(); for (const p of PROJECTS) if (r.done[p.id] && TILES_OF[p.id]) TILES_OF[p.id](); }, { remakeOf: '31-rebuild' }));
+  const effects = {
+    sawmill() { TILES_OF.sawmill(); say('The saw bites. One log in, three planks out. No more splitting them by hand, knight.', 'Nell'); },
+    square() {
+      TILES_OF.square();
+      burst(tc(BOARD_POS.x), tc(BOARD_POS.y), '#8f929a', 30, 150);
+      say('Cobbles. Real cobbles, all the way to the well. Somewhere to stand at last.', 'Nell');
+    },
+    well() { TILES_OF.well(); burst(tc(WELL_POS.x), tc(WELL_POS.y), '#7ec8ff', 30, 140); say('Water. Cold and clean. Drink when you need it, knight, the well is yours as much as ours.', 'Nell'); },
+    house() {
+      TILES_OF.house(); placePeople();
+      say("A roof. A real roof. Tam! Pip! Come up, we're sleeping under a roof tonight.", 'Nell');
+      say('And folk are coming back down the road. They heard the hammering.', 'Nell');
+    },
+    chapel() {
+      TILES_OF.chapel();
       burst(tc(BELL_POS.x), tc(BELL_POS.y) - 40, '#f5c542', 30, 140); sfx('quest');
       say('Hear that? The bell. The goblins took the old one for their machine. This one rings for us.', 'Nell');
     },
-    smithy() { build(buildingById('rb_smithy')); say('Forge and anvil under a roof. Bring iron and a hammer and Hollowford makes its own steel again.', 'Nell'); },
+    smithy() { TILES_OF.smithy(); say('Forge and anvil under a roof. Bring iron and a hammer and Hollowford makes its own steel again.', 'Nell'); },
     knight() {
-      const b = buildingById('rb_knight'); build(b); const r = RB();
+      TILES_OF.knight(); const r = RB();
       r.title = r.title || 'Sir of Hollowford';
       giveOrDrop('coins', 500, player.x, player.y, true); floatText(player.x, player.y - 46, '+500 coins', '#ffd166');
       levelBanner = { text: 'HOLLOWFORD REBUILT', sub: 'Tam keeps his promise', t: 4.5 }; burst(player.x, player.y, '#ffe066', 40, 180); sfx('levelup');

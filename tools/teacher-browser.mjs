@@ -61,6 +61,7 @@ async function knight(name) {
   await admin('POST', '/api/admin/mute', { name, span: 'off' });
   return { name, token: r.data.token };
 }
+const WORLD_ATLAS = JSON.parse(fs.readFileSync(path.join(ROOT, 'online/src/atlas.json'), 'utf8')).hash;
 // a crowd kid: a bare socket that says hello and where it stands, now and then
 function bare(k, p) {
   return new Promise((resolve, reject) => {
@@ -69,7 +70,8 @@ function bare(k, p) {
     ws.onmessage = ev => { try { K.got.push(JSON.parse(ev.data)); } catch (e) { } };
     ws.onclose = ev => { K.closed = ev.code; };
     ws.onerror = () => reject(new Error('socket ' + k.name));
-    ws.onopen = () => { ws.send(JSON.stringify({ t: 'hello', v: 1 })); K.say(); resolve(K); };
+    // a game of this world names its Atlas (an older world's page is keyed apart: the Great Spread, online/src/room.js mapKey)
+    ws.onopen = () => { ws.send(JSON.stringify({ t: 'hello', v: 1, atlas: WORLD_ATLAS })); K.say(); resolve(K); };
     K.say = extra => { if (ws.readyState === 1) ws.send(JSON.stringify(Object.assign({ t: 'p', region: 'Somewhere', lv: 10, mv: false, sw: 0, act: null, mech: null, dead: false }, K.p, extra || {}))); };
     K.chat = text => { if (ws.readyState === 1) ws.send(JSON.stringify({ t: 'chat', text })); };
   });
@@ -265,7 +267,10 @@ async function main() {
         if (z === 1.25 && w === 1280 && h === 800) {
           await page.setViewportSize({ width: 1024, height: 520 }); await wait(400);
           const m2 = await page.evaluate(MEASURE);
-          line('1280x650 at 125% (1024x520 CSS px), 20 kids on: no knight, tag or name under the map\'s controls, the bar one row (' + m2.bar + ' px), and the big places named (' + (m2.labels || []).join(', ') + ')', m2.problems.length === 0 && ['Thistledown', 'The Jungle', 'Goblin Fields'].every(n => (m2.labels || []).includes(n)), { problems: m2.problems.slice(0, 8), labels: m2.labels });
+          // (the Great Spread: at this window's whole map the 400 x 280 world draws Thistledown a third smaller, and the kids standing
+          // in it (Sam, Ava and one of the crowd) make one count circle in its middle, so its name gives way to them, as any name
+          // does; it is named one zoom step in: online/test/teacher-labels.test.mjs, 'a class on the map')
+          line('1280x650 at 125% (1024x520 CSS px), 20 kids on: no knight, tag or name under the map\'s controls, the bar one row (' + m2.bar + ' px), and the big places named (' + (m2.labels || []).join(', ') + ')', m2.problems.length === 0 && ['The Jungle', 'Goblin Fields', 'Wolfwood'].every(n => (m2.labels || []).includes(n)), { problems: m2.problems.slice(0, 8), labels: m2.labels });
           await shot(page, '04b-1280x650-at-125');
         }
       }

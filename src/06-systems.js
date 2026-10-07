@@ -377,7 +377,9 @@ function useAction() {
   // a wandering villager standing in front of a board, station or door does not block it
   if (npc && !(npc.wander && (SOLID.has(t) || PUSH_THROUGH.has(t)))) { talkTo(npc); return; }
   const b = buildingAt(tx, ty);
-  if (t === T.SIGN) { say("→ THISTLEDOWN, 1 mile.   → GREY QUARRY, north.   → H̶O̶L̶L̶O̶W̶F̶O̶R̶D̶ (scorched)", 'Signpost'); if (quest.stage === 4) advanceQuest(5); return; }
+  // the story's signpost (02-world's SIGN_TILE) moves the quest on; every other signpost reads its arms from the Atlas
+  if (t === T.SIGN && tx === SIGN_TILE.x && ty === SIGN_TILE.y) { say("→ THISTLEDOWN, east, 1 mile.   → GREY QUARRY, north.   → H̶O̶L̶L̶O̶W̶F̶O̶R̶D̶ (scorched), south-east over the Old Bridge.", 'Signpost'); if (quest.stage === 4) advanceQuest(5); return; }
+  if (t === T.SIGN) { say((window.ATLAS && ATLAS.signText && !window.__instance && ATLAS.signText(tx, ty)) || 'An old signpost. The words have worn away.', 'Signpost'); return; }
   if (t === T.CHEST) { if (b && b.coffin) { openPanel('coffin'); return; } if (b && b.id === 'bank') { openPanel('bank'); return; } openLootChest(tx, ty); return; }
   if (t === T.GOLDPILE) { notify("Death's gold. He is watching. Leave it."); return; }
   if (t === T.GRAVE) { say('Here lies the last knight of Hollowford. The road took him. The road takes everyone.', 'Gravestone'); return; }

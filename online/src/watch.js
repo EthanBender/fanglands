@@ -394,7 +394,8 @@ export class Watch {
   // One knight, exactly ROW_KEYS, from memory
   rowOf(k, now) {
     const map = wireMap(k.map) || 'over';
-    const over = map === 'over';
+    // an older world's page (the Great Spread, room.js mapKey) stands on the old map: its x, y are not this map's
+    const over = map === 'over' && !k.stale;
     const seen = this.seen.get(k.lc) || {};
     const heard = k.pAt || k.mapAt || k.since || 0;
     const away = now - heard > AWAY_MS;
@@ -415,7 +416,7 @@ export class Watch {
   placeOf(k, map) {
     const A = this.atlas;
     if (map === 'house' || isHouse(k.map)) return 'Their own island';
-    if (A && map === 'over' && Number.isFinite(k.x) && Number.isFinite(k.y)) { const p = A.place('over', Math.floor(k.x / TILE), Math.floor(k.y / TILE)); if (p && p.name) return p.name; }
+    if (A && map === 'over' && !k.stale && Number.isFinite(k.x) && Number.isFinite(k.y)) { const p = A.place('over', Math.floor(k.x / TILE), Math.floor(k.y / TILE)); if (p && p.name) return p.name; }
     if (A && map !== 'over') { const p = A.get(map); if (p && p.name) return p.name; }
     return 'Somewhere in the world';
   }

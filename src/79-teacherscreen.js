@@ -153,7 +153,10 @@
       if (seen.has(p.name)) continue;
       const bw = (p.box[2] - p.box[0] + 1) * view.s, bh = (p.box[3] - p.box[1] + 1) * view.s;
       const w = Math.ceil(measure(p.name, FONT)) + 6, h = LH;
-      if (w > 1.1 * bw || h > bh) continue;
+      // a name may be a little wider than its place; a big place's (a teacher finds her way by them) up to half as wide again:
+      // on the Great Spread's 400 x 280 map the whole map draws every place a third smaller, and Thistledown's name is
+      // wider than the town at a laptop's whole map. It is still never over another name or a knight, and centred on its ground
+      if (w > (p.area >= MAJOR_AREA ? 1.5 : 1.1) * bw || h > bh) continue;
       const ax = view.x + (p.anchor[0] + 0.5) * view.s, ay = view.y + (p.anchor[1] + 0.5) * view.s;
       const cands = [];
       const last = prev && prev[p.name];
@@ -168,9 +171,11 @@
       // (a spot found this way keeps 4 px more from the pane's edge, so a small pan never moves the name to another spot)
       for (const c of grid) cands.push([c[0], c[1], 4]);
       for (const [cx, cy, more] of cands) {
-        const tx = (cx - view.x) / view.s, ty = (cy - view.y) / view.s;
-        if (!p.owns(Math.floor(tx), Math.floor(ty))) continue;
+        // the box is laid on whole pixels first, and its own centre must be on the place's ground (a candidate on the very
+        // edge of a narrow place could otherwise round onto the next place's tile: seen on the Great Spread's map)
         const b = { x: Math.round(cx - w / 2), y: Math.round(cy - h / 2), w, h };
+        const tx = (b.x + w / 2 - view.x) / view.s, ty = (b.y + h / 2 - view.y) / view.s;
+        if (!p.owns(Math.floor(tx), Math.floor(ty))) continue;
         if (!inside(b) || hitsBox(b) || hitsDot(b, null)) continue;
         if (more && !(b.x >= INSET + more && b.y >= INSET + more && b.x + b.w <= view.w - INSET - more && b.y + b.h <= view.h - INSET - more)) continue;
         boxes.push(b); seen.add(p.name);

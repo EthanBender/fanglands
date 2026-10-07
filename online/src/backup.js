@@ -24,6 +24,7 @@ export async function backupCall(world, req, url, call, method) {
       settings: rows('SELECT * FROM settings ORDER BY key'),
       mod_log: rows('SELECT * FROM mod_log ORDER BY id'),
       save_pins: rows('SELECT * FROM save_pins ORDER BY name_lc'),
+      save_worlds: rows('SELECT * FROM save_worlds ORDER BY name_lc, world'),   // each knight's last save of an older world
       parties: rows('SELECT * FROM parties ORDER BY id'),
       crackers: rows('SELECT * FROM crackers ORDER BY party, k'),
       trades: rows('SELECT * FROM trades ORDER BY id'),

@@ -13,6 +13,8 @@ assert.ok(body.includes('function layoutLabels('), 'layoutLabels not found betwe
 const layoutLabels = new Function('cl', body + '\nreturn layoutLabels;')((v, a, b) => Math.max(a, Math.min(b, v)));
 const ATLAS = JSON.parse(fs.readFileSync(new URL('../src/atlas.json', import.meta.url), 'utf8'));
 const M = buildTeacherMap(ATLAS), cells = cellsOf(ATLAS);
+// a place's port on the world's own Atlas (atlas.json ports, the Great Spread's Stage 4a): positions are read, never written
+const PORT = id => { const q = ATLAS.ports && ATLAS.ports[id]; assert.ok(q, 'port ' + id); return q; };
 const places = M.labels.map(p => { const own = new Set(p.idx); return Object.assign({}, p, { owns: (tx, ty) => tx >= 0 && ty >= 0 && tx < M.W && ty < M.H && own.has(cells[ty * M.W + tx]) }); });
 // the instance doors go through the same layout (named at twice the fit or more), as the page passes them
 const withDoors = places.concat(Object.values(M.doors).map(d => ({ name: d.name, kind: 'door', anchor: [d.x, d.y], box: [d.x, d.y, d.x, d.y], depth: -1, area: 0, owns: () => true })));
@@ -86,12 +88,15 @@ test('at the whole map in a 586 x 405 pane (round 1\'s map at 1280 wide) Thistle
   const drawn = res.labels.filter(l => eight.includes(l.name));
   for (let i = 0; i < drawn.length; i++) for (let j = i + 1; j < drawn.length; j++) assert.ok(!overlap(drawn[i], drawn[j]), drawn[i].name + ' / ' + drawn[j].name);
   // closer in, the small places come back (each one where it fits)
-  const near = layoutLabels(viewAt(586, 405, 4, 30, 12), places, [], measure, null).labels.map(l => l.name);
+  // (between the cave mouth and the quarry's cart: ports of the world's own Atlas, which the Great Spread moved apart)
+  const [mx, my] = PORT('cave.mouth'), [qx, qy] = PORT('quarry.cart');
+  const near = layoutLabels(viewAt(586, 405, 4, (mx + qx) / 2, (my + qy) / 2), places, [], measure, null).labels.map(l => l.name);
   assert.ok(near.includes('The Cave') && near.includes('Grey Quarry'), near.join(', '));
 });
 
 test('the instance doors: named only at twice the fit or more, never over a place name or a knight', () => {
-  const fit = viewAt(600, 500, 1), close = viewAt(600, 500, 3, 147, 44);
+  const shed = M.doors.war_shed;   // the War Shed's door (the map file's own, from the Atlas)
+  const fit = viewAt(600, 500, 1), close = viewAt(600, 500, 3, shed.x, shed.y);
   assert.ok(!layoutLabels(fit, withDoors, [], measure, null).labels.some(l => l.door));
   const r = layoutLabels(close, withDoors, [], measure, null);
   assert.ok(r.labels.some(l => l.door), 'no door named at 3x');
@@ -127,14 +132,25 @@ test('NEGATIVE: no knight\'s dot or count circle, no name tag and no place name 
   assert.equal(runs, 9 * 3 * 2 * 3);
 });
 
-test('a class on the map: 19 knights in and around Thistledown at the whole map (the 1280 x 650 window at 125%): the big places a teacher finds her way by are still named (Thistledown among them), before any name tag', () => {
+test('a class on the map: 19 knights in and around Thistledown (the 1280 x 650 window at 125%): the big places a teacher finds her way by are named before any name tag; Thistledown is named at the whole map, and with the class on it one zoom step in', () => {
+  // The Great Spread (400 x 280) draws the whole map a third smaller than the 260 x 180 map this test was written on. At the
+  // whole map the class's one count circle (13 px, never under a name) now covers Thistledown's middle, and the town is too
+  // small to hold its name clear of it, so the name gives way to the knights there (as any name does) and comes back one zoom
+  // step in (x 1.5, the + button). Without the class, Thistledown is named at the whole map.
   const pane = { w: 1024 - 260 - 280 - 24, h: 520 - 48 - 52 - 56 };
-  const view = Object.assign(viewAt(pane.w, pane.h, 1), { obstacles: controlsOf(pane.w, pane.h, false) });
+  const [sx, sy] = PORT('thistledown.square');
   const knights = [];
-  for (let i = 0; i < 19; i++) knights.push({ n: 'Kid ' + String.fromCharCode(65 + i) + ' Long Name', tx: 100 + (i % 7) * 4 + rnd() * 3, ty: 26 + Math.floor(i / 7) * 6 + rnd() * 3 });
-  const dots = knights.map(k => ({ n: k.n, x: view.x + k.tx * view.s, y: view.y + k.ty * view.s }));
-  const res = layoutLabels(view, places, dots, measure, null);
-  const names = res.labels.map(l => l.name);
-  for (const n of ['Thistledown', 'The Jungle', 'The Redcut', 'Goblin Fields', 'Wolfwood']) assert.ok(names.includes(n), n + ' missing: ' + names.join(', '));
-  invariants('a class at the whole map', view, res, dots);
+  // round Thistledown's square (its port), as the class stood round the old square
+  for (let i = 0; i < 19; i++) knights.push({ n: 'Kid ' + String.fromCharCode(65 + i) + ' Long Name', tx: sx - 14 + (i % 7) * 4 + rnd() * 3, ty: sy - 8 + Math.floor(i / 7) * 6 + rnd() * 3 });
+  const run = (rel, crowd) => {
+    const view = Object.assign(viewAt(pane.w, pane.h, rel, sx, sy), { obstacles: controlsOf(pane.w, pane.h, false) });
+    const dots = crowd ? knights.map(k => ({ n: k.n, x: view.x + k.tx * view.s, y: view.y + k.ty * view.s })) : [];
+    const res = layoutLabels(view, places, dots, measure, null);
+    invariants('a class at zoom ' + rel + (crowd ? '' : ' (no class)'), view, res, dots);
+    return res.labels.map(l => l.name);
+  };
+  const empty = run(1, false), whole = run(1, true), closer = run(1.5, true);
+  assert.ok(empty.includes('Thistledown'), 'no class, whole map: ' + empty.join(', '));
+  for (const n of ['The Jungle', 'The Redcut', 'Goblin Fields', 'Wolfwood']) assert.ok(whole.includes(n), n + ' missing: ' + whole.join(', '));
+  assert.ok(closer.includes('Thistledown'), 'one step in: ' + closer.join(', '));
 });

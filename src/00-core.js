@@ -24,7 +24,7 @@ function mulberry32(seed) {
 
 // ---------- constants ----------
 const TILE = 48;
-const MAP_W = 260, MAP_H = 180;
+const MAP_W = 400, MAP_H = 280;   // the Great Spread (Stage 4a): was 260 x 180
 const WORLD_SEED = 20260907;
 const CAVE_EXIT_X = 20;
 const SAVE_KEY = 'fanglands.save.v2';
@@ -81,16 +81,19 @@ const HOOKS = {
   leaveInstance: [], // fn(id) — the knight is about to leave instance id (any way out: LEAVE, L, the exit, a ride, a respawn, a load);
                     // runs while it is still the active map, so a feature can settle what it owes him there (91-royalmine's golem fall)
   pathBlock: [],    // fn(tx, ty, who) → true: tap-to-move and the bot's walkTo must not route through this cell right now (e.g. a balance log above the knight's Agility)
-  // the Great Spread (the spread spec, §10): a save from an older world is prepared before the core load lays it on the
-  // new map; dead while WORLD_V is 1 (nothing registers until Stage 4c's 97-spread)
-  saveIn: [],       // fn(d) — d is a parsed save whose worldV is below WORLD_V; runs right after JSON.parse, before anything is loaded
+  // the Great Spread (the spread spec, §10): a save from an older world (or an older worldRev) is prepared before the core
+  // load lays it on the new map (97-spread registers SPREAD.prepare; its own load wrapper, the outermost, finishes it)
+  saveIn: [],       // fn(d) — d is a parsed save whose worldV is below WORLD_V (or worldRev below WORLD_REV); runs right after JSON.parse, before anything is loaded
   remake: [],       // fn() — idempotent: re-applies the tiles a feature changed because of the story, from quest state (changeTile)
   placedFrom: {},   // placedFrom[tileName] = itemId — a placeable tile the save migration refunds as that item
 };
 // The world's version (§10). A save names the world it was made in (worldV; none = 1). A save from a NEWER world (after a
 // rollback) is never loaded and never written over: load() refuses it and sets SAVE_LOCK, and save() and the cloud push do
-// nothing until the page is reloaded.
-const WORLD_V = 1;
+// nothing until the page is reloaded. WORLD_V 2 is the Great Spread's 400 x 280 map (a world-1 save is moved onto it by
+// 97-spread). WORLD_REV is the minor: a later stage that changes ground knights may have built on declares its footprint
+// in ATLAS.REVS[rev] and bumps it, and an older save is swept in those boxes only (97-spread's SPREAD.sweep).
+const WORLD_V = 2;
+const WORLD_REV = 0;
 let SAVE_LOCK = false;
 // a cell the knight could step onto but could not get across (an agility obstacle above his level): pathfinders go round it
 function pathBlocked(tx, ty, who) { for (const f of HOOKS.pathBlock) if (f(tx, ty, who)) return true; return false; }

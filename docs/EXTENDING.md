@@ -37,8 +37,17 @@ Everything a feature needs is reachable through globals and the `HOOKS` registry
 - World: `BUILDINGS.push({...})` (same shape as the existing ones; `stone`, `door`/`doorTop`, `f` furniture),
   `NPCS.push(initNpc({ id, name, x, y, tunic, hair, role, ... }))`, `REGIONS.unshift({ name, sub, x0, y0, x1, y1 })`,
   and `HOOKS.world.push((rnd, api) => { ... })` to carve terrain: `api.setTile/tileAt/spawnList(type, [[x,y],...])/road(points, tile, width, chance)/pen(...)`.
-  The map is `MAP_W`×`MAP_H` = 260×180 tiles. Built land: x 0–199, y 0–139 (the Grey Sea fills x 162–199, y 0–95).
-  Free for features to carve: the far east beyond the sea (x 200–259, y 0–179: reach it by Harl's ferry) and the south band (y 140–179).
+  The map is `MAP_W`×`MAP_H` = 400×280 tiles (the Great Spread, Stage 4a). **Built land is named by anchors, never by
+  numbers**: every place is an Atlas anchor (`ATLAS.ANCHORS`: its box with `ATLAS.box(id)`, its named points with
+  `ATLAS.port(id)`), the land between places is the stretched world (`ATLAS.world`), and the grounds are REGIONS (the
+  Goblin Fields, Wolfwood, the Ashfields, the Jungle, the Grey Sea; `ATLAS.GROUNDS`: the Sound, the east sea, the Grub
+  Fields). Ground kept free for what comes later is a **reserved** anchor (`ATLAS.reserved()`, `ATLAS.reservedAt(x, y)`):
+  the Skypier, Wreck Rock, Castle Brightwater, the Glasshouse (alchemy), the Old Barrow (necromancy), the Ash Wastes,
+  Sylvaris' growth ring, the blood portals' rings, and the new places Stage 5 builds (the Old Bridge, Millbrook, Saltmere,
+  the Crossroads Inn, Beacon Hills, the Hunters' Lodge, the goblin outposts, the Bandit Hills). Builders' stakes stand
+  round each; `placeAction` refuses them and every main road (`ATLAS.onMainRoad`). A new place fills its reserved box (or
+  is given a new anchor in `src/01-atlas.js`), declares its rail with `RAILS.add` (51-mounts), and moves nothing else.
+  East of the Sound (x 303–311) everything is ferry-only (Harl's ferry from the dock).
   `WALK_OVER` (a Set in 00-core) lets the player cross tiles it contains (e.g. `WALK_OVER.add(T.WATER)` while hover armour is worn).
 - Quests: `QUEST_DEFS.my = { name }`, `HOOKS.questText.my = () => '...'`, `HOOKS.activeQuests.push(() => cond ? ['my'] : [])`.
   Main story after stage 8: `HOOKS.mainQuest[9] = { text: () => '...', onEnter: () => { say(...); } }`; call `advanceQuest(9)`.
@@ -418,10 +427,14 @@ never edit it by hand. `83-townsfolk.js` is the glue.
 
 ## Coordinates: frames, ports and the world
 
-The overworld is going to grow from 260x180 to 400x280 (the Great Spread; spec in `~/.fanglands/work/spread/spec.md`,
-artefacts and tools in `docs/spread/`). Places move rigidly to new spots and the land between them stretches, so a bare
-map number like `112` will be wrong after the move. Every overworld position is written as a read of the Atlas
-(`src/01-atlas.js`), never as a bare literal:
+The overworld grew from 260x180 to 400x280 (the Great Spread, Stage 4a; spec in `~/.fanglands/work/spread/spec.md`,
+artefacts and tools in `docs/spread/`). Every old place moved rigidly to its new spot and the land between them
+stretched, so a bare map number like `112` is wrong: the old square at 112,33 stands at 169,52 now. Every overworld
+position is written as a read of the Atlas (`src/01-atlas.js`), never as a bare literal. The numbers you write in a
+frame are still the OLD map's (the frame adds the place's offset); a new place's ports, the road network
+(`ATLAS.TRACKS`, its points `['n', x, y]`) and the new grounds (`ATLAS.GROUNDS`) are written in the new map's own
+numbers. Since 4a: `ATLAS.box(id)` of a reserved place is its plan box, `ATLAS.reservedAt(x, y)` and
+`ATLAS.onMainRoad(x, y)` say where nothing may be built, and `ATLAS.signText(x, y)` is what a road's signpost says.
 
 - **A place's own point** goes through its frame: `const TD = ATLAS.frame('thistledown'); TD.p(112, 33)` gives `[x, y]`,
   `TD.x(112)` / `TD.y(33)` one axis, `TD.pt({ x, y, ... })`, `TD.pts(list)`, `TD.rect({ x0, y0, x1, y1 })`,
@@ -475,6 +488,73 @@ map number like `112` will be wrong after the move. Every overworld position is 
 - **Proving nothing moved** (until the spread every frame, the world and every pin are the identity):
   `./build.sh && node tools/fingerprint.mjs index.html --diff docs/spread/baseline-fingerprint.json` must say
   identical, and `git diff --exit-code online/src/atlas.json` must be clean.
+
+## Adding land at an edge (ADDENDUM C of the spread spec)
+
+The map stays 400 x 280; it grows later at its **east and south edges**, never by another stretch. So the outer 8-tile
+ring of the east edge (x >= MAP_W - 8) and the south edge (y >= MAP_H - 8) holds no place, port, building, person, wall
+or cliff: only the east sea (x 392..399, `ATLAS.GROUNDS.east_sea`) and open grounds (the Jungle, the Grub Fields, the Ash
+Wastes' reserved Wilds). `src/97-spreadchecks.js` holds that (`spread map: ADDENDUM C`). The cave stays pinned at 0,0.
+
+To add land at an edge:
+1. Raise `MAP_W` (east) or `MAP_H` (south) in `src/00-core.js` and the plan's `PLAN_W` / `PLAN_H` in `src/01-atlas.js`.
+   No existing tile index moves except through a save's own width remap (04-state); every place keeps its `at`.
+   `ATLAS.WORLD`'s last breakpoints stay where they are (the old land does not stretch again): add a breakpoint at the
+   old edge so the new strip maps one to one.
+2. Give the new land its REGIONS entries (a ground, or a box per place, ahead of the broad grounds) and its Atlas places:
+   an anchor per place (`ANCHORS`, with `newBox` while it is reserved), its ports (`PORTS`, `['new', x, y]`), and its
+   roads as `TRACKS` (main roads in `MAIN_ROADS`). Move the east sea out to the new edge (`GROUNDS.east_sea`), so the
+   ring at the new edge is again only sea or open ground.
+3. Bump `WORLD_REV` with a footprint (`ATLAS.REVS`) of the new strip only: the save migration sweeps that strip and
+   nothing else, and the FOOTPRINT proof shows no tile outside it moved. (`WORLD_REV` lives in `src/00-core.js` and
+   `ATLAS.REVS` in `src/01-atlas.js` since spread Stage 4c; see "Saves and the world's version" below.)
+4. Re-run the gates; `tools/spread-report.mjs` reprints the walk-clock and the other tables, and `atlas.json` is
+   regenerated by `./build.sh` (atlas-drift then gates the deploy).
+
+## Saves and the world's version (the save migration, spread Stage 4c)
+
+A save names the world it was made in: `worldV` (`WORLD_V`, 2 since the Great Spread: the 400 x 280 map) and
+`worldRev` (`WORLD_REV`, the minor). `src/97-spread.js` brings an older save in (`HOOKS.saveIn` runs its
+`SPREAD.prepare` right after the parse; its own load wrapper, the outermost, runs `SPREAD.finish`): the knight wakes at
+spawn, what the story changed is made again from quest state, what he placed comes back to his bank (or pack, or Aldous
+keeps it), his machines are parked round the Bulldozer bay (never where they would cut a way off: the parking keeps the
+town's walks, every cell a flood from the square reached and a free side of every machine) and the mare is tied at her
+rail; everything else of the old map
+is cleared. A save from a newer world is refused (`SAVE_LOCK`, the NEWER WORLD plaque). What a feature owes the migration:
+- **A tile the story changes** (a door opened, a town rebuilt, a gate thrown open: anything a quest does with
+  `changeTile`) needs a `HOOKS.remake`: an idempotent function that lays those tiles again from quest state,
+  `HOOKS.remake.push(Object.assign(() => { if (Q().opened) changeTile(...DOOR, T.DOOR); }, { remakeOf: 'NN-file' }))`.
+  It must say nothing, pay nothing and save nothing (keep the words in the quest's own handler, as 31-rebuild's
+  `TILES_OF` does). The migration also uses it to tell a story tile from a placed one.
+- **A tile placed from an item** is refunded as that item when its `ITEMS[id].place` names the tile; a feature that
+  places a tile some other way adds `HOOKS.placedFrom.TILE_NAME = 'item_id'`.
+- **A machine or a mare** is one of `SPREAD.MACHINES` (`MECH`, `DOZER`, `BEAST` and the three wrecks) or `HORSE`; a new
+  vehicle tile is added there, so it is parked and never lost.
+- **A position kept in the save** (on `player` or `quest`) must be on `SPREAD.HANDLED` with what the migration does
+  with it: `node tools/spread-migrate-check.mjs` (the sweep) fails on a position-shaped value at a path it does not name.
+- **Every `changeTile` call is counted** in `docs/spread/changetile.json` (`tools/changetile-gate.mjs`, run by
+  `build.sh`): a new call stops the build until it is classified there, and a story tile names the file whose remake
+  makes it. A later stage that changes ground knights may have built on bumps `WORLD_REV` and declares its footprint in
+  `ATLAS.REVS[n] = { boxes }`: an older worldRev's save is swept in those boxes only (`SPREAD.sweep`), the same way.
+
+## The new map's checks (Stage 4b)
+
+`src/97-spreadchecks.js` holds the map to the spread spec: named places 25+ tiles apart, the walk-clock (section 1's
+trips, the shortest 8-connected walk with root-2 diagonals, story gates open; a trip the open land makes shorter than
+its window is held in `WALK_HELD` for the owner, with its measured time and reason), every port reached from the cave
+mouth, each story gate holding when shut, the scarp seal (the two road bridges and the Agility 18 steps, nothing else),
+seam transects (8+ tiles of blend), main roads clear of solids and props, aggressive spawns 6+ tiles off a main road,
+the edge ring, and the beat-gap report. `node tools/spread-report.mjs` prints every table. `tools/compass.mjs` (run by
+`build.sh`) holds every line with a direction or distance word to a row in `docs/spread/compass.json`, checked against
+the Atlas: a new line saying "north of the inn" needs a row `{ file, match, from, to, dir }`, or `local` with a reason
+for a line about a place's own inside. `node tools/boot-budget.mjs --chromium` (run by `build.sh` on every build)
+measures world generation, the slowest of its runs (node <= 2.0 s, Chromium at 4x CPU <= 4.0 s), and says the cold page
+boot; `--workerd bench.json` reads `tools/sim-bench.mjs`'s local workerd boot and heap. A new world pass that floods the
+map should flood once and grow the set as it changes tiles (92-worldshape's step 7b), never flood again per change.
+
+The world map panel names places through `src/61-maplabels.js` (`MAP_LABELS`): one label per Atlas place, laid out by
+priority and nudged off rings; a new place needs no label code, only its Atlas place (and its tier in `TIERS` if it is
+a town or a landmark). People are markers, not labels.
 
 ## Self-test
 

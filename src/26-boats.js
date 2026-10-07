@@ -53,7 +53,10 @@
   const WRECK_BRUTES = IC.pts([[185, 47], [191, 47], [188, 53]]), WRECK_SAPPERS = IC.pts([[184, 50], [192, 50]]);
   // rocks and foam in the open sea (world, whole tiles), bar the two inside an island's box, which move with it
   const wtile = q => [Math.round(q[0]), Math.round(q[1])];
-  const SEAROCKS = [GI.p(168, 6), ...BW.pts([[170, 24], [176, 27], [186, 25], [194, 9], [196, 31], [170, 44], [173, 57], [190, 67], [180, 73], [196, 81], [168, 87], [186, 91], [178, 36], [166, 60]]).map(wtile), IC.p(193, 39), wtile(BW.p(167, 30))];
+  // (never inside Wreck Rock's reserved box plus 6: its own rock is chapter 6's, spec §4)
+  const WRECK6 = (b => [b[0] - 6, b[1] - 6, b[2] + 6, b[3] + 6])(ATLAS.box('wreck_rock'));
+  const SEAROCKS = [GI.p(168, 6), ...BW.pts([[170, 24], [176, 27], [186, 25], [194, 9], [196, 31], [170, 44], [173, 57], [190, 67], [180, 73], [196, 81], [168, 87], [186, 91], [178, 36], [166, 60]]).map(wtile), IC.p(193, 39), wtile(BW.p(167, 30))]
+    .filter(([x, y]) => !(x >= WRECK6[0] && x <= WRECK6[2] && y >= WRECK6[1] && y <= WRECK6[3]));
   const inSea = (tx, ty) => tx >= SEA.x0 && tx <= SEA.x1 && ty >= SEA.y0 && ty <= SEA.y1;
   const inRegion = (r, tx, ty) => tx >= r.x0 && tx <= r.x1 && ty >= r.y0 && ty <= r.y1;
 
@@ -157,19 +160,17 @@
     }
     for (let y = HUT.y - 1; y <= HUT.y + HUT.h; y++) for (let x = HUT.x - 1; x <= HUT.x + HUT.w; x++) if (!isHut(x, y)) api.setTile(x, y, T.SAND); // dry ground all round the shack
     const ensureLand = (x, y, t = T.SAND) => { for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (api.tileAt(x + dx, y + dy) === T.WATER) api.setTile(x + dx, y + dy, t); };
-    // the road from Thistledown's east gate: north along the village fence, then east along y 14 to the shore
+    // the Sea Road from Thistledown's east gate to the shore (§5's R2)
     const clearable = new Set([T.GRASS, T.DIRT, T.TREE, T.OAK, T.ROCK, T.IRON, T.COAL, T.FLOWERS, T.MUSHROOM, T.STUMP, T.RUBBLE]);
-    // (the lanes are the tracks themselves, tile by tile: the lane down the fence is road_east_lane, the road east to the
-    // shore road_dock_lane; the verge is the row either side of the road east, and the column east of the fence lane's
-    // first six tiles)
+    // (the lane is the Sea Road itself, tile by tile, from Thistledown's east gate to Harl's dock (ATLAS.track('r2_sea'));
+    // the verge is the row either side of it)
     const tiles = id => { const pl = ATLAS.track(id), out = [];
       for (let s = 1; s < pl.length; s++) { const [ax, ay] = pl[s - 1], [bx, by] = pl[s], n = Math.max(1, Math.round(Math.max(Math.abs(bx - ax), Math.abs(by - ay))));
         for (let k = s === 1 ? 0 : 1; k <= n; k++) out.push([Math.round(ax + (bx - ax) * k / n), Math.round(ay + (by - ay) * k / n)]); }
       return out; };
-    const fence = tiles('road_east_lane'), east = tiles('road_dock_lane');
-    const lane = [...fence, ...east];
+    const lane = tiles('r2_sea');
     for (const [x, y] of lane) if (clearable.has(api.tileAt(x, y))) api.setTile(x, y, T.DIRT);
-    const verge = []; for (const [x, y] of east) verge.push([x, y - 1], [x, y + 1]); for (const [x, y] of fence.slice(0, 6)) verge.push([x + 1, y]);
+    const verge = []; for (const [x, y] of lane) verge.push([x, y - 1], [x, y + 1], [x - 1, y], [x + 1, y]);
     for (const [x, y] of verge) if ([T.TREE, T.OAK, T.ROCK, T.IRON, T.COAL].includes(api.tileAt(x, y))) api.setTile(x, y, T.GRASS);
     // docks and boats
     for (const k in LOC) { const L = LOC[k]; for (const [x, y] of L.dock) api.setTile(x, y, B_DOCK); api.setTile(L.boat.x, L.boat.y, B_BOAT); api.setTile(L.land.x, L.land.y, k === 'dock' ? B_DOCK : T.SAND); }

@@ -41,7 +41,7 @@
     // names: every region and instance has its place, every rule matches one, every id is plain
     const I = INSTANCES, ids = I.list(), instNames = new Set(ids.map(id => I.get(id).name));
     const regs = REGIONS.filter(r => !instNames.has(r.name));
-    const noRegion = regs.filter(r => { const p = A.get(A.slug(r.name)); return !p || p.name !== r.name || p.sub !== (r.sub || '') || p.kind !== 'region'; }).map(r => r.name);
+    const noRegion = regs.filter(r => { const p = A.get(r.atlas || A.slug(r.name)); return !p || p.name !== r.name || p.sub !== (r.sub || '') || p.kind !== 'region'; }).map(r => r.name);
     const noInst = ids.filter(id => { const p = A.get(id); return !p || p.kind !== 'instance' || p.name !== I.get(id).name || p.map !== id; });
     const badIds = A.places.filter(p => !/^[a-z0-9_]{1,40}$/.test(p.id)).map(p => p.id);
     check(P + 'every REGIONS name and every instance id has a place with its own name, every rule matches a place, every id is plain', !noRegion.length && !noInst.length && !badIds.length && !A.problems().length && A.places.length === regs.length + ids.length + A.RULES.filter(r => r.kind === 'area' || r.kind === 'reserved').length, { noRegion, noInst, badIds, problems: A.problems(), places: A.places.length });

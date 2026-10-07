@@ -3,6 +3,7 @@
 // make. No tests in here: teachers.test.mjs and watch.test.mjs use it.
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
+import { readFileSync } from 'node:fs';
 
 export function sqlOf(db, counter) {
   return {
@@ -60,13 +61,16 @@ export async function call(w, method, path, body, o = {}) {
 }
 export const parent = (w, method, path, body) => call(w, method, path, body, { token: ENV.ADMIN_KEY });
 export async function signup(w, name, pass = 'sword') { const r = await call(w, 'POST', '/api/signup', { name, pass, invite: 'TEST-1234' }); assert.equal(r.status, 200, JSON.stringify(r.data)); return r.data.token; }
+export const ATLAS_JSON = JSON.parse(readFileSync(new URL('../src/atlas.json', import.meta.url), 'utf8'));
+const WORLD_ATLAS = ATLAS_JSON.hash;
 // a kid's game: the socket the way /ws opens it, then hello and one presence
-// (caps: what the game says it can do in hello; a round-2 game names 'view')
-export async function online(w, token, p = {}, caps) {
+// (caps: what the game says it can do in hello; a round-2 game names 'view'; atlas: its Atlas hash, the world's by default)
+export async function online(w, token, p = {}, caps, atlas = WORLD_ATLAS) {
   const r = await w.fetch(new Request('http://world/ws?token=' + token, { headers: { upgrade: 'websocket' } }));
   assert.equal(r.status, 101, 'ws ' + r.status);
   const server = w.ctx.sockets[w.ctx.sockets.length - 1];
-  w.webSocketMessage(server, JSON.stringify(caps ? { t: 'hello', v: 1, caps } : { t: 'hello', v: 1 }));
+  // a game of this world names its Atlas (an older world's page is keyed apart: the Great Spread, room.js mapKey)
+  w.webSocketMessage(server, JSON.stringify(caps ? { t: 'hello', v: 1, caps, atlas } : { t: 'hello', v: 1, atlas }));
   if (p !== null) w.webSocketMessage(server, JSON.stringify(Object.assign({ t: 'p', map: 'over', region: 'Thistledown', x: 6000, y: 3700, lv: 12 }, p)));
   return server;
 }

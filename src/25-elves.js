@@ -31,7 +31,7 @@
   const RING = SYL.rect({ x0: 126, y0: 114, x1: 166, y1: 135 }); // the wall of jungle around the city
   const GAP = (([x, y]) => ({ x, y }))(ATLAS.port('sylvaris.gap'));   // the one way in
   const TOTEM_T = SYL.pt({ x: 136, y: 114 });                   // the face in the trees, beside the gap
-  const PATH = ATLAS.track('path_jungle');                      // the dirt path down from Hollowford's south edge (141,96 -> 133,112)
+  const PATH = ATLAS.track('r3b_jungle');                       // the Jungle Path down from Hollowford's south edge to Sylvaris' gap
   // the river: its outer reaches are the jungle's (world), the last bends before the ring wall are the city's
   const RIVER_N = [...EW.pts([[177, 97], [170, 101], [163, 106]]), ...SYL.pts([[157, 110], [152, 113]])];
   const RIVER_S = [...SYL.pts([[141, 136], [130, 137]]), ...EW.pts([[116, 137], [103, 136]])];
@@ -56,7 +56,8 @@
   {
     const wild = Math.max(0, REGIONS.findIndex(r => r.name === 'The Wilds'));
     REGIONS.splice(wild, 0, { name: 'Sylvaris', sub: 'The city in the trees', x0: CR.x0, y0: CR.y0, x1: CR.x1, y1: CR.y1 },
-      { name: 'The Jungle', sub: 'Vast, green, watching', x0: JR.x0, y0: JR.y0, x1: JR.x1, y1: JS.y1 });
+      // (the Jungle's east side ends at the Sound, the deep water the spread laid between it and the Grub Fields)
+      { name: 'The Jungle', sub: 'Vast, green, watching', x0: JR.x0, y0: JR.y0, x1: Math.min(JR.x1, ATLAS.GROUNDS.sound[0] - 1), y1: JS.y1 });
   }
 
   // ---------- items, recipes, shops ----------
@@ -162,6 +163,13 @@
     line(RIVER_S, 0, (x, y) => { if (inJungle(x, y) && soft(x, y)) { set(x, y, T.WATER); if (inJungle(x, y + 1) && soft(x, y + 1) && y + 1 < JR.y1) set(x, y + 1, T.WATER); } });
     // 3. the path from Hollowford: it ends at the wall of jungle, and the ground along the wall is open enough to wander
     line(PATH, 1, (x, y) => { if (inJungle(x, y) && soft(x, y)) set(x, y, T.DIRT); });
+    // and every other road through the jungle (the canopy spur, the Bandit Track, the Drovers' Track): trodden one wide,
+    // joined side to side where it steps diagonally (02-world laid them before the giants grew; the spread spec, section 5:
+    // every place, port and stake joined on day one)
+    for (const id of ATLAS.ROAD_IDS) { if (id === 'r3b_jungle') continue; const pl = ATLAS.track(id); let lx = null, ly = null;
+      const tread = (x, y) => { if (inJungle(x, y) && soft(x, y) && at(x, y) !== T.DIRT) set(x, y, T.DIRT); };
+      for (let s = 0; s < pl.length - 1; s++) { const [ax, ay] = pl[s], [bx, by] = pl[s + 1], steps = Math.max(1, Math.round(Math.max(Math.abs(bx - ax), Math.abs(by - ay))));
+        for (let k = 0; k <= steps; k++) { const x = Math.round(ax + (bx - ax) * k / steps), y = Math.round(ay + (by - ay) * k / steps); if (lx !== null && x !== lx && y !== ly) tread(x, ly); tread(x, y); lx = x; ly = y; } } }
     for (let y = SYL.y(112); y <= SYL.y(113); y++) for (let x = SYL.x(128); x <= SYL.x(146); x++) if (soft(x, y)) set(x, y, rnd() < 0.3 ? EL_FERN : rnd() < 0.5 ? T.DIRT : T.GRASS);
     // 4. the ring wall, the gap and the totem
     for (let y = RING.y0; y <= RING.y1; y++) for (let x = RING.x0; x <= RING.x1; x++) { const edge = x === RING.x0 || x === RING.x1 || y === RING.y0 || y === RING.y1; if (edge) set(x, y, EL_JUNGLE); }

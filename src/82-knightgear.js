@@ -1773,7 +1773,11 @@ const KNIGHTGEAR = (() => {
       { const back = keep(), hurt0 = player.hurtT, dT0 = player.deadT, seen = [], _dh = drawHuman, r = {};
         try {
           // beside a townsperson, so the frame has looks without gear in it too
-          const tp = NPCS.find(n => !n.ghost), o = tp ? h.openSpot(Math.floor(tp.px / TILE) + 1, Math.floor(tp.py / TILE)) : h.openSpot(ATLAS.world.tx(40), ATLAS.world.ty(20));
+          // (an open tile a step or two from her, so she is in the frame: on the bigger map the nearest open strip of grass
+          // outside the town can be out of a 1000 x 700 view)
+          const tp = NPCS.find(n => !n.ghost), ntx = tp ? Math.floor(tp.px / TILE) : 0, nty = tp ? Math.floor(tp.py / TILE) : 0;
+          let o = null; if (tp) for (let r = 1; r <= 3 && !o; r++) for (let dy = -r; dy <= r && !o; dy++) for (let dx = -r; dx <= r && !o; dx++) { const x = ntx + dx, y = nty + dy; if (!SOLID.has(tileAt(x, y)) && !PUSH_THROUGH.has(tileAt(x, y)) && !collides(tc(x), tc(y), 13, 'player')) o = { x, y }; }
+          if (!o) o = tp ? h.openSpot(ntx + 1, nty) : h.openSpot(ATLAS.world.tx(40), ATLAS.world.ty(20));
           F.tp(o.x, o.y); player.mech = null; player.action = null; player.attackT = 0; F.step([]);
           Object.assign(player.equip, { helm: 'iron_helm', body: 'iron_body', legs: 'iron_legs', shield: 'iron_shield', weapon: 'iron_sword' });
           drawHuman = function (g, e, l) { const a = STATS.live; try { return _dh(g, e, l); } finally { seen.push({ e, knight: !!(l && l.gear), live: STATS.live - a }); } };

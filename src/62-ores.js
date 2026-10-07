@@ -189,7 +189,8 @@
     const fresh = (x, y) => api.tileAt(x, y) === T.GRASS && open(x, y);
     // the quarry floor is worked dirt, not grass: a fresh face is cut straight into it
     lay(SEAM.quarryFloor, 2, (x, y) => (api.tileAt(x, y) === T.DIRT || api.tileAt(x, y) === T.GRASS) && clearOfShaft(x, y) && open(x, y), OR_BLACKIRON, 'blackiron');
-    lay(SEAM.hills, 3, (x, y) => fresh(x, y) && regionAt(x, y).name !== 'Thistledown', OR_BLACKIRON, 'blackiron');
+    // (never on ground the builders have staked: Beacon Hills and the Skypier lie in the hills since the spread)
+    lay(SEAM.hills, 3, (x, y) => fresh(x, y) && regionAt(x, y).name !== 'Thistledown' && !ATLAS.reservedAt(x, y), OR_BLACKIRON, 'blackiron');
     lay(SEAM.wolfwood, 4, (x, y) => fresh(x, y) && regionAt(x, y).name === 'Wolfwood', OR_SUNSTONE, 'sunstone');
     lay(SEAM.farshore, 3, (x, y) => fresh(x, y) && regionAt(x, y).name === 'The Far Shore', OR_STORMSTONE, 'stormstone');
   });
@@ -288,7 +289,7 @@
       for (let i = 0; i < spots.length; i++) { const s = sides[i]; if (!s) continue; if (!F.bfs(t.anchor[0], t.anchor[1], s[0], s[1])) unreached.push(spots[i].join(',')); }
       check(P + `${t.key}: rocks stand on the map (${t.key === 'blackiron' ? 'Grey Quarry and the hills north of Thistledown' : t.key === 'sunstone' ? 'Wolfwood' : 'the Far Shore'}), each with a side to stand on, each walkable from ${t.anchor.join(',')}`,
         spots.length >= 10 && placed.length === spots.length && walled.length === 0 && unreached.length === 0,
-        { rocks: spots.length, standing: placed.length, regions, noSide: walled, unreachable: unreached, anchor: t.anchor });
+        { rocks: spots.length, standing: placed.length, notStanding: spots.filter(([x, y]) => tileAt(x, y) !== t.tile).map(([x, y]) => `${x},${y} ${tileName(tileAt(x, y))}`), regions, noSide: walled, unreachable: unreached, anchor: t.anchor });
     }
     // blackiron comes from two different countries, and no new rock was ever laid in a corridor
     { const rs = [...new Set(SPOTS.blackiron.map(([x, y]) => regionAt(x, y).name))].sort();

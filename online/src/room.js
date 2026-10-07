@@ -109,8 +109,13 @@ for (const c of Object.values(CAPS)) if (!c.burst) c.burst = Math.max(2, Math.ro
 export const KNOWN_CAPS = ['tick', 'die', 'roll', 'loot', 'zone', 'fix', 'day', 'snap', 'view'];
 export const capsOf = c => Array.isArray(c) ? KNOWN_CAPS.filter(n => c.includes(n)) : [];
 export const atlasOf = a => typeof a === 'string' && /^[0-9a-z]{1,32}$/.test(a) ? a : null;
-// a knight's own island is his alone: the Room keys it by his name, and every message out names it 'house' again
-export const mapKey = (k, map) => isHouse(map) ? 'house:' + k.lc : map;
+// a knight's own island is his alone: the Room keys it by his name, and every message out names it 'house' again.
+// A page from an older world (the Great Spread, spec §11: its hello names another Atlas than the world's, or none) is
+// keyed apart on every map: 'over' becomes 'over@stale' (STALE), so it never shares presence, monsters, keepers, crackers or
+// trades with the new world. Its game still hears its own map's name (move.js wireMap), and the welcome's Atlas hash
+// shows it 96-atlas's reload plaque. A world with no Atlas (the tests' bare Rooms) judges nothing and keys nothing apart.
+export const STALE = '@stale';
+export const mapKey = (k, map) => isHouse(map) ? 'house:' + k.lc : (k.stale ? map + STALE : map);
 export const ROSTER_EVERY = 2000;      // a changed roster goes out at most this often (join/leave go at once)
 // A keeper whose game has sent neither monsters nor presence for this long while others share its map (a locked phone, a
 // sleeping tab; a paused game or one on the title screen with nobody near it: with a knight near, a paused keeper streams its
@@ -295,6 +300,9 @@ export class Room {
     if (old) { if (old.since <= state.since) { try { sock.close(4000, 'logged in elsewhere'); } catch (e) { } return; } this.drop(old, 4000, 'logged in elsewhere'); }
     const k = this.makeKnight(sock, state);
     k.restored = true;   // rebuilt by a wake: he has said nothing in this Room yet (retell)
+    // keyed again by this world's Atlas: the map name the attachment carried, without any older keying
+    k.stale = this.staleAtlas(k.atlas);
+    if (k.map && !isHouse(k.map)) k.map = mapKey(k, k.map.endsWith(STALE) ? k.map.slice(0, -STALE.length) : k.map);
     k.role = acc ? acc.role : 'player';
     // the login this socket has carried since it joined; a socket from before logins were kept starts one at its join time
     k.loginId = Number.isInteger(state.loginId) ? state.loginId : this.loginStart(k.lc, k.since);
@@ -341,6 +349,7 @@ export class Room {
       sock, name: s.name, lc: low(s.name), since: s.since || this.now(), ip: typeof s.ip === 'string' ? s.ip.slice(0, 64) : '',
       hello: !!s.hello, map: s.map || null, mapAt: s.mapAt || s.since || this.now(), region: s.region || '', lv: s.lv || 0,
       caps: capsOf(s.caps), atlas: atlasOf(s.atlas),   // what this knight's game can do of the shared world, and its Atlas hash
+      stale: false,                       // its Atlas is not the world's: every map it is on is keyed apart (mapKey, STALE)
       role: 'player', x: null, y: null,   // x, y: the last presence, for party and cracker range checks (not kept over a nap)
       loginId: null, seenAt: 0,           // the store's logins row for this socket, and when its "last heard from" was written
       last: null, buckets: {}, strikes: 0, strikeAt: 0, gifts: new Set(),
@@ -438,11 +447,14 @@ export class Room {
     }
   }
 
+  // a page whose Atlas is not this world's (another hash, or none) while this world has one: keyed apart (mapKey)
+  staleAtlas(a) { return !!(this.atlas && a !== this.atlas.hash); }
+
   onHello(k, m) {
     k.hello = true;
     // a save always records the overworld, so a fresh login stands on it until the first presence says otherwise
+    k.caps = capsOf(m.caps); k.atlas = atlasOf(m.atlas); k.stale = this.staleAtlas(k.atlas);
     k.map = mapKey(k, (typeof m.map === 'string' && m.map) ? m.map.slice(0, 64) : OVERWORLD);
-    k.caps = capsOf(m.caps); k.atlas = atlasOf(m.atlas);
     const acc = this.store.account(k.name);
     k.role = acc ? acc.role : 'player';
     this.enterMap(k, k.map, { quiet: true });
@@ -803,6 +815,24 @@ export class Room {
   onPartyEnd(k) {
     if (!this.asAdmin(k)) return;
     for (const p of Array.from(this.parties.values())) if (p.map === k.map) this.endParty(p);
+  }
+
+  // The Great Spread's deploy step (tools/spread-deploy-step.mjs, spec §11; run only inside the owner-approved deploy): the
+  // live parties on a map, and ending them all. Their unlit crackers lie where the old world's places were, so they go; a
+  // cracker already lit keeps its prize, claimable as ever (prizes are the store's rows, re-sent after every welcome).
+  partiesOn(map) {
+    this.expire();
+    const out = [];
+    for (const p of this.parties.values()) if (p.map === map) {
+      const cs = Array.from(p.crackers.values());
+      out.push({ id: p.id, by: p.by, region: p.region, at: p.at, expires: p.expires, unlit: cs.filter(c => !c.litBy).length, lit: cs.filter(c => c.litBy).length });
+    }
+    return out;
+  }
+  endPartiesOn(map) {
+    const list = this.partiesOn(map);
+    for (const r of list) { const p = this.parties.get(r.id); if (p) this.endParty(p); }
+    return list;
   }
 
   // A party is over (time up, every cracker lit, or an admin ended it): its unlit crackers are gone for good.

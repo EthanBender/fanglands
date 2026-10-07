@@ -83,16 +83,19 @@
   for (let i = 0; i < REGIONS.length; i++) { const r = REGIONS[i]; if (!(r.name in BOX)) BOX[r.name] = { x0: r.x0, y0: r.y0, x1: r.x1, y1: r.y1 }; }
   const inBox = (b, x, y) => x >= b.x0 && x <= b.x1 && y >= b.y0 && y <= b.y1;
   const edgeIn = (b, x, y) => Math.min(x - b.x0, b.x1 - x, y - b.y0, b.y1 - y);  // inward distance to the box border, negative outside
+  // the same in the frame's OLD tiles: a ground's box is the stretched world's, so its border's wobble is measured in old
+  // tiles too and the outline stretches with the land (a place's frame is a translation: exactly edgeIn)
+  const edgeInF = (F, b, x, y) => Math.min(F.ix(x) - F.ix(b.x0), F.ix(b.x1) - F.ix(x), F.iy(y) - F.iy(b.y0), F.iy(b.y1) - F.iy(y));
 
   // a blob: the box border wanders in and out by `amp`; `grow` only ever lets it wander out
   // (F: the frame the outline's noise is read in: W for the grounds, the place's own frame for an enclave)
   const blob = (name, amp, seed, cell, grow, F = W) => { const w = wob(seed, cell || 7); const b = BOX[name];
-    return (x, y) => { const d = edgeIn(b, x, y), n = w(F.ix(x), F.iy(y)); return d + (grow ? Math.max(0, n) : n) * amp >= 0; }; };
+    return (x, y) => { const d = edgeInF(F, b, x, y), n = w(F.ix(x), F.iy(y)); return d + (grow ? Math.max(0, n) : n) * amp >= 0; }; };
   // the same, but for one pair of sides only: the seam curves own the other pair
   const bandX = (name, amp, seed, cell, grow) => { const w = wob(seed, cell || 9); const b = BOX[name];
-    return (x, y) => { const d = Math.min(x - b.x0, b.x1 - x), n = w(W.ix(x), W.iy(y)); return d + (grow ? Math.max(0, n) : n) * amp >= 0; }; };
+    return (x, y) => { const d = Math.min(W.ix(x) - W.ix(b.x0), W.ix(b.x1) - W.ix(x)), n = w(W.ix(x), W.iy(y)); return d + (grow ? Math.max(0, n) : n) * amp >= 0; }; };
   const bandS = (name, amp, seed, cell, grow) => { const w = wob(seed, cell || 9); const b = BOX[name];   // the south side alone
-    return (x, y) => { const d = b.y1 - y, n = w(W.ix(x), W.iy(y)); return d + (grow ? Math.max(0, n) : n) * amp >= 0; }; };
+    return (x, y) => { const d = W.iy(b.y1) - W.iy(y), n = w(W.ix(x), W.iy(y)); return d + (grow ? Math.max(0, n) : n) * amp >= 0; }; };
   // a lobe (a headland the region throws out) and a bite (a bay something else cuts into it), both ellipses; the centre
   // and radii are OLD coordinates of the frame F, and (x, y) the new tile asked about
   const near = (x, y, cx, cy, rx, ry) => ((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2 <= 1;
@@ -113,9 +116,12 @@
   // The Jungle's east edge wanders in as well as out. It used to grow only, out over the bottom-right dead
   // space; the Redcut (90-canyon) stands there now and red rock is not jungle, so the eastern edge frays
   // into the jungle's own box instead. Only the east: the west band is masked off (a tile deeper than the
-  // band's reach from the east edge is jungle whenever the south band says so, exactly as before).
-  { const jg = bandS('The Jungle', 6, SEED + 14, 12, true); const je = bandX('The Jungle', 20, SEED + 15, 9, false); const jb = BOX['The Jungle'];
-    put('The Jungle', (x, y) => x >= wallX(y) && (x > W.x(161) ? y >= jb.y0 : y > sWJ(x)) && (((x <= jb.x1 - 21 || je(x, y)) && jg(x, y) && !lobe(W, x, y, W.ix(jb.x1 + 1), 150, 13, 16)) || lobe(W, x, y, 108, 90, 7, 8) || lobe(HFF, x, y, 156, 90, 8, 7)), 'ne'); }   // and a bay bitten out of the east side, where the red rock country begins
+  // band's reach from the east edge is jungle whenever the south band says so, exactly as before). Since the spread
+  // the east edge is the Sound's shore and the band reaches 30 old tiles in (it was 20): the Jungle is 2.4 times the
+  // ground it was, the enclaves that used to bend its outline (Sylvaris, the canopy) are not, and at 20 the outline
+  // stood within 11% of its box.
+  { const jg = bandS('The Jungle', 6, SEED + 14, 12, true); const je = bandX('The Jungle', 30, SEED + 15, 9, false); const jb = BOX['The Jungle'];
+    put('The Jungle', (x, y) => x >= wallX(y) && (x > W.x(161) ? y >= jb.y0 : y > sWJ(x)) && (((W.ix(jb.x1) - W.ix(x) >= 31 || je(x, y)) && jg(x, y) && !lobe(W, x, y, W.ix(jb.x1 + 1), 150, 13, 16)) || lobe(W, x, y, 108, 90, 7, 8) || lobe(HFF, x, y, 156, 90, 8, 7)), 'ne'); }   // and a bay bitten out of the east side, where the red rock country begins
 
   // the enclaves: a blob each, inside the ground that carries them
   { const gq = blob('Grey Quarry', 7, SEED + 21, 5, true, QF);
@@ -246,8 +252,8 @@
   // region (34-food's berry bushes, 62-ores' seams, 39-worldblend's copses) generates the world it has
   // always generated, and this file only ever changes what came after it.
   const N4 = [[1, 0], [-1, 0], [0, 1], [0, -1]], N8 = [...N4, [1, 1], [-1, 1], [1, -1], [-1, -1]];
-  // the roads every feature laid, as polylines: ATLAS.TRACKS (the same eleven 39-worldblend reads)
-  const ROADS = ['road_cave', 'road_quarry_spur', 'road_wolfwood', 'road_camp', 'road_east_lane', 'road_dock_lane', 'road_hollowford', 'path_ash', 'path_farm', 'path_jungle', 'shaft_lane'].map(id => ATLAS.track(id));
+  // the roads every feature laid, as polylines: ATLAS.TRACKS (the spread's network, the same 39-worldblend reads)
+  const ROADS = ATLAS.ROAD_IDS.map(id => ATLAS.track(id));
   const segDist = (px, py, ax, ay, bx, by) => { const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy || 1; const t = clamp(((px - ax) * dx + (py - ay) * dy) / l2, 0, 1); return Math.hypot(px - (ax + dx * t), py - (ay + dy * t)); };
   // the ground a region wears. Only tiles that changed owner are rewritten, and only from this list.
   const PLAIN = new Set([T.GRASS, T.DIRT, T.TREE, T.OAK, T.FLOWERS, T.MUSHROOM, ASH, SCORCH, FERN, JUNGLE, DEADTREE].filter(v => v >= 0));
@@ -320,10 +326,10 @@
     markB(PONDF.box([36, 29, 43, 44]));                    // Miller's Pond west of the stepping stones, both their landings
     markB(QF.box([45, 0, 63, 4])); markB(QF.box([59, 4, 65, 9])); markB(QF.box([52, 4, 58, 15])); // the cliff course, the wind shrine, the shaft lane, the miners' cart
     // the road to the dock and the lane down the village fence
-    // (the dock lane is the lane itself, ATLAS.track('road_dock_lane'), and every tile within 2 of it: a corridor, never a
-    // rect built from two frames' corners that the spread could turn inside out; Stage 4a replaces this lane)
+    // (the dock lane is the Sea Road's last stretch, from the Coast Path's fork to Harl's dock, ATLAS.track('r2_sea'), and
+    // every tile within 2 of it: a corridor, never a rect built from two frames' corners)
     dockLaneGuard = 0;
-    { const pl = ATLAS.track('road_dock_lane'), V = 2;
+    { const pl = ATLAS.track('r2_sea').slice(-2), V = 2;
       for (let s = 1; s < pl.length; s++) { const [ax, ay] = pl[s - 1], [bx, by] = pl[s], n = Math.max(1, Math.round(Math.max(Math.abs(bx - ax), Math.abs(by - ay))));
         for (let k = 0; k <= n; k++) { const x = Math.round(ax + (bx - ax) * k / n), y = Math.round(ay + (by - ay) * k / n); mark(x - V, y - V, x + V, y + V); dockLaneGuard++; } } }
     markB(TD.box([140, 13, 143, 33]));
@@ -391,23 +397,44 @@
       'Sylvaris': (x, y, t) => TREES.has(t) ? (JUNGLE >= 0 ? JUNGLE : null) : (t === T.GRASS && FERN >= 0 && rnd() < 0.45) ? FERN : null,
     };
     // the ground is dressed on every tile the outlines moved from one region to another, and on every tile
-    // within five of a border, so the wood starts where the wood's name starts instead of a dozen tiles later
-    const BAND = 5;
+    // within eight of a border, so the wood starts where the wood's name starts instead of a dozen tiles later.
+    // BAND was 5; the spread spec (section 6, Stage 4b) has every land seam blend over 8 tiles or more (Int8 holds it).
+    const BAND = 8;
     const own = new Array(MAP_W * MAP_H);
     for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) { const r = resolve(x, y); own[y * MAP_W + x] = r ? r.name : ''; }
-    const dist = new Int8Array(MAP_W * MAP_H).fill(-1); const q = [];
+    // (the Ash Wastes are the Wilds' ground, reserved: their edge with the Wilds is no border of grounds, so the Jungle's
+    // edge along them is one seam, the Wilds' and the Jungle's, however the boxes split that strip)
+    const gname = n => (n === 'The Ash Wastes' ? 'The Wilds' : n);
+    const dist = new Int8Array(MAP_W * MAP_H).fill(-1), other = new Array(MAP_W * MAP_H); const q = [];
     for (let y = 1; y < MAP_H - 1; y++) for (let x = 1; x < MAP_W - 1; x++) {
-      const i = y * MAP_W + x;
-      if (!N4.some(([dx, dy]) => own[(y + dy) * MAP_W + x + dx] !== own[i])) continue;
-      dist[i] = 0; q.push(i);
+      const i = y * MAP_W + x, nb = N4.find(([dx, dy]) => gname(own[(y + dy) * MAP_W + x + dx]) !== gname(own[i]));
+      if (!nb) continue;
+      dist[i] = 0; other[i] = gname(own[(y + nb[1]) * MAP_W + x + nb[0]]); q.push(i);
     }
     for (let qi = 0; qi < q.length; qi++) { const c = q[qi], x = c % MAP_W, y = (c / MAP_W) | 0;
       if (dist[c] >= BAND) continue;
-      for (const [dx, dy] of N4) { const nx = x + dx, ny = y + dy; if (!inMap(nx, ny)) continue; const n = ny * MAP_W + nx; if (dist[n] >= 0) continue; dist[n] = dist[c] + 1; q.push(n); } }
+      for (const [dx, dy] of N4) { const nx = x + dx, ny = y + dy; if (!inMap(nx, ny)) continue; const n = ny * MAP_W + nx; if (dist[n] >= 0) continue; dist[n] = dist[c] + 1; other[n] = other[c]; q.push(n); } }
+    // SOFT seams: two grounds of living land that reach into each other (the spread spec, section 6: no seam on a ruled
+    // line). Within the band a tile wears its NEIGHBOUR's ground by a chance that falls from 0.7 on the border to a
+    // seventh of that at the band's edge, read from a noise of its own (in old coordinates, so its clumps stretch with the land):
+    // the oaks reach into the jungle in tongues and the giants into the wood. Cliffs, water and the Ashfields' rim keep
+    // their hard edges (93-ashedge fades the ash itself).
+    const SOFT_SEAM = new Set(['Wolfwood|The Jungle', 'The Jungle|Wolfwood', 'Wolfwood|Hollowford', 'Hollowford|Wolfwood', 'The Jungle|Hollowford', 'Hollowford|The Jungle',
+      'The Jungle|The Wilds', 'The Wilds|The Jungle']);   // (the Wilds: the Jungle's west edge south of the Ashfields, along the Ash Wastes)
+    const soft = makeNoise(SEED + 31, 3);
+    // what a tile wears when it takes its neighbour's ground across a soft seam: that ground's own dressing, and on open
+    // ground that ground's mark half the time (an oak for the wood and the Wilds, a giant for the jungle, scorch for the
+    // burn), so each ground's reach into the other is seen, not only its grass
+    const reachOf = { 'Wolfwood': () => tree(), 'The Wilds': () => tree(), 'The Jungle': () => (JUNGLE >= 0 ? JUNGLE : null), 'Hollowford': () => (SCORCH >= 0 ? SCORCH : null) };
+    const softGround = name => (x, y, t) => { const r = reachOf[name]; if (r && SOFT.has(t) && rnd() < 0.5 && (name === 'Hollowford' || addOk(x, y))) return r(); const g = GROUND[name]; return g ? g(x, y, t) : null; };
+    S.soft = 0;
     for (let y = 1; y < MAP_H - 1; y++) for (let x = 1; x < MAP_W - 1; x++) {
-      const i = y * MAP_W + x, name = own[i], was = boxRegion(x, y);
+      const i = y * MAP_W + x, was = boxRegion(x, y);
+      let name = own[i];
       if (dist[i] < 0 && (!was || was.name === name)) continue;
-      const g = GROUND[name]; if (!g || !plain(x, y)) continue;
+      let g = GROUND[name];
+      if (dist[i] >= 0 && SOFT_SEAM.has(gname(name) + '|' + other[i]) && soft(W.ix(x), W.iy(y)) < 0.7 * (1 - dist[i] / (BAND + 2))) { name = other[i]; g = softGround(name); S.soft++; }
+      if (!g || !plain(x, y)) continue;
       const t = at(x, y), to = g(x, y, t);
       if (to === null || to === undefined || to === t) continue;
       put(x, y, to); S.ground[name] = (S.ground[name] || 0) + 1;
@@ -520,6 +547,12 @@
       const openBefore = (x, y) => N4.some(([dx, dy]) => inMap(x + dx, y + dy) && !SOLID.has(before[(y + dy) * MAP_W + x + dx]));
       S.freed = 0;
       let seen = reachSet();
+      // digging only ever opens ground, so what the knight reaches only grows: flood on from each opened tile that touches
+      // reached ground, instead of flooding the whole map again after every dig (the spread spec, section 12: the boot budget)
+      const grow = (sn, opened) => { const ok = t => !SOLID.has(t) || PUSH_THROUGH.has(t) || t === WARDEN_GATE, q = [];
+        for (const [ox, oy] of opened) { const i = oy * MAP_W + ox; if (!sn[i] && ok(at(ox, oy)) && N4.some(([dx, dy]) => inMap(ox + dx, oy + dy) && sn[(oy + dy) * MAP_W + ox + dx])) { sn[i] = 1; q.push(i); } }
+        for (let qi = 0; qi < q.length; qi++) { const c = q[qi], x = c % MAP_W, y = (c / MAP_W) | 0;
+          for (const [dx, dy] of N4) { const nx = x + dx, ny = y + dy; if (!inMap(nx, ny)) continue; const n = ny * MAP_W + nx; if (sn[n] || !ok(at(nx, ny))) continue; sn[n] = 1; q.push(n); } } };
       const served = (x, y) => N4.some(([dx, dy]) => inMap(x + dx, y + dy) && seen[(y + dy) * MAP_W + x + dx]);
       // which side of the Wolfwood line a tile sits on: the digging may open this file's rock, but it may
       // never open a way through the step itself, so it never crosses from one side to the other
@@ -535,7 +568,7 @@
         if (served(x, y)) continue;
         // dig out through this file's own rock until the digging meets ground the knight can reach
         const from = [[x, y]], seenD = new Set([y * MAP_W + x]); let cut = null;
-        for (let qi = 0; qi < from.length && !cut && qi < 400; qi++) {
+        for (let qi = 0; qi < from.length && !cut && qi < Math.max(MAP_W, MAP_H); qi++) {   // the dig queue's cap: the map's longer side (spec §12)
           const [cx, cy] = from[qi];
           for (const [dx, dy] of N4) { const nx = cx + dx, ny = cy + dy, ni = ny * MAP_W + nx;
             if (!inMap(nx, ny) || seenD.has(ni) || side(nx, ny) !== side(x, y)) continue;
@@ -557,7 +590,7 @@
         if (undo.some(([ox, oy]) => Math.abs(oy - sGW(ox)) < 12) && leaking(north()).length) {
           for (const [ox, oy, ot] of undo) set(ox, oy, ot);
           S.kept++;
-        } else { S.freed += undo.length; seen = reachSet(); }
+        } else { S.freed += undo.length; grow(seen, undo); }
       }
       S.stranded = stranded.length; }
     S.leaks = leaking(north());
@@ -572,11 +605,23 @@
     // clearing), the rock gives way along the shortest dig to reached ground, unless that opens a way through
     // the step.
     { const passT = t => !SOLID.has(t) || PUSH_THROUGH.has(t) || t === WARDEN_GATE;
-      const flood = get => { const seen = new Uint8Array(MAP_W * MAP_H), q = [];
-        const push = (x, y) => { if (!inMap(x, y)) return; const i = y * MAP_W + x; if (seen[i] || !passT(get(i))) return; seen[i] = 1; q.push(i); };
-        push(...port('cave.mouth'));
-        for (let qi = 0; qi < q.length; qi++) { const c = q[qi], x = c % MAP_W, y = (c / MAP_W) | 0; for (const [dx, dy] of N4) push(x + dx, y + dy); }
+      // (the floods are tight loops over the tile index, and a dig GROWS the reached set from the tiles it opened instead
+      // of flooding the whole map again: digging only opens ground, so the set is exactly what a new flood gives. The
+      // spread spec, section 12: the boot budget; the review of c34fddf had the iPad stand-in at its 4.0 s limit)
+      const N = MAP_W * MAP_H;
+      const spread = (sn, q, ok) => { for (let qi = 0; qi < q.length; qi++) { const c = q[qi], x = c % MAP_W;
+        if (x > 0 && !sn[c - 1] && ok(c - 1)) { sn[c - 1] = 1; q.push(c - 1); } if (x < MAP_W - 1 && !sn[c + 1] && ok(c + 1)) { sn[c + 1] = 1; q.push(c + 1); }
+        if (c >= MAP_W && !sn[c - MAP_W] && ok(c - MAP_W)) { sn[c - MAP_W] = 1; q.push(c - MAP_W); } if (c + MAP_W < N && !sn[c + MAP_W] && ok(c + MAP_W)) { sn[c + MAP_W] = 1; q.push(c + MAP_W); } } return q; };
+      const flood = get => { const seen = new Uint8Array(N), m = port('cave.mouth'), i0 = m[1] * MAP_W + m[0];
+        if (inMap(m[0], m[1]) && passT(get(i0))) { seen[i0] = 1; spread(seen, [i0], i => passT(get(i))); }
         return seen; };
+      // the cells of `opened` that `ok` lets through and that touch the reached set `sn`, and all they lead to, added to sn
+      const touches = (sn, c) => { const x = c % MAP_W; return (x > 0 && sn[c - 1]) || (x < MAP_W - 1 && sn[c + 1]) || (c >= MAP_W && sn[c - MAP_W]) || (c + MAP_W < N && sn[c + MAP_W]); };
+      const growBy = (sn, opened, ok) => { const q = []; for (const c of opened) if (!sn[c] && ok(c) && touches(sn, c)) { sn[c] = 1; q.push(c); } return spread(sn, q, ok); };
+      const passAt = i => passT(map[i]);
+      // the north flood (no bridge, dock or water: 4's own rule) kept and grown the same way; a dig that leaks is undone
+      const okN = i => { const t = map[i]; return (!SOLID.has(t) || PUSH_THROUGH.has(t)) && t !== BRIDGE && t !== DOCK && t !== T.WATER; };
+      let nseen = null;
       const was = flood(i => before[i]); let seen = flood(i => map[i]);
       // kept (out of sight of anything that prints the stats) for the self-test, which walks the finished map against it
       Object.defineProperty(S, 'wasReach', { value: was, enumerable: false });
@@ -601,8 +646,11 @@
         return null; };
       // open the dug tiles; if that opened a way through the step, close them again
       const open = dug => { const undo = dug.map(c => [c % MAP_W, (c / MAP_W) | 0, map[c]]);
+        if (!nseen) nseen = north();   // (before the dig: the dig's own tiles are grown in below, and taken out on a leak)
         for (const [x, y] of undo) { const c = y * MAP_W + x; set(x, y, SOLID.has(before[c]) ? T.GRASS : before[c]); }
-        if (!leaking(north()).length) return true;
+        const added = growBy(nseen, dug, okN);
+        if (!leaking(nseen).length) return true;
+        for (const c of added) nseen[c] = 0;
         for (const [x, y, t] of undo) set(x, y, t);
         return false; };
       for (let i0 = 0; i0 < MAP_W * MAP_H; i0++) {
@@ -610,12 +658,12 @@
         S.pockets++;
         // first through this file's own rock only
         let dug = route(i0, n => placed[n]);
-        if (dug && open(dug)) { S.pocketTiles += dug.length; seen = flood(i => map[i]); continue; }
+        if (dug && open(dug)) { S.pocketTiles += dug.length; growBy(seen, dug.concat([i0]), passAt); continue; }
         // where that is not enough (a bush on the line itself, whose one open side became the face), fell a tree
         // of the wood beside it instead, never the face that failed nor a tile no pass may touch
         const banned = new Set(dug || []);
         dug = route(i0, (n, x, y) => !banned.has(n) && (placed[n] || (TREES.has(map[n]) && free(x, y))));
-        if (dug && open(dug)) { S.pocketTiles += dug.length; S.pocketTrees += dug.filter(c => !placed[c]).length; seen = flood(i => map[i]); continue; }
+        if (dug && open(dug)) { S.pocketTiles += dug.length; S.pocketTrees += dug.filter(c => !placed[c]).length; growBy(seen, dug.concat([i0]), passAt); continue; }
         markPocket(i0); S.pocketsKept++;
       }
       S.leaks = leaking(north()); }
@@ -645,6 +693,9 @@
       // above and below (where the face is two tiles thick there, or a tree stands against it, the cut goes through, up
       // to two tiles each way); only a scarp that misses the port falls back to the middle measured climb
       const [px, py] = port('graveyard.steps'), solidAt = (x, y) => inMap(x, y) && SOLID.has(at(x, y)) && !PUSH_THROUGH.has(at(x, y)) && !buildingAt(x, y);
+      // (a tree or a rock the face runs into at the port is the face there: on the spread's map the seal's face at the
+      // graveyard meets a tree on the port's own tile, with cliff either side of it)
+      if (at(px, py) !== CLIFF && (TREES.has(at(px, py)) || at(px, py) === T.ROCK) && (at(px - 1, py) === CLIFF || at(px + 1, py) === CLIFF)) set(px, py, CLIFF);
       if (at(px, py) === CLIFF) {
         for (const dir of [-1, 1]) for (let k = 1; k <= 2 && solidAt(px, py + dir * k); k++) set(px, py + dir * k, T.GRASS);
         set(px, py, STEPS); S.stairs.push({ x: px, y: py, tile: tileName(STEPS), lv: STEPS_LV });
@@ -850,7 +901,9 @@
         const f = Math.floor(WS.seams.sWA(x));
         if (regionAt(x, f).name !== 'Wolfwood' || regionAt(x, f + 1).name !== 'The Ashfields') continue;
         for (let d = 1; d <= 3; d++) { inN++; if (tiles[idx(x, f + d)] === ASH) ashIn++; }
-        for (let d = 3; d <= 6; d++) { outN++; if (tiles[idx(x, rimRow(x) - d)] === ASH) ashOut++; }
+        // (three to six OLD rows above the rim, through the rim's pin: 39-worldblend's drift reaches old rows 92..94, which the
+        // spread stretched over new rows 143..147, so six new rows up is still inside it)
+        for (let d = 3; d <= 6; d++) { outN++; if (tiles[idx(x, Math.round(W.pin('rim', W.y(95 - d), x)))] === ASH) ashOut++; }
       }
       const wood = woodT / Math.max(1, woodN), field = fieldT / Math.max(1, fieldN), ash = ashIn / Math.max(1, inN), green = ashOut / Math.max(1, outN);
       check(P + 'the ground changes where the name changes: wood on the Wolfwood side of the line and open field on the other, ash below the Ashfields rim and none of it six rows above',
@@ -921,7 +974,8 @@
       for (let x = wallX(W.ty(96)); x <= W.tx(161); x++) { const y = Math.round(WS.seams.sWJ(x)); if (SOLID.has(tiles[idx(x, y)])) wall++; else if (x >= HFF.x(134) && x <= HFF.x(148)) gap++; }
       const gateShut = DRAGON_KILLERS ? DRAGON_KILLERS.GATE_T.every(([x, y]) => tiles[idx(x, y)] === Tn('WARDEN_GATE')) : false;
       check(P + "the Ashfields' rim is a wavy rock face where a ruled line of trees stood, the warden's gate is still the one notch through it, and the jungle's edge is a wall of giants with the old road its one gap",
-        rim >= 70 && line === rimCols && band >= 40 && gateShut && wall >= 30, { rimRockOnRow95: rim, solidOnRow95: line, rockBelowTheRow: band, gateShut, wallOnTheJungleLine: wall, roadGapColumns: gap }); }
+        rim >= 113 && line === rimCols && band >= 65 && gateShut && wall >= 47,   // (4b re-baseline: 70 / 40 rim tiles x1.62, the rim's stretch; 30 wall tiles x1.56, the rows' stretch)
+        { rimRockOnRow95: rim, solidOnRow95: line, rockBelowTheRow: band, gateShut, wallOnTheJungleLine: wall, roadGapColumns: gap }); }
 
     // ---- 8b. the wall splits the names: every wall row has the Ashfields (once below the rim) just west of the wall
     // and the Jungle (once below its north edge) on it, so the wall, the burnt band and the names move together on the pin

@@ -76,7 +76,7 @@ online/
 | `POST /api/logout` | — | `{ok}` | drops the session |
 | `GET /api/me` | — | `{name, created, saveAt, online, role}` | `role` is `'player'` or `'admin'` (see *Admins and drop parties*) |
 | `GET /api/save` | — | `{save, at}` (`save` null when none) | the save is the slot JSON string, verbatim |
-| `PUT /api/save` | the save JSON string | `{at}` | ≤ 512 KB; server keeps the last 3 versions; goes through while kept out for bad words |
+| `PUT /api/save` | the save JSON string | `{at}` | ≤ 512 KB; server keeps the last 3 versions; goes through while kept out for bad words; 409 `stale_world` when the knight's newest save is from a newer world than this one (see *The Great Spread on the server*) |
 | `GET /api/save/pin` | — | `{at, bytes}` or `{at: null, bytes: 0}` | admins only (403 `admin`): the pinned backup (*Admins and drop parties*) |
 | `POST /api/save/pin` | the save JSON string | `{at, pinned}` | admins only; an existing pin is kept unless `?replace=1` |
 | `POST /api/save/restore` | — | `{save, at, ver}` | admins only; the pin becomes the current save and is removed; 404 `nopin` |
@@ -96,11 +96,13 @@ online/
 | `POST /api/admin/invite` | `{invite}` | `{ok}` | change the invite code |
 | `GET /api/admin/chat?limit=500` | — | `[{at, n, text}]` | the whole log, newest last |
 | `GET /api/admin/invite` | — | `{invite}` | the current code |
-| `GET /api/admin/saves?name=` | — | `[{ver, at, bytes}]` | the kept versions; a pinned backup is listed first as `ver: 'pin'` |
-| `POST /api/admin/rollback` | `{name, ver}` | `{ok}` | make that version the current save (`ver: 'pin'` copies the pin forward and keeps it) |
+| `GET /api/admin/saves?name=` | — | `[{ver, at, bytes}]` | the kept versions; a pinned backup is listed first as `ver: 'pin'`; the knight's last save of each older world last, as `{ver: 'world1', world: 1, at, bytes}` (see *The Great Spread on the server*) |
+| `POST /api/admin/rollback` | `{name, ver}` | `{ok}` | make that version the current save (`ver: 'pin'` copies the pin forward and keeps it; `ver: 'world1'` the kept last world-1 save, which is kept too) |
 | `GET /api/admin/online` | — | `[{n, map, region, lv, since, role}]` | |
 | `GET /api/admin/trades?limit=200` | — | `[{at, a, b, aGave, bGave}]` | newest first (limit 1 to 2,000): every finished trade, who and exactly what each gave (see *Trading*) |
-| `GET /api/admin/export` | — | `{at, accounts, saves, chat, settings, mod_log, save_pins, parties, crackers, logins, trades}` | every row of every table but `sessions` (`online/src/backup.js`): the backup taken before a deploy |
+| `GET /api/admin/spread-parties` | — | `{atlas, mapW, ended: false, parties}` | the live drop parties on the overworld (`[{id, by, region, at, expires, unlit, lit}]`) and the world's Atlas hash and width; read by `tools/spread-deploy-step.mjs` (see *The Great Spread on the server*) |
+| `POST /api/admin/spread-parties` | — | `{atlas, mapW, ended: true, parties}` | ends those parties (their unlit crackers go; a prize already won stays claimable); one `mod_log` row. Only inside the owner-approved spread deploy |
+| `GET /api/admin/export` | — | `{at, accounts, saves, chat, settings, mod_log, save_pins, save_worlds, parties, crackers, logins, trades}` | every row of every table but `sessions` (`online/src/backup.js`): the backup taken before a deploy |
 | `GET /api/admin/bookmark` | — | `{bookmark, at}` | a Cloudflare point-in-time restore bookmark, also kept in `settings` |
 | `POST /api/admin/restore` | `{bookmark}` | `{ok, restoring}` | rewinds the whole world to that bookmark; every knight reconnects to it |
 
@@ -700,6 +702,8 @@ accounts  + role        TEXT    NOT NULL DEFAULT 'player'   -- 'player' | 'admin
 mod_log   (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, by TEXT NOT NULL, act TEXT NOT NULL,
            target TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '')
 save_pins (name_lc TEXT PRIMARY KEY, json TEXT NOT NULL, at INTEGER NOT NULL)
+save_worlds (name_lc TEXT NOT NULL, world INTEGER NOT NULL, json TEXT NOT NULL, at INTEGER NOT NULL,
+           PRIMARY KEY (name_lc, world))   -- a knight's last save of an older world (the Great Spread's rollback)
 parties   (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, by TEXT NOT NULL, map TEXT NOT NULL,
            region TEXT NOT NULL DEFAULT '', hat INTEGER NOT NULL, table_json TEXT NOT NULL, count INTEGER NOT NULL,
            expires INTEGER NOT NULL, ended INTEGER NOT NULL DEFAULT 0)
@@ -2316,7 +2320,7 @@ game's), against the same knights on the keeper path with its keeper stream and 
 
 | | 20 knights (8 Deepholm, 8 Aerie, 4 coal mine), 30 min, 10.0 knight-hours | 1 knight alone in Deepholm, 10 min |
 |---|---|---|
-| Copy boot | Deepholm 843 ms, the Aerie 976 ms, the coal mine 685 ms | Deepholm 1,320 ms |
+| Copy boot | Deepholm 843 ms, the Aerie 976 ms, the coal mine 685 ms (the 260 x 180 map; on the 400 x 280 map see *The Great Spread on the server*: about 1.1 s inside workerd, each a Room-wide pause) | Deepholm 1,320 ms |
 | Tick | p50 1 ms, p99 4 ms over the last 3,000; worst 30 s window p99 6 ms; max 38 ms; 12 skipped (the boots) | p50 1 ms, p99 2 ms; worst window 4 ms; max 19 ms |
 | Fallbacks | none; every keeper `@world:<map>` throughout; 0 copy errors in 17,978 ticks each | none |
 | `mon` to each knight | 9.98 a second; gap p50 100 ms, p99 103 ms, max 185 ms | 9.94 a second; gap p50 100, p99 102, max 121 ms |
@@ -2409,6 +2413,117 @@ true, cap 4, every place on `keeper`, master `on`, nothing held, nothing running
 (`fix3/proof/proof-run.txt`, all 9 steps), and the review's real-page wake (two knights' pages paused 60 s with the sockets
 open, the object napped and rebuilt, the kid unlocked) left the felled sentinel down and the hurt one hurt with the kid in
 first or second (`fix3/proof-wake/real-wake-world-{ann,ben}.txt`; on `a7a6a78` the first stood again at 160).
+
+## The Great Spread on the server (spec §11; Stage 4d)
+
+The Great Spread makes the overworld 400 x 280 and moves every place (docs/spread/README.md). A save from before it is a
+"world 1" save (it names no `worldV`, or `worldV` 1); the game brings such a knight into the new world the first time it
+loads him (`src/97-spread.js`, spec §10) and stamps the save `worldV: 2`. The server's part is to keep the two worlds from
+mixing while old pages are still open somewhere, and to never let an old page write over a knight already moved.
+
+**The Atlas.** `online/src/atlas.json` is made by `tools/atlas.mjs` from the built game (400 x 280, `v` 2, the places new
+and reserved, the grid, FIXED_SOLID, spawns, doors, calls, and from Stage 4a the `anchors` and `ports`), about 47 KB. Its
+`hash` is the world's: every welcome names it, and `online/test/atlas-drift.mjs` gates every deploy on it matching the
+game. `online/test/atlas.test.mjs` and `move.test.mjs` read the size, the anchors and the ports from it, never as literals.
+
+**Saves and the world's version (`PUT /api/save`, `online/src/world.js`).**
+- Every save the game writes carries `worldV` (and `worldRev`, `mapW`). A save naming none is world 1.
+- When the knight's newest stored save is from world 2 or later and the incoming save's `worldV` is lower (missing, junk or
+  not a whole number counts as 1), the world answers `409 {error: 'stale_world', code: 'stale_world'}` and stores nothing.
+  The stored `worldV` is read by SQLite (`json_extract`), the whole row only if SQLite cannot read it.
+- The knight's first save of a newer world (his newest stored save is world 1, the incoming one world 2) first copies that
+  newest world-1 save into `save_worlds` (`INSERT OR IGNORE`: the first one kept stays, through a rollback and a second
+  migration). The three kept versions turn over in about 30 s of play (a page pushes about every 15 s), so this is the
+  one per-knight way back to the old map after that: the parent page lists it under Saves as "Last save from world 1 (the
+  old map, before the Great Spread)" with Go back to this one (`POST /api/admin/rollback {name, ver: 'world1'}`), and
+  `GET /api/admin/export` carries the table. A knight with no world-1 save keeps nothing there.
+- An equal or newer world goes through as before. A knight whose newest save is world 1 takes world-1 saves as before
+  (an old page keeps saving until that knight is first loaded on a new page).
+- The page (`src/72-cloudsave.js`): a push answered 409 `stale_world` locks it (`SAVE_LOCK`: no save here or to the cloud,
+  72-savelock) and says "This page is older than the world. Reload." on the reload plaque. A page from before 4d cannot
+  say that; it shows 96-atlas's "A newer world is ready" plaque instead (its welcome names another Atlas) and, after three
+  refused pushes, its usual "Could not reach the world" line. Its knight is safe either way: nothing it sends is stored.
+- On purpose, these do NOT go through the guard: the parent page's rollback (`POST /api/admin/rollback`) and an admin's
+  pin (`POST /api/save/pin`, `POST /api/save/restore`). A world-1 save restored that way is the newest again, and is moved
+  into the new world the next time a new page loads it.
+- Proved in `online/test/accounts.test.mjs` (the guard, with the rollback and the pin; the kept world-1 save: listed after
+  six more pushes, rolled back to, kept through a second migration, exported) and by the two-browser proof below.
+
+**The Room keys old pages apart (`online/src/room.js`, `mapKey`).** A hello whose Atlas is not the world's (another hash,
+or none) while the world has an Atlas is "stale": every map that knight stands on is keyed `<map>@stale` (`over@stale`,
+`deepholm@stale`; his own island stays `house:<name>`). So an old page never shares presence, keepers, monsters, drop
+parties' crackers or trades with the new world, and two old pages still share with each other. Every message to a game
+names the map as the game knows it (`move.js` `wireMap` takes `@stale` off), so an old page works as it always did and
+sees only its fellow old pages plus the reload plaque. A `@stale` map is never a world-run map and never judged by the
+movement check (the Atlas does not know it). After a nap each knight is keyed again by the world's Atlas. A Room with no
+Atlas (the bare test Rooms) keys nothing apart. The parent page's `GET /api/admin/sim` shows each knight's Atlas as `same`,
+`old` or `none`. Proved in `online/test/room.test.mjs` and the two-browser proof.
+
+**The teacher view and old pages.** A kid still on an older world's page stands on the old map, so the teacher's row for
+him has no x, y (no dot on the map) and no overworld place ("Somewhere in the world"); inside a cave or another instance
+the place is still named. Watch still works and says "his game is an older version" (`old`), and its keeper and map names
+are the ones his game knows. On the 400 x 280 map the teacher's whole map draws each place a third smaller: a big place's
+name may be up to 1.5 times as wide as the place (1.1 for the rest), and where knights stand in the middle of a small town
+at the whole map (a class in Thistledown at a 1280 x 650 window at 125%) the town's name gives way to them, as any name
+does, and comes back one zoom step in (`online/test/teacher-labels.test.mjs`, `tools/teacher-browser.mjs`).
+
+**Drop parties at the spread (`tools/spread-deploy-step.mjs`).** A party's crackers lie on overworld tiles that move. The
+step, run ONLY inside the owner-approved spread deploy and only after the new build is live, reads
+`GET /api/admin/spread-parties` (it stops, exit 2, unless the world names this tree's Atlas hash and width), prints the live
+overworld parties, and with `--yes` POSTs: each ends (`ended = 1`, its unlit crackers gone, `party_end` to anyone on the
+map), one `mod_log` row says so. A cracker already lit keeps its prize, claimable as ever (prizes are the store's rows,
+sent with each welcome). Parties in caves and other instances are kept. The admin key comes from `--secrets <file>` and
+is never printed. `move_log` (a log only) and in-memory presence need nothing.
+
+**Limits.** `SAVE_MAX` 512 KB, `MAX_TILE` 1023 and `MAX_FRAME` 64 KB are not binding at 400 x 280 (atlas.json is about 47 KB).
+
+**Boot in workerd.** Measured on the 4d build with `tools/sim-bench.mjs` (a local `wrangler dev --local`, never a live
+Worker) and checked by `node tools/boot-budget.mjs --workerd <bench.json>`: on the final 4d build (both master merges in)
+the overworld copy boots in 2,385, 2,607 and 2,408 ms inside workerd (budget 3,500 ms) and the isolate holds 28.3 MB with
+the overworld (budget 45 MB); node's generateWorld 1,447 ms (budget 2,000). (The first 4d build measured 2,865, 2,895 and
+3,017 ms and 24.5 MB on a busier machine.) Inside the budget, so no `world-<hash>.bin` snapshot is written (spec §7: only if
+over). The margin is about 0.9 s: a later stage that adds world-building passes measures again.
+
+After the review of c34fddf (92-worldshape's step 7b grows its floods instead of flooding the map again after every
+dig; the world is byte-identical): the overworld copy boots in 1,370, 1,479 and 1,317 ms inside workerd, the isolate holds
+35.9 MB with the overworld (budget 45; the heap read moves by several MB from run to run: 24.5 and 28.3 on the 4d builds),
+node's generateWorld 1,062 ms at its slowest (`~/.fanglands/work/spread/fix4/bench/bench.json`).
+
+**The world-run instance copies (Deepholm, the Aerie) build the whole overworld too.** They boot with `worldGen` on:
+`tools/sim-suite.mjs` check 5 finds that neither builds the same without the overworld (Deepholm's tiles differ, the
+Aerie's 300 ticks differ), so they stay off `WORLDGEN_FREE` (war_shed, tinker_lab, stormfront: about 40 ms each). A copy
+is built synchronously inside the Room's Durable Object (`worlds.boot` -> `host.boot` -> `makeGame`), so **every knight
+online waits while a world-run map's copy is built**: inside workerd, full build (`tools/sim-bench.mjs`, local):
+
+| Map | master 8ff3459 (the review) | c34fddf (the review) | after the review's fix |
+| --- | --- | --- | --- |
+| Overworld copy | 833 / 816 / 672 ms | 2,280 / 2,534 / 2,363 ms | 1,370 / 1,479 / 1,317 ms |
+| Deepholm | 654 ms | 2,185 ms | 1,140 ms |
+| The Aerie | 624 ms | 2,201 ms | 1,125 ms |
+| Every instance, full build | 622 to 717 ms | 2,180 to 2,307 ms | 1,123 to 1,212 ms |
+| `worldGen: false` | about 40 ms | about 40 ms | 41 to 44 ms |
+
+`node tools/mmo-sim-world.js` (in node): copy boots Deepholm 706 / the Aerie 661 ms on master, 2,308 / 2,329 on c34fddf,
+1,233 / 1,195 after the fix. A Room-wide pause of about 1.1 s happens once per copy build (a copy is kept while its map
+has knights, and dropped 60 s after it empties). `node tools/sim-load.mjs --minutes 30` after the fix (20 knights, 10 in
+Deepholm and 10 in the Aerie, a local `wrangler dev`; `~/.fanglands/work/spread/fix4/load/`): copy boots Deepholm 1,338 ms
+and the Aerie 1,469 ms; tick p50 2 ms, p99 4 ms over the last 3,000, worst 30 s window p99 6 ms, max 39 ms, 10 skipped (the
+boots); no fallback; heap 20.4 MB; 898.1 requests a knight-hour world-run against 1,098.6 on the keeper path: every pass
+bar met. The next step if that is too long: the spec's §7 world snapshot for
+instance copies too (not built: every boot is inside its budget).
+
+**The two-browser proof (`tools/spread-two-pages.cjs`, a LOCAL `wrangler dev` only).** Real headless pages: the OLD page is
+the build live today (`git show master:index.html`, world 1), the NEW page this tree's; the harness serves each browser its
+build and every other request goes to the local world. Ann (old) and Ben (new), with Dot (old) and Eve (new) as controls:
+Ann and Ben never hear each other, Dot hears Ann and Eve hears Ben, each side keeps its own monsters, the parent page sees
+`old` and `same`, and the old page shows the NEW WORLD plaque. Ann's old page saves (200, world 1); Ann opens the new page
+elsewhere and her knight is moved and pushed (world 2); the old page's next push gets 409 `stale_world` and the world keeps
+the world-2 save; the old page reloads into the new build with her moved knight (moved once, not twice), and Ben hears her.
+All 15 checks pass on the final 4d build (7 Oct 2026, the old page being master 8ff3459; `node tools/spread-two-pages.cjs --shots <dir>` with the local world on
+port 8812; the old page's Atlas ea36148040c3f60c, the new one's bd8d810602a3fcac). The deploy step was proved on the same
+local world: a party on the overworld with one cracker lit and one in the Spider Den; the dry run listed it (4 unlit, 1
+lit), `--yes` ended it, one `mod_log` row, a second run found nothing, the Spider Den party was kept, the lit cracker's
+prize came with Sam's next welcome; against a world on another Atlas it stopped with exit 2 and changed nothing.
 
 ## The teacher view
 

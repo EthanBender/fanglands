@@ -300,7 +300,7 @@
       removeItem('blueprint_irondrill', 99); removeItem('steel_bar', 6); removeItem('coal', 4); player.dozerUp.drill = true; player.dozerUp.irondrill = true; }
     closePanel();
     // 5. driving with the upgrades: a parked bulldozer on a clear grass lane in the open fields
-    const o = h.openSpot(...ATLAS.frame('drill_field').p(58, 50));   // the drill field's flat lane (22-bulldozer's)
+    const o = h.openSpot(...ATLAS.frame('drill_field').p(52, 50));   // the drill field's flat lane (22-bulldozer's), from its west end: the tests drive a dozen tiles east along it
     const natural = [T.TREE, T.OAK, T.ROCK, T.IRON, T.COAL, T.FLOWERS, T.MUSHROOM, T.DIRT, T.STUMP, T.RUBBLE, T.SAND, T.SOIL];
     for (let yy = o.y - 1; yy <= o.y + 1; yy++) for (let xx = o.x - 2; xx <= o.x + 12; xx++) if (natural.includes(tileAt(xx, yy))) changeTile(xx, yy, T.GRASS);
     regrow = regrow.filter(r => { const tx = r.i % MAP_W, ty = Math.floor(r.i / MAP_W); return !(ty >= o.y - 1 && ty <= o.y + 1 && tx >= o.x - 2 && tx <= o.x + 12); });

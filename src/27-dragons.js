@@ -42,7 +42,7 @@
   const BONES = [rt(DW.p(55, 113)), rt(DW.p(84, 121)), rt(DW.p(66, 128)), FL.p(44, 123), rt(DW.p(92, 111)), FL.p(38, 118), rt(DW.p(52, 136))];
   const GREEN_SPAWNS = [rt(DW.p(52, 120)), rt(DW.p(76, 118)), rt(DW.p(60, 131)), rt(DW.p(91, 124))];
   const RED_SPAWNS = [rt(DW.p(81, 135)), rt(DW.p(47, 136))];
-  const PATH = ATLAS.track('path_ash');        // Wolfwood → the Ashfields → toward the lair
+  const PATH = ATLAS.track('r6_ash');          // the Ash Road: Wolfwood → the Warden's gate → the Ashfields → the lair
   const FARM_PATH = ATLAS.track('path_farm');
   const DRAGONS = new Set(['green_dragon', 'red_dragon']);
   const DR_POTATO_PRICE = ITEMS.potato ? ITEMS.potato.value : 3, DR_POTATO_MAX = 20;   // Dunstan buys potatoes at their value, 20 per hand-in
@@ -516,8 +516,12 @@
     const besideTile = (tx, ty) => { for (const [dx, dy] of [[0, 1], [0, -1], [-1, 0], [1, 0]]) if (inMap(tx + dx, ty + dy) && !SOLID.has(tileAt(tx + dx, ty + dy))) return { x: tx + dx, y: ty + dy }; return null; };
     h.peace(true);
     // region + path
-    { let ash = 0, lava = 0, obs = 0; for (let y = AF.y0; y <= AF.y1; y++) for (let x = AF.x0; x <= AF.x1; x++) { if (inFang(x, y)) continue; const t = tileAt(x, y); if (t === DR_ASH) ash++; else if (t === DR_LAVA) lava++; else if (t === DR_OBSIDIAN) obs++; }
-      check('dragons: The Ashfields region fills the south-west (ash, lava, obsidian), Wolfwood ends at y 95', REGIONS.some(r => r.name === 'The Ashfields') && regionAt(...rt(DW.p(60, 110))).name === 'The Ashfields' && regionAt(...WD.p(60, 94)).name === 'Wolfwood' && ash > 900 && ash < 2200 && lava >= 40 && obs >= 30, { at60_110: regionAt(...rt(DW.p(60, 110))).name, at60_94: regionAt(...WD.p(60, 94)).name, ash, lava, obs }); }
+    // (the ash is counted as a share of the box's open ground, not in tiles: the box is 3 times the ground it was before
+    // the spread. 900..2200 tiles of the old box's 3377 is 27%..65%, the bounds kept here; the old map stood at 52%)
+    { let ash = 0, lava = 0, obs = 0, ground = 0; for (let y = AF.y0; y <= AF.y1; y++) for (let x = AF.x0; x <= AF.x1; x++) { if (inFang(x, y)) continue; ground++; const t = tileAt(x, y); if (t === DR_ASH) ash++; else if (t === DR_LAVA) lava++; else if (t === DR_OBSIDIAN) obs++; }
+      const share = ash / Math.max(1, ground);
+      check('dragons: The Ashfields region fills the south-west (ash, lava, obsidian), Wolfwood ends at y 95', REGIONS.some(r => r.name === 'The Ashfields') && regionAt(...rt(DW.p(60, 110))).name === 'The Ashfields' && regionAt(...WD.p(60, 94)).name === 'Wolfwood' && share > 0.27 && share < 0.65 && lava >= ground * 0.0118 && obs >= ground * 0.0089,   // (4b re-baseline: the old 40 / 30 of 3377 tiles as shares of the box's ground)
+        { at60_110: regionAt(...rt(DW.p(60, 110))).name, at60_94: regionAt(...WD.p(60, 94)).name, ash, ground, share: +share.toFixed(3), lava, obs }); }
     { const toFarm = F.bfs(...WD.p(60, 94), DUNSTAN_T.x, DUNSTAN_T.y + 1), toLair = F.bfs(...WD.p(60, 94), ...ATLAS.port('fang_lair.node'));
       check('dragons: the path from Wolfwood (60,94) reaches the farm and the approach to the lair', !!toFarm && !!toLair && tileAt(...WD.p(60, 96)) === T.DIRT, { farm: toFarm && toFarm.length, lair: toLair && toLair.length }); }
     // lava burns
