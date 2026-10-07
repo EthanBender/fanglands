@@ -31,4 +31,7 @@ if [ ! -d online/node_modules/acorn ] || [ ! -d online/node_modules/eslint-scope
   (cd online && npm ci --no-audit --no-fund --silent) || echo "build-sim: could not install acorn and eslint-scope (cd online && npm ci); online/src/sim/game.mjs not rebuilt"
 fi
 [ -d online/node_modules/acorn ] && [ -d online/node_modules/eslint-scope ] && node tools/build-sim.mjs --strip --quiet
+# The boot-time budget (the Great Spread spec, sections 7 and 12): a new game's world in node <= 2.0 s and, when a Chromium is
+# here, in Chromium with the CPU slowed four times (the iPad's stand-in) <= 4.0 s, each the slowest of its runs.
+node tools/boot-budget.mjs index.html --chromium || { echo "build.sh: the world takes too long to build (tools/boot-budget.mjs)" >&2; exit 1; }
 true

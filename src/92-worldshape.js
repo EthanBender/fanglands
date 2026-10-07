@@ -605,11 +605,23 @@
     // clearing), the rock gives way along the shortest dig to reached ground, unless that opens a way through
     // the step.
     { const passT = t => !SOLID.has(t) || PUSH_THROUGH.has(t) || t === WARDEN_GATE;
-      const flood = get => { const seen = new Uint8Array(MAP_W * MAP_H), q = [];
-        const push = (x, y) => { if (!inMap(x, y)) return; const i = y * MAP_W + x; if (seen[i] || !passT(get(i))) return; seen[i] = 1; q.push(i); };
-        push(...port('cave.mouth'));
-        for (let qi = 0; qi < q.length; qi++) { const c = q[qi], x = c % MAP_W, y = (c / MAP_W) | 0; for (const [dx, dy] of N4) push(x + dx, y + dy); }
+      // (the floods are tight loops over the tile index, and a dig GROWS the reached set from the tiles it opened instead
+      // of flooding the whole map again: digging only opens ground, so the set is exactly what a new flood gives. The
+      // spread spec, section 12: the boot budget; the review of c34fddf had the iPad stand-in at its 4.0 s limit)
+      const N = MAP_W * MAP_H;
+      const spread = (sn, q, ok) => { for (let qi = 0; qi < q.length; qi++) { const c = q[qi], x = c % MAP_W;
+        if (x > 0 && !sn[c - 1] && ok(c - 1)) { sn[c - 1] = 1; q.push(c - 1); } if (x < MAP_W - 1 && !sn[c + 1] && ok(c + 1)) { sn[c + 1] = 1; q.push(c + 1); }
+        if (c >= MAP_W && !sn[c - MAP_W] && ok(c - MAP_W)) { sn[c - MAP_W] = 1; q.push(c - MAP_W); } if (c + MAP_W < N && !sn[c + MAP_W] && ok(c + MAP_W)) { sn[c + MAP_W] = 1; q.push(c + MAP_W); } } return q; };
+      const flood = get => { const seen = new Uint8Array(N), m = port('cave.mouth'), i0 = m[1] * MAP_W + m[0];
+        if (inMap(m[0], m[1]) && passT(get(i0))) { seen[i0] = 1; spread(seen, [i0], i => passT(get(i))); }
         return seen; };
+      // the cells of `opened` that `ok` lets through and that touch the reached set `sn`, and all they lead to, added to sn
+      const touches = (sn, c) => { const x = c % MAP_W; return (x > 0 && sn[c - 1]) || (x < MAP_W - 1 && sn[c + 1]) || (c >= MAP_W && sn[c - MAP_W]) || (c + MAP_W < N && sn[c + MAP_W]); };
+      const growBy = (sn, opened, ok) => { const q = []; for (const c of opened) if (!sn[c] && ok(c) && touches(sn, c)) { sn[c] = 1; q.push(c); } return spread(sn, q, ok); };
+      const passAt = i => passT(map[i]);
+      // the north flood (no bridge, dock or water: 4's own rule) kept and grown the same way; a dig that leaks is undone
+      const okN = i => { const t = map[i]; return (!SOLID.has(t) || PUSH_THROUGH.has(t)) && t !== BRIDGE && t !== DOCK && t !== T.WATER; };
+      let nseen = null;
       const was = flood(i => before[i]); let seen = flood(i => map[i]);
       // kept (out of sight of anything that prints the stats) for the self-test, which walks the finished map against it
       Object.defineProperty(S, 'wasReach', { value: was, enumerable: false });
@@ -634,8 +646,11 @@
         return null; };
       // open the dug tiles; if that opened a way through the step, close them again
       const open = dug => { const undo = dug.map(c => [c % MAP_W, (c / MAP_W) | 0, map[c]]);
+        if (!nseen) nseen = north();   // (before the dig: the dig's own tiles are grown in below, and taken out on a leak)
         for (const [x, y] of undo) { const c = y * MAP_W + x; set(x, y, SOLID.has(before[c]) ? T.GRASS : before[c]); }
-        if (!leaking(north()).length) return true;
+        const added = growBy(nseen, dug, okN);
+        if (!leaking(nseen).length) return true;
+        for (const c of added) nseen[c] = 0;
         for (const [x, y, t] of undo) set(x, y, t);
         return false; };
       for (let i0 = 0; i0 < MAP_W * MAP_H; i0++) {
@@ -643,12 +658,12 @@
         S.pockets++;
         // first through this file's own rock only
         let dug = route(i0, n => placed[n]);
-        if (dug && open(dug)) { S.pocketTiles += dug.length; seen = flood(i => map[i]); continue; }
+        if (dug && open(dug)) { S.pocketTiles += dug.length; growBy(seen, dug.concat([i0]), passAt); continue; }
         // where that is not enough (a bush on the line itself, whose one open side became the face), fell a tree
         // of the wood beside it instead, never the face that failed nor a tile no pass may touch
         const banned = new Set(dug || []);
         dug = route(i0, (n, x, y) => !banned.has(n) && (placed[n] || (TREES.has(map[n]) && free(x, y))));
-        if (dug && open(dug)) { S.pocketTiles += dug.length; S.pocketTrees += dug.filter(c => !placed[c]).length; seen = flood(i => map[i]); continue; }
+        if (dug && open(dug)) { S.pocketTiles += dug.length; S.pocketTrees += dug.filter(c => !placed[c]).length; growBy(seen, dug.concat([i0]), passAt); continue; }
         markPocket(i0); S.pocketsKept++;
       }
       S.leaks = leaking(north()); }
