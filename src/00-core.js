@@ -98,9 +98,10 @@ const HOOKS = {
 // 97-spread). WORLD_REV is the minor: a later stage that changes ground knights may have built on declares its footprint
 // in ATLAS.REVS[rev] and bumps it, and an older save is swept in those boxes only (97-spread's SPREAD.sweep).
 // Revs: 1 = Stage 5a, the starting creatures (87-critters: the ground each new spawn wakes on); 2 = Stage 5b, the riverside
-// places (85-riverside: the Old Bridge, Millbrook and Saltmere, each box with its dressing ring).
+// places (85-riverside: the Old Bridge, Millbrook and Saltmere, each box with its dressing ring); 3 = Stage 5c, the
+// Crossroads Inn (84-crossroads: its box grown over the inn and the yard, with its dressing ring).
 const WORLD_V = 2;
-const WORLD_REV = 2;
+const WORLD_REV = 3;
 let SAVE_LOCK = false;
 // a cell the knight could step onto but could not get across (an agility obstacle above his level): pathfinders go round it
 function pathBlocked(tx, ty, who) { for (const f of HOOKS.pathBlock) if (f(tx, ty, who)) return true; return false; }

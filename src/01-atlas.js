@@ -652,6 +652,9 @@
   }
   const reserved = () => Object.keys(ANCHORS).filter(id => ANCHORS[id].kind === 'reserved').map(id => ({ id, box: ANCHORS[id].newBox.slice() }));
   const reservedAt = (tx, ty) => { for (const id in ANCHORS) { const a = ANCHORS[id]; if (a.kind === 'reserved' && inB(a.newBox, tx, ty)) return id; } return null; };
+  // a built place's own ground: its staked box, or the box it grew to past its stakes (markBuilt's `box`: 84-crossroads'
+  // inn runs south of the roads that cross its stakes); placeAction keeps it
+  const builtAt = (tx, ty) => { for (const [id, info] of BUILT) if (info.box && inB(info.box, tx, ty)) return id; const r = reservedAt(tx, ty); return r && BUILT.has(r) ? r : null; };
   // a tile on a main road or one either side of it: within 2 tiles of a main road's centre line (the 2-wide road and
   // a tile of verge either side). A mask, made once (the tracks never move after load).
   const segD = (px, py, ax, ay, bx, by) => { const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy || 1, t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / l2)); return Math.hypot(px - ax - t * dx, py - ay - t * dy); };
@@ -797,13 +800,13 @@
 
   // the worldRev footprints (§10 "worldRev sweeps"): a later stage that changes ground a knight may have built on (Stage 5's
   // places, Stage 6's roads) adds REVS[n] = { boxes: [[x0, y0, x1, y1], ...] } (the new map's coordinates) and bumps
-  // WORLD_REV to n; a save with an older worldRev is swept in those boxes only (97-spread's SPREAD.sweep). 1: 87-critters; 2: 85-riverside.
+  // WORLD_REV to n; a save with an older worldRev is swept in those boxes only (97-spread's SPREAD.sweep). 1: 87-critters; 2: 85-riverside; 3: 84-crossroads.
   const REVS = {};
 
   Object.assign(A, {
     ANCHORS, PORTS, PORT_REL, TRACKS, WORLD, PINS, NESTED, OWNERS, REVS, PLAN: { W: PLAN_W, H: PLAN_H },
     frame, world: W, port, box, track, guards, anchorOf, oldToNew, oldToNewWorld,
-    MAIN_ROADS, ROAD_IDS, SIGNPOSTS, GROUNDS, pointOf, reserved, reservedAt, onMainRoad, signText, signLegs, signArms, BUILT, markBuilt, isBuilt, planFrame,
+    MAIN_ROADS, ROAD_IDS, SIGNPOSTS, GROUNDS, pointOf, reserved, reservedAt, onMainRoad, signText, signLegs, signArms, BUILT, markBuilt, isBuilt, builtAt, planFrame,
     frameProblems: () => problems.slice(), strict: () => [...STRICT.values()].map(e => e.slice()),
   });
 

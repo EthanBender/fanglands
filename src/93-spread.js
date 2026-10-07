@@ -259,8 +259,10 @@
     const i = ty * MAP_W + tx; if (ARMS.has(i)) return ARMS.get(i);
     const sign = SP.signs.find(q => q[0] === tx && q[1] === ty); let arms = null;
     if (sign) { const legs = A.signArms(tx, ty), seen = new Set(); arms = [];
-      for (const l of legs) { const w0 = l.to.replace(/\s*\(.*\)$/, '').replace(/^the /i, '').toUpperCase(), word = SHORT[w0] || w0.slice(0, 12); if (seen.has(word) || arms.length >= 3) continue; seen.add(word);
-        arms.push([-42 + arms.length * 16, word, false, /west/.test(l.dir)]); }
+      // (a built place may show four arms at its own crossroads: markBuilt's `arms`, 84-crossroads' four-way signpost)
+      const four = [...A.BUILT].some(([id, info]) => info.arms === 4 && A.builtAt(sign[2], sign[3]) === id), max = four ? 4 : 3, step = four ? 14 : 16, top = four ? -44 : -42;
+      for (const l of legs) { const w0 = l.to.replace(/\s*\(.*\)$/, '').replace(/^the /i, '').toUpperCase(), word = SHORT[w0] || w0.slice(0, 12); if (seen.has(word) || arms.length >= max) continue; seen.add(word);
+        arms.push([top + arms.length * step, word, false, /west/.test(l.dir)]); }
       if (!arms.length) arms = null; }
     ARMS.set(i, arms); return arms;
   };
@@ -277,7 +279,7 @@
     placeAction = function (id) {
       if (!window.__instance && !player.dead && !player.mech) {
         const { tx, ty } = frontTile(player, 40);
-        const rid = inMap(tx, ty) ? A.reservedAt(tx, ty) : null;
+        const rid = inMap(tx, ty) ? A.builtAt(tx, ty) || A.reservedAt(tx, ty) : null;
         // (a built place keeps its ground: its people, paths and yards are not a knight's to build on)
         if (rid && A.isBuilt(rid)) { notify(`This is ${NAMES[rid][1].replace(/^The /, 'the ')}'s ground. Build somewhere else.`); return; }
         if (inMap(tx, ty) && (rid || A.onMainRoad(tx, ty))) { notify('Builders have staked this ground.'); return; }

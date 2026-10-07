@@ -4268,6 +4268,53 @@ const TOWNSFOLK_ART = (() => {
       held: { kind: 'hf_lobster' },
     },
   });
+  // ---------- the Crossroads Inn (the Great Spread, Stage 5c: 84-crossroads): Mother Hobb the cook, and the two ----------
+  // travellers who wander the junction. Drawn by the sample's own hand (npc specs, the same pieces as Thistledown's people)
+  addPeople('crossroads', {
+    // ---------- Mother Hobb: a round, rosy old cook, white hair in a bun under a cream coif, a rust dress, a stew-spotted ----------
+    // apron, a pie in one hand and a steaming bowl in the other
+    mother_hobb: {
+      build: 'adult', size: 1.04, geo: { w: 9.6, gap: 4 }, skin: SKIN.ruddy,
+      face: { eye: '#3a2a1a', lash: '#2a1a10', brow: '#d8d0c4', lines: true, age: 'elder', eyes: 'happy', mouth: 'smile', lip: '#a04a42', nose: 'button', blush: 'rgba(230,110,100,0.55)' },
+      hair: { style: 'bun', c: '#d8d0c4' },
+      hat: { kind: 'coif', c: '#f2ece0' },
+      body: { kind: 'dress', c: '#a0522d', under: '#f4ecdc', rolled: '#f4ecdc', sleeve: '#8e4826', belt: '#5a2a16' },
+      over: [{ kind: 'apron', c: '#f4f0e6', stain: 'rgba(150,80,30,0.35)' }],
+      legs: { boot: '#3a2418' },
+      held: { kind: 'td_pie' },
+      off: { kind: 'td_bowl' },
+    },
+    // ---------- Jory the pedlar: a plum travelling coat, a knitted cap, a stubbly grin, a walking staff and a great ----------
+    // pack on his back, a pot and a roll of cloth tied to it
+    jory: {
+      build: 'adult', size: 1.0, skin: SKIN.tan,
+      face: { eye: '#2a1a10', brow: '#4a2a14', browW: 1.1, mouth: 'grin', nose: 'long', lines: true },
+      hair: { style: 'short', c: '#7a4a24' },
+      beard: { style: 'stubble', c: '#5a3a1a' },
+      hat: { kind: 'wool', c: '#7a3a4a' },
+      body: { kind: 'coat', c: '#6a5a8a', under: '#d9cfb8', sleeve: '#5e4f7c', belt: '#3a2614', buckle: '#c9a64a', pouch: '#6b4a2a' },
+      legs: { c: '#4a4038', boot: '#3a2a1c', cuff: '#6a5a4a', patch: '#5a5046' },
+      held: { kind: 'staff', c: '#7a5a34', len: 28 },
+      behind: (g, C) => { const B = C.B; rr(g, -B.w - 1.6, B.sh - 4.6, (B.w + 1.6) * 2, 13, 2.2); g.fillStyle = vfill(g, '#8a6a42', B.sh - 5, B.sh + 9, 0.2, -0.25); g.fill(); outline(g, 0.5);
+        ell(g, B.w - 0.4, B.sh - 5.4, 2.6, 1.8); g.fillStyle = metal(g, '#9a9ea6', B.sh - 7, B.sh - 4); g.fill(); outline(g, 0.4);
+        rr(g, -B.w - 2.2, B.sh - 7.4, 5.4, 3.2, 1.4); g.fillStyle = '#b8352b'; g.fill(); outline(g, 0.35); },
+      back: (g, C) => { const B = C.B; rr(g, -B.w - 1.2, B.sh - 3.6, (B.w + 1.2) * 2, B.waist - B.sh + 5.2, 2); g.fillStyle = vfill(g, '#8a6a42', B.sh - 4, B.waist + 2, 0.2, -0.25); g.fill(); outline(g, 0.5);
+        g.strokeStyle = '#5a3c22'; g.lineWidth = 0.9; for (const y of [B.sh + 1.4, B.waist - 1]) { g.beginPath(); g.moveTo(-B.w - 1.2, y); g.lineTo(B.w + 1.2, y); g.stroke(); } },
+    },
+    // ---------- Marigold the drover: a blue kerchief over copper braids, freckles, a moss-green tunic under a leather ----------
+    // jerkin, stout boots, and her shepherd's crook
+    marigold: {
+      build: 'adult', size: 0.98, skin: SKIN.light,
+      face: { eye: '#3a5a3a', lash: '#2a1a10', brow: '#a8642a', freckles: true, eyes: 'round', mouth: 'smile', lip: '#b05a5a', blush: 'rgba(235,130,110,0.4)' },
+      hair: { style: 'braids', c: '#c9843a' },
+      hat: { kind: 'kerchief', c: '#3f5f8a', dots: '#e8dcc0' },
+      body: { kind: 'tunic', c: '#7a8a4a', under: '#ece2c8', laces: true, rolled: '#ece2c8', sleeve: '#6e7e42', belt: '#3a2614', buckle: '#a8a090', pouch: '#5a3a22' },
+      over: [{ kind: 'leather', c: '#8a5a34' }],
+      legs: { c: '#5a4a36', boot: '#3a2a1c', cuff: '#7a5a3a', patch: '#6a5a44' },
+      held: { kind: 'staff', c: '#8a6a3a', len: 30, top: (g, top) => { g.lineCap = 'round'; g.strokeStyle = OUT; g.lineWidth = 2.6; g.beginPath(); g.moveTo(0, top + 3); g.lineTo(0, top - 1); g.arc(-2.8, top - 1, 2.8, 0, Math.PI * 1.15, true); g.stroke();
+        g.strokeStyle = '#8a6a3a'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(0, top + 3); g.lineTo(0, top - 1); g.arc(-2.8, top - 1, 2.8, 0, Math.PI * 1.15, true); g.stroke(); } },
+    },
+  });
 
 
   // ---------- pieces only one person uses ----------
@@ -4374,7 +4421,7 @@ const TOWNSFOLK_ART = (() => {
 
   // every person's name as the sample's people list has it (today.json), for the talking pose; the game's own name for
   // a person wins where the call site hands it in
-  const NPC_NAMES = {"sera": "Sera", "garrick": "Garrick", "marta": "Marta", "aldous": "Aldous the banker", "rosalind": "Rosalind", "brakka": "Brakka the smith", "pim": "Pim the tinker", "dorran": "Dorran the innkeeper", "duke": "Duke Ferrin", "hale": "Sergeant Hale", "tobin": "Tobin", "greta": "Greta", "fennick": "Fennick the trader", "wren": "Old Wren", "v1": "Ada", "v2": "Bram", "v3": "Cass", "v4": "Dunn", "v5": "Elsie", "v6": "Finn", "osric": "Gatewarden Osric", "ambrose": "Ambrose the bell-ringer", "hettie": "Hettie the apple seller", "mabel": "Mabel the candle maker", "moll": "Moll the flower seller", "wynn": "Wynn", "tess": "Tess", "robin": "Robin", "death2": "Death", "tam": "Old Tam", "nell": "Nell", "pip": "Pip", "hob": "Hob", "wenna": "Wenna", "harl": "Harl the ferryman", "pete": "Pete", "thrain": "King Thrain", "brunhild": "Brunhild the smith", "dagny": "Dagny", "orik": "Orik", "hilde": "Hilde", "aelith": "Queen Aelith", "lira": "Lira the archery master", "thessaly": "Thessaly the weaver", "faelan": "Faelan", "seraphel": "Queen Seraphel", "halcyon": "Master Halcyon", "pell": "Keeper Pell", "quill": "Quill Windward", "skyla": "Skyla Fleetwing", "ferris": "Old Ferris", "aldric": "Captain Aldric", "tamsin": "Tamsin the baker", "mossbeard": "Mossbeard", "aubade": "Sister Aubade", "corvin": "Guildmaster Corvin", "merriweather": "Merriweather", "orla": "Warden Orla", "brisk": "Warden Brisk", "lark": "Lark", "bellweather": "Bellweather the lamplighter", "brannoc": "Brannoc the porter", "fen": "Fen", "tilly": "Tilly", "wick": "Wick the messenger", "pippa": "Pippa the fruit seller", "maudie": "Maudie the weaver", "plume": "Old Plume the feather seller", "crockett": "Crockett the potter", "hazel": "Hazel", "wim": "Wim", "tinkerton": "Tinkerton", "grubb": "Grubb the cook", "nix": "Nix the scrapper", "snaggle": "Old Snaggle", "pipsqueak": "Pip-squeak", "gnash": "King Gnash", "mudge": "Mudge", "skritch": "Skritch", "ratchet": "Ratchet", "wilf": "Wilf the stonemason", "tamsin_miller": "Tamsin the miller", "odo": "Odo the farmer", "nan_gully": "Nan Gully"};
+  const NPC_NAMES = {"sera": "Sera", "garrick": "Garrick", "marta": "Marta", "aldous": "Aldous the banker", "rosalind": "Rosalind", "brakka": "Brakka the smith", "pim": "Pim the tinker", "dorran": "Dorran the innkeeper", "duke": "Duke Ferrin", "hale": "Sergeant Hale", "tobin": "Tobin", "greta": "Greta", "fennick": "Fennick the trader", "wren": "Old Wren", "v1": "Ada", "v2": "Bram", "v3": "Cass", "v4": "Dunn", "v5": "Elsie", "v6": "Finn", "osric": "Gatewarden Osric", "ambrose": "Ambrose the bell-ringer", "hettie": "Hettie the apple seller", "mabel": "Mabel the candle maker", "moll": "Moll the flower seller", "wynn": "Wynn", "tess": "Tess", "robin": "Robin", "death2": "Death", "tam": "Old Tam", "nell": "Nell", "pip": "Pip", "hob": "Hob", "wenna": "Wenna", "harl": "Harl the ferryman", "pete": "Pete", "thrain": "King Thrain", "brunhild": "Brunhild the smith", "dagny": "Dagny", "orik": "Orik", "hilde": "Hilde", "aelith": "Queen Aelith", "lira": "Lira the archery master", "thessaly": "Thessaly the weaver", "faelan": "Faelan", "seraphel": "Queen Seraphel", "halcyon": "Master Halcyon", "pell": "Keeper Pell", "quill": "Quill Windward", "skyla": "Skyla Fleetwing", "ferris": "Old Ferris", "aldric": "Captain Aldric", "tamsin": "Tamsin the baker", "mossbeard": "Mossbeard", "aubade": "Sister Aubade", "corvin": "Guildmaster Corvin", "merriweather": "Merriweather", "orla": "Warden Orla", "brisk": "Warden Brisk", "lark": "Lark", "bellweather": "Bellweather the lamplighter", "brannoc": "Brannoc the porter", "fen": "Fen", "tilly": "Tilly", "wick": "Wick the messenger", "pippa": "Pippa the fruit seller", "maudie": "Maudie the weaver", "plume": "Old Plume the feather seller", "crockett": "Crockett the potter", "hazel": "Hazel", "wim": "Wim", "tinkerton": "Tinkerton", "grubb": "Grubb the cook", "nix": "Nix the scrapper", "snaggle": "Old Snaggle", "pipsqueak": "Pip-squeak", "gnash": "King Gnash", "mudge": "Mudge", "skritch": "Skritch", "ratchet": "Ratchet", "wilf": "Wilf the stonemason", "tamsin_miller": "Tamsin the miller", "odo": "Odo the farmer", "nan_gully": "Nan Gully", "mother_hobb": "Mother Hobb", "jory": "Jory the pedlar", "marigold": "Marigold the drover"};
   const H = { lerp, ease, OUT, shade, hex, rr, ell, outline, vfill, rfill, metal, shadow, face4 };
   return { NEW_NPC, NPC_FAMILY, NPC_SPEC, NPC_NAMES, npc, drawPerson, npcFromToday, BUILDS, SKIN, HAIR, H, mark: f => { NPC_MARK = f || null; } };
 })();
