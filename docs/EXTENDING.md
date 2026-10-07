@@ -16,8 +16,13 @@ Everything a feature needs is reachable through globals and the `HOOKS` registry
   Shapes available to `drawItemIcon`: coins log rock bar plank door bed lodestone bench trap scrap
   powder silk wool pelt tusk seed potato meat fish bread pie rod sword dagger axe battleaxe
   warhammer pickaxe hoe hammer bow arrow bomb helm body legs shield. Unknown shapes draw a disc.
-- `MONSTER_DEFS.my_monster = { name, level, r, hp, att, maxHit, def, speed, aggro, sight, respawn, drops, human?, harmless?, thrower?, mech? }`
+- `MONSTER_DEFS.my_monster = { name, level, r, hp, att, maxHit, def, speed, aggro, sight, respawn, drops, human?, harmless?, thrower?, mech?, roam? }`
+  (`roam`: the tiles from home it idles within, and it turns for home the moment it is past them; default 4, a person 6)
   and a sprite via `HOOKS.drawMonster.my_monster = (g, e, hurt) => {...}` (g is already translated to the monster's position; draw around 0,0; `e.facing`, `e.walkT`, `e.moving`, `e.attackT`).
+  Every monster is drawn in the monster refit's look (78-monsterlook), whose self-test refuses a type with no drawing in it: a
+  new type is drawn in the sample's hand (`MONSTER_ART.H`'s helpers) and registered with `MONSTER_LOOK.addType(type, { draw,
+  size, box, r, pic, top })` from a pictures-only file listed in tools/build-sim.mjs STRIP_FILES (87-critterart is the
+  example: its box measured every 16th of a turn, standing, walking and biting, 3 px all round).
   Its death is drawn by `src/79-deaths.js` from the same sprite: one of six kinds, `beast` (falls onto its side, kicks, fades),
   `person` (falls back, the weapon clatters away), `undead` (crumbles into dust and bones), `machine` (sparks, smokes, breaks apart),
   `dragon` (crashes down, a last breath of smoke) or `golem` (cracks and splits into rubble). Name it in the def with
@@ -37,6 +42,16 @@ Everything a feature needs is reachable through globals and the `HOOKS` registry
 - World: `BUILDINGS.push({...})` (same shape as the existing ones; `stone`, `door`/`doorTop`, `f` furniture),
   `NPCS.push(initNpc({ id, name, x, y, tunic, hair, role, ... }))`, `REGIONS.unshift({ name, sub, x0, y0, x1, y1 })`,
   and `HOOKS.world.push((rnd, api) => { ... })` to carve terrain: `api.setTile/tileAt/spawnList(type, [[x,y],...])/road(points, tile, width, chance)/pen(...)`.
+  **New things on the finished land go in `HOOKS.built`, not `HOOKS.world`** (the Great Spread's Stage 5 places and creatures):
+  `HOOKS.built.push((rnd, api) => { ... })` (the same api) runs after every carving pass (92-worldshape, 93-ashedge) and the
+  spread's stakes (93-spread), before 95-thistledown's snapshot and 96-atlas's build. Those carving passes draw their own dice
+  tile by tile round every spawn, building and person, so one spawn added before them moved flowers and trees across 2,042
+  tiles of the map (Stage 5a, found by tools/spread-footprint.mjs); added in `HOOKS.built`, only what the pass lays changes.
+  A pass there uses its own `mulberry32` stream, never `rnd`. A Stage 5 or 6 change that touches ground a knight may have built
+  on declares its footprint (`ATLAS.REVS[n] = { boxes }`), bumps `WORLD_REV` (00-core) and passes
+  `node tools/spread-footprint.mjs <the previous build's index.html>` (every changed tile, person, building, region and spawn
+  inside the boxes plus 6) and `node tools/spread-migrate-check.mjs --rev-base <that index.html>` (the saves the live world's
+  knights hold, swept).
   The map is `MAP_W`×`MAP_H` = 400×280 tiles (the Great Spread, Stage 4a). **Built land is named by anchors, never by
   numbers**: every place is an Atlas anchor (`ATLAS.ANCHORS`: its box with `ATLAS.box(id)`, its named points with
   `ATLAS.port(id)`), the land between places is the stretched world (`ATLAS.world`), and the grounds are REGIONS (the

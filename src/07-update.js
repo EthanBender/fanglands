@@ -150,8 +150,10 @@ function update(dt) {
       else { vx = (m.home.x - m.x) / dHome; vy = (m.home.y - m.y) / dHome; m.facing = { x: vx, y: vy }; }
     } else {
       m.wanderT -= dt;
-      const roam = def.human ? 6 * TILE : 4 * TILE;
+      const roam = def.roam ? def.roam * TILE : def.human ? 6 * TILE : 4 * TILE;   // def.roam: tiles from home it idles within (87-critters: a pack or a snake that keeps to its patch)
       if (m.wanderT <= 0) { m.wanderT = 1 + Math.random() * 2.5; if (Math.random() < 0.55 && dHome < roam) { const a = Math.random() * Math.PI * 2; m.wander = { x: Math.cos(a), y: Math.sin(a) }; } else if (dHome >= roam) { m.wander = { x: (m.home.x - m.x) / dHome, y: (m.home.y - m.y) / dHome }; } else m.wander = { x: 0, y: 0 }; }
+      // a def.roam keeps to its patch: past it and heading out, it turns for home at once, not at the end of its leg (no dice)
+      if (def.roam && dHome >= roam && m.wander.x * (m.x - m.home.x) + m.wander.y * (m.y - m.home.y) > 0) m.wander = { x: (m.home.x - m.x) / dHome, y: (m.home.y - m.y) / dHome };
       vx = m.wander.x * 0.45; vy = m.wander.y * 0.45;
       if (vx || vy) m.facing = { x: vx, y: vy };
     }

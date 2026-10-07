@@ -587,6 +587,58 @@ new baseline; spread-migrate-check 26 of 26 (the matrix and the end-of-story sav
 changes, 0 lost machines, items or coins, every walk kept); `tools/jiggle.mjs --spread-only --spread-gate` green (transport
 1276 moved, 0 red; plate 8883/8883; suite ALL 1405 PASS).
 
+## Stage 5a: THE STARTING CREATURES (feat/spread5, 7 Oct 2026)
+
+`src/87-critters.js` (the rules; on the server's copy) and `src/87-critterart.js` (their look, the icons, the book's words,
+the legs a falling body shows; pictures only, in build-sim's STRIP_FILES). Spec §4 "Starting creatures".
+
+| Creature | Lv, hp | Fights | Where (new map) | Drops | Kill xp |
+| --- | --- | --- | --- | --- | --- |
+| crow | 2, 8 | when hit | the story signpost's meadow: 107,40 107,45 112,37 | crow feather (new), a stolen coin | 32 |
+| giant rat | 3, 12 | when hit | the cave meadow: 33,18 35,21 40,17 | coins, bread, potato and wheat seed | 48 |
+| snake | 4, 14 | when hit | Miller's Pond's shore: 75,52 78,57 76,62 | snakeskin (new) | 56 |
+| adder | 6, 18 | when hit | the pond's quiet west shore: 66,55 | snakeskin, always | 72 |
+| wild dog | 6, 18 | at sight 4 | packs of 3: west fields 122,35 124,36 122,37; east fields 219,59 221,60 219,61 | raw beef, wool | 72 |
+
+- Points are written in place frames (the signpost's, the pond's) or as world points (open land). Every spawn is on open
+  ground with nothing a new game clears in its 3 x 3 (no tree, rock, flower or mushroom), where 92's outline and its
+  region's box agree; Atlas zones goblin_fields (rats, crows, dogs) and miller_pond (snakes, adder).
+- Wild dogs: `roam: 2` (07-update: a monster with `def.roam` idles within that many tiles and turns for home the moment it
+  is past them; no new dice). Each dog stands 9.7 to 12.3 tiles off the nearest main road's centre line (the self-test
+  wants 8.5+ and more than roam + sight + the road's half-width, 7.5), so a knight on the road is never seen; the west
+  pack is the Cave Road's beat at about 110 (its nearest dog 9.7 from R1, within 10).
+- XP (42-playthrough's melee rows): crow 11,520/h and giant rat 17,280/h at level 1 (the goblin's 22,553/h), snake
+  17,280/h from 3, adder 6,480/h and a pack of wild dogs 34,560/h from 5, under the wolf's 48,084/h at 6.
+- The look: drawn in the approved sample's hand through `MONSTER_ART.H` and registered with `MONSTER_LOOK.addType` (new in
+  78-monsterlook; its self-test now counts the sample's 47 plus the added); crow, snake and adder from above (16 picture
+  facings), rat and dog from the side. Boxes measured as 78's were (`~/.fanglands/work/spread/s5a/measure.cjs`, which
+  reproduces 78's own wolf, spider and boar boxes). `DEATHS.LEGS` is exported (79-deaths): a falling crow shows two
+  legs, a snake none. Icons: crow feather, snakeskin.
+
+**HOOKS.built (new, 00-core; run by 93-spread right after its stakes).** The first build put the spawns in a
+`HOOKS.world` pass at 87's place: 92-worldshape and 93-ashedge, which run later, keep each spawn's ring clear while they
+draw their own dice tile by tile, so 16 spawns moved flowers and trees on 2,042 tiles across the map (and FIXED_SOLID on
+164). Spawned in `HOOKS.built` (after every carving pass and the stakes, before 95's snapshot and 96's Atlas), not one
+tile changes. **Stages 5b..5f must build their places there too** (and take their own stakes up there).
+
+**The footprint: WORLD_REV 1.** `ATLAS.REVS[1]` is the 3 x 3 round each of the 16 spawns (87-critters declares it): a
+knight's own plank or wall standing there in a world-2 save of rev 0 comes back to him (SPREAD.sweep), so no creature
+wakes inside it. `node tools/spread-footprint.mjs <previous index.html>` (new): against master 2e2c023 the world is 0
+tiles changed (map and variants), regions, buildings and people unchanged, 16 spawns added, all inside the footprint.
+The Atlas hash is unchanged (bd8d810602a3fcac); atlas.json's spawn list gains the 16.
+
+**The migration with the sweep.** `tools/spread-migrate-check.mjs --rev-base <previous index.html>` (new): every save is
+first moved into world 2 by the previous build (rev 0, what the live knights hold), then loaded and swept by this one;
+on the end-of-story save a plank on the middle of every footprint box (and one far from them) checks the sweep: 16
+planks back to the knight, the far one kept. Fixture + matrix 27/27; the real saves (the 7 Oct pre-spread-live export,
+locally) 94/94 both straight (world 1 to rev 1) and through rev 0, 0 stage changes, 0 lost machines, items or coins.
+
+**Proved on this build:** `./build.sh` (literals 0 bare, boot budget); headless ALL 1415; `--play` ALL 1416, the Fang dead
+(one earlier run failed 76-admin's phone-size ADMIN chip layout check once; the rerun and every other run passed it);
+online 430; mmo-sim 43, `--room` 43, `--sim` 47; dom-keys 16; mmo-sim-admin 8; mmo-sim-party 18; mmo-sim-teacher 9;
+mmo-sim-world 16; sim-suite 28; build-sim `--strip --reads`; atlas-drift; the footprint; the migration as above. The fingerprint
+baseline is this build's (7e1ddf8b81203ce0: the 16 spawns, their drawings and the new exports), for 5b's diff.
+
 ## Proving "nothing visible changed" (spec §9.4)
 
 ```

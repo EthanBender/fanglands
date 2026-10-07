@@ -535,7 +535,7 @@ const MONSTER_LOOK = (() => {
     try {
       // 1. every monster type has an approved drawing and a size, and nothing else is drawn by the look
       { const missing = types.filter(t => !NEW[t] || !BOX[t]), extra = Object.keys(NEW).filter(t => !MONSTER_DEFS[t]);
-        check(P + `every one of the ${types.length} monster types has its approved drawing and a measured size (and the look draws no type the game does not have)`, types.length === 47 && !missing.length && !extra.length, { n: types.length, missing, extra }); }
+        check(P + `every one of the ${types.length} monster types (the sample's 47 and ${ADDED.size} drawn since in its hand) has its approved drawing and a measured size (and the look draws no type the game does not have)`, types.length === 47 + ADDED.size && !missing.length && !extra.length, { n: types.length, missing, extra }); }
       // 2. each type, at 8 facings, standing, walking, swinging and hurt, through drawCharacter: the new drawing, never the old
       { const bad = []; const by0 = Object.assign({}, STATS.by), passed0 = STATS.passed; time = 3.1;
         for (const t of types) for (let d = 0; d < 8; d++) for (const pose of ['stand', 'walk', 'swing', 'hurt']) {
@@ -688,7 +688,20 @@ const MONSTER_LOOK = (() => {
     return true;
   }
 
+  // ---------- a type drawn after the approved sample (the Great Spread's starting creatures, 87-critterart) ----------
+  // addType(type, { draw, size, box, r, pic, top }): its drawing in the sample's hand (MONSTER_ART.H), its scale, its box
+  // measured the way BOX's were (every 16th of a turn, standing, walking, swinging; 3 px all round), its hit circle (the
+  // MONSTER_DEFS r its own file sets), whether the common-monster pictures keep it, and whether it turns to face where it
+  // goes seen from above (16 picture facings, as the spiders and the hawk). The self-test counts the sample's 47 types
+  // plus these, so a type the game gains still needs a drawing of its own.
+  const ADDED = new Set();
+  function addType(type, o) {
+    if (!o || typeof o.draw !== 'function' || !Array.isArray(o.box) || o.box.length !== 8 || !(o.r > 0)) throw new Error('MONSTER_LOOK.addType: ' + type + ' needs draw, an 8-number box and r');
+    NEW[type] = o.draw; if (o.size && o.size !== 1) SIZE[type] = o.size; BOX[type] = o.box.slice(); HIT_R[type] = o.r;
+    if (o.pic) PIC_TYPES.add(type); if (o.top) TOP_DIRS.add(type); ADDED.add(type);
+  }
+
   return { ON, STATS, LOOK_FIELDS, MACHINES, drawMachine, HIT_R, HIT_R_WAS, ATTACK_T, BOX, PIC_TYPES, viewOf, lookType, isMonsterKind, drawLook, boxOf, reach, headroom, picPose, clearPics,
-    PICS, HELD, releaseHeld, MEM, fit, drawWeapon, drawColossusLook, colossusView, installColossus, paint, _drawCharacter };
+    PICS, HELD, releaseHeld, MEM, fit, drawWeapon, drawColossusLook, colossusView, installColossus, paint, _drawCharacter, addType, ADDED, TOP_DIRS };
 })();
 window.MONSTER_LOOK = MONSTER_LOOK;

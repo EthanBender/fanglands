@@ -244,6 +244,9 @@
       set(best.x, best.y, T.SIGN); SP.signs.push([best.x, best.y, nx, ny]); S.signs++;
     }
   });
+  // the passes that build on the finished land (HOOKS.built: the Stage 5 places and creatures): right after the stakes, so a
+  // place can take its own up, and before 95-thistledown's snapshot and 96-atlas's build (both pushed by later files)
+  HOOKS.world.push((rnd, api) => { for (const f of HOOKS.built) f(rnd, api); });
 
   // ---------- what a road's signpost shows on its arms (08-draw's drawSignProp asks) ----------
   // up to three arms, each a short name pointing left (west-ish) or right; the story's own signpost keeps its arms

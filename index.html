@@ -99,6 +99,11 @@ const HOOKS = {
   xpSource: [], // fn(add) — declare a feature's XP sources to the progression audit: add(skill, name, req, xp, secs, note)
   keyHelp: [], // { action, codes: ['KeyK'] } — a feature's desktop keys, listed by the Settings panel's Controls line // (g, x, y, w, h) → draw one 36 px button row in the pause menu (slots between Settings and New game)
   world: [],        // fn(rnd, api) — runs at the end of generateWorld; api = { setTile, tileAt, spawnList, road }
+  built: [],        // fn(rnd, api) — a pass on the FINISHED land (the Great Spread's Stage 5 places and creatures): after every
+                    // carving pass (92-worldshape's outlines, 93-ashedge) and the spread's stakes (93-spread, which runs these
+                    // right after its own pass), before 95-thistledown's snapshot and 96-atlas's build. Those carving passes
+                    // draw their own dice tile by tile, so a tile or a spawn added BEFORE them moves things all over the map;
+                    // added here, nothing but what the pass itself lays changes. Use your own mulberry32 stream, never rnd.
   update: [],       // fn(dt) — runs every tick after the core update
   draw: [],         // fn(g, items, cam) — push {y, draw} entries into the y-sorted world list
   hud: [],          // fn(g, narrow) — extra HUD after the core HUD, before panels
@@ -132,8 +137,9 @@ const HOOKS = {
 // nothing until the page is reloaded. WORLD_V 2 is the Great Spread's 400 x 280 map (a world-1 save is moved onto it by
 // 97-spread). WORLD_REV is the minor: a later stage that changes ground knights may have built on declares its footprint
 // in ATLAS.REVS[rev] and bumps it, and an older save is swept in those boxes only (97-spread's SPREAD.sweep).
+// Revs: 1 = Stage 5a, the starting creatures (87-critters: the ground each new spawn wakes on).
 const WORLD_V = 2;
-const WORLD_REV = 0;
+const WORLD_REV = 1;
 let SAVE_LOCK = false;
 // a cell the knight could step onto but could not get across (an agility obstacle above his level): pathfinders go round it
 function pathBlocked(tx, ty, who) { for (const f of HOOKS.pathBlock) if (f(tx, ty, who)) return true; return false; }
@@ -2960,8 +2966,10 @@ function update(dt) {
       else { vx = (m.home.x - m.x) / dHome; vy = (m.home.y - m.y) / dHome; m.facing = { x: vx, y: vy }; }
     } else {
       m.wanderT -= dt;
-      const roam = def.human ? 6 * TILE : 4 * TILE;
+      const roam = def.roam ? def.roam * TILE : def.human ? 6 * TILE : 4 * TILE;   // def.roam: tiles from home it idles within (87-critters: a pack or a snake that keeps to its patch)
       if (m.wanderT <= 0) { m.wanderT = 1 + Math.random() * 2.5; if (Math.random() < 0.55 && dHome < roam) { const a = Math.random() * Math.PI * 2; m.wander = { x: Math.cos(a), y: Math.sin(a) }; } else if (dHome >= roam) { m.wander = { x: (m.home.x - m.x) / dHome, y: (m.home.y - m.y) / dHome }; } else m.wander = { x: 0, y: 0 }; }
+      // a def.roam keeps to its patch: past it and heading out, it turns for home at once, not at the end of its leg (no dice)
+      if (def.roam && dHome >= roam && m.wander.x * (m.x - m.home.x) + m.wander.y * (m.y - m.home.y) > 0) m.wander = { x: (m.home.x - m.x) / dHome, y: (m.home.y - m.y) / dHome };
       vx = m.wander.x * 0.45; vy = m.wander.y * 0.45;
       if (vx || vy) m.facing = { x: vx, y: vy };
     }
@@ -19033,7 +19041,10 @@ window.PLACE_KIT = PLACE_KIT;
     add('crafting', "Pim's powder run / Thessaly's wool (once each)", 1, 300, 0, 'notice board'); if (ITEMS.jungle_log) add('crafting', 'Queen Aelith (once)', 1, 150, 0, 'quest');
     add('range', 'arrows on a goblin (4 xp per damage)', 1, 4 * 3, 0.6, 'stone arrows, avg hit 3'); add('range', "Wren's silk (once)", 1, 60, 0, 'quest'); if (ITEMS.elven_arrow) add('range', "Lira's twenty (once)", 1, 500, 0, 'quest');
     for (const f of HOOKS.xpSource) { try { f(add); } catch (e) { } } // features declare their own (45-progression)
-    kill('goblin', 'goblin soldier', 1, 'walk + kill;'); kill('wolf', 'wolf', 6); kill('sapper', 'goblin sapper', 7); kill('brute', 'goblin brute', 9); kill('walker', 'goblin walker', 18);
+    kill('goblin', 'goblin soldier', 1, 'walk + kill;');
+    // the starting creatures (87-critters): the rungs between the cave spiders and the goblins, and on to the wolves
+    if (window.CRITTERS) { kill('crow', 'crow', 1, 'the signpost meadow;'); kill('giant_rat', 'giant rat', 1, 'the cave meadow;'); kill('snake', 'snake', 3, "Miller's Pond;"); kill('adder', 'adder', 5, "Miller's Pond;"); kill('wild_dog', 'wild dog (a pack of 3)', 5, 'the fields off the road;'); }
+    kill('wolf', 'wolf', 6); kill('sapper', 'goblin sapper', 7); kill('brute', 'goblin brute', 9); kill('walker', 'goblin walker', 18);
     // the square's beast dies once; the War Shed's (20-hollowford) is a rematch at most once every 300 s of the day clock
     if (MONSTER_DEFS.barrelbeast) add('melee', 'the War Shed Barrelbeast (one per 300 s)', 28, killXp('barrelbeast'), 300, '20-hollowford');
     if (MONSTER_DEFS.ash_drake) kill('ash_drake', 'ash drake', 30); if (MONSTER_DEFS.green_dragon) kill('green_dragon', 'green dragon', 45); if (MONSTER_DEFS.red_dragon) kill('red_dragon', 'red dragon', 60);
@@ -48026,7 +48037,7 @@ const MONSTER_LOOK = (() => {
     try {
       // 1. every monster type has an approved drawing and a size, and nothing else is drawn by the look
       { const missing = types.filter(t => !NEW[t] || !BOX[t]), extra = Object.keys(NEW).filter(t => !MONSTER_DEFS[t]);
-        check(P + `every one of the ${types.length} monster types has its approved drawing and a measured size (and the look draws no type the game does not have)`, types.length === 47 && !missing.length && !extra.length, { n: types.length, missing, extra }); }
+        check(P + `every one of the ${types.length} monster types (the sample's 47 and ${ADDED.size} drawn since in its hand) has its approved drawing and a measured size (and the look draws no type the game does not have)`, types.length === 47 + ADDED.size && !missing.length && !extra.length, { n: types.length, missing, extra }); }
       // 2. each type, at 8 facings, standing, walking, swinging and hurt, through drawCharacter: the new drawing, never the old
       { const bad = []; const by0 = Object.assign({}, STATS.by), passed0 = STATS.passed; time = 3.1;
         for (const t of types) for (let d = 0; d < 8; d++) for (const pose of ['stand', 'walk', 'swing', 'hurt']) {
@@ -48179,8 +48190,21 @@ const MONSTER_LOOK = (() => {
     return true;
   }
 
+  // ---------- a type drawn after the approved sample (the Great Spread's starting creatures, 87-critterart) ----------
+  // addType(type, { draw, size, box, r, pic, top }): its drawing in the sample's hand (MONSTER_ART.H), its scale, its box
+  // measured the way BOX's were (every 16th of a turn, standing, walking, swinging; 3 px all round), its hit circle (the
+  // MONSTER_DEFS r its own file sets), whether the common-monster pictures keep it, and whether it turns to face where it
+  // goes seen from above (16 picture facings, as the spiders and the hawk). The self-test counts the sample's 47 types
+  // plus these, so a type the game gains still needs a drawing of its own.
+  const ADDED = new Set();
+  function addType(type, o) {
+    if (!o || typeof o.draw !== 'function' || !Array.isArray(o.box) || o.box.length !== 8 || !(o.r > 0)) throw new Error('MONSTER_LOOK.addType: ' + type + ' needs draw, an 8-number box and r');
+    NEW[type] = o.draw; if (o.size && o.size !== 1) SIZE[type] = o.size; BOX[type] = o.box.slice(); HIT_R[type] = o.r;
+    if (o.pic) PIC_TYPES.add(type); if (o.top) TOP_DIRS.add(type); ADDED.add(type);
+  }
+
   return { ON, STATS, LOOK_FIELDS, MACHINES, drawMachine, HIT_R, HIT_R_WAS, ATTACK_T, BOX, PIC_TYPES, viewOf, lookType, isMonsterKind, drawLook, boxOf, reach, headroom, picPose, clearPics,
-    PICS, HELD, releaseHeld, MEM, fit, drawWeapon, drawColossusLook, colossusView, installColossus, paint, _drawCharacter };
+    PICS, HELD, releaseHeld, MEM, fit, drawWeapon, drawColossusLook, colossusView, installColossus, paint, _drawCharacter, addType, ADDED, TOP_DIRS };
 })();
 window.MONSTER_LOOK = MONSTER_LOOK;
 
@@ -50492,7 +50516,7 @@ const DEATHS = (() => {
   });
 
   Object.assign(API, {
-    DUR, BOSS_DUR, FLASH, HOLD, POP, KIND, BOSS_TYPES,
+    DUR, BOSS_DUR, FLASH, HOLD, POP, KIND, BOSS_TYPES, LEGS,   // LEGS: a later animal's legs as it rolls over (87-critterart: a bird's two, a snake's none)
     list: () => corpses.slice(), of: m => (m && m[DA] && corpses.includes(m[DA])) ? m[DA] : null,
     spawn, pose, uOf, kindOf, isBoss, holding, popAt, draw: drawCorpse, drawFlash,
     hidden: d => !!d && d[PIN] > 0, popping: d => !!d && d[PIN] === 0 && d[PT] !== undefined, waiting: () => pending.length,
@@ -63610,6 +63634,566 @@ const MOUNT_LOOK = (() => {
   return window.MOUNT_LOOK;
 })();
 
+// ---- src/87-critterart.js ----
+// ============================================================================
+// THE STARTING CREATURES' LOOK (the Great Spread, Stage 5a; the rules are 87-critters)
+// src/87-critterart.js — pictures only: stripped from the server's copy (tools/build-sim.mjs STRIP_FILES).
+//
+// Five new monsters drawn in the hand of the owner-approved sample (78-monsterart, through its shared helpers
+// MONSTER_ART.H), keeping its binding calls: animals seen from the side (facing us from the front, facing away from
+// behind), birds and the low things that crawl seen from above with a shadow, turned to face where they go.
+//   crow        from above: wings folded as it struts and pecks, open and beating as it flits low; a glossy blue-black
+//   giant rat   from the side: a long body low to the ground, round pink ears, a bald pink tail, whiskers
+//   snake       from above: an S that travels as it slithers and sways as it waits, a yellow collar, a flicking tongue
+//   adder       the same, grey-brown with the black zigzag down its back and a red eye
+//   wild dog    from the side: a scruffy tan mongrel, one ear up and one flopped, its tail curled over its back
+// 78-monsterart.js is generated from the sample and never edited by hand: these are added through
+// MONSTER_LOOK.addType (their boxes measured as the sample's were: every 16th of a turn, standing, walking and biting,
+// in headless Chromium, 3 px all round; ~/.fanglands/work/spread/s5a/measure.cjs), so every place that draws a monster
+// (the world, a puppet online, a falling body, the book's portrait, the admin panel) draws these too.
+// Also here: 79-deaths' legs as one rolls over (a crow's two, a snake's none), the icons of the crow feather and the
+// snakeskin (80-icons' rules: inside -9..+9), and the book's words for each creature.
+// ============================================================================
+{
+  const H = MONSTER_ART.H, { lerp, OUT, shade, rr, ell, outline, vfill, rfill, shadow, face4, swingOf, bobOf } = H;
+  const TAU = Math.PI * 2;
+
+  // ---------- the shared moves (the sample's own, redone here: 78-monsterart keeps them inside its closure) ----------
+  // seen from above, turned to face where it goes; the shadow drawn first, offset (a flyer's lift)
+  function topDown(g, e, fn, shadowOff) {
+    const ang = Math.atan2(e.facing.y, e.facing.x);
+    g.save();
+    if (shadowOff) { g.save(); g.translate(shadowOff.x, shadowOff.y); g.rotate(ang); fn(g, true); g.restore(); }
+    g.rotate(ang); fn(g, false); g.restore();
+  }
+  // four legs in a trot (diagonal pairs together): L { xs: [back, front], y, len, w, c, foot, k }
+  function quadLegs(g, e, L) {
+    const ph = e.moving ? e.walkT : 0;
+    for (const [x, p, dim] of [[L.xs[0], 0, 0.82], [L.xs[1], Math.PI, 0.82], [L.xs[0] + 1.6, Math.PI, 1], [L.xs[1] + 1.6, 0, 1]]) {
+      const a = e.moving ? Math.sin(ph + p) * (L.k || 0.45) : 0;
+      g.save(); g.translate(x, L.y); g.rotate(a);
+      rr(g, -L.w / 2, 0, L.w, L.len, L.w / 2); g.fillStyle = dim < 1 ? shade(L.c, -0.25) : L.c; g.fill(); outline(g, 0.5);
+      rr(g, -L.w / 2 - 0.2, L.len - 1.4, L.w + 0.4, 1.8, 0.8); g.fillStyle = L.foot; g.fill();
+      g.restore();
+    }
+  }
+  // side-on, mirrored facing left; facing us its front, facing away its back
+  function drawQuad(g, e, Q) {
+    const f = face4(e), sw = swingOf(e), bob = bobOf(e, 1);
+    g.save(); shadow(g, 0, Q.ground + 0.6, Q.sh, 3.2);
+    if (f === 'down' || f === 'up') { g.translate(0, bob); (f === 'down' ? Q.front : Q.rear)(g, e, sw); g.restore(); return; }
+    if (f === 'left') g.scale(-1, 1);
+    g.translate(sw >= 0 ? Math.sin(sw * Math.PI) * (Q.lunge || 3) : 0, 0);
+    Q.side(g, e, sw, bob);
+    g.restore();
+  }
+  // a bite: a few white dashes where the jaws met
+  function snap(g, x, y, sw) {
+    if (sw < 0.25 || sw > 0.85) return;
+    const a = 1 - Math.abs(sw - 0.55) / 0.3;
+    g.save(); g.strokeStyle = `rgba(255,255,255,${(0.7 * a).toFixed(3)})`; g.lineWidth = 0.8; g.lineCap = 'round';
+    for (const [dx, dy] of [[1.6, -1.8], [2.4, 0], [1.6, 1.8]]) { g.beginPath(); g.moveTo(x + dx * 0.6, y + dy * 0.6); g.lineTo(x + dx * 1.4, y + dy * 1.4); g.stroke(); }
+    g.restore();
+  }
+
+  // ---------- the crow ----------
+  const CROW = { c: '#23262f', gloss: '#56649a', dark: '#14161c', beak: '#3e3c3a', beakHi: '#6a6660', eye: '#e2c86a' };
+  function drawCrow(g, e) {
+    const sw = swingOf(e), peck = sw >= 0 ? Math.sin(sw * Math.PI) : 0, seed = e.seed || 0;
+    // standing it hops now and then (a 2 s loop); moving it flits a hand's height off the grass, wings beating twice a step
+    const hop = e.moving ? 0 : Math.max(0, Math.sin(time * Math.PI * 2 + seed)) * 1.6;
+    const lift = e.moving ? 6.5 + Math.sin(e.walkT) * 0.8 : hop;
+    const beat = e.moving ? Math.sin(e.walkT * 2) : 0, open = e.moving ? 1 : 0;
+    const body = (g, sh) => {
+      const col = c => sh ? 'rgba(0,0,0,0.22)' : c;
+      // the tail: a fan of long feathers
+      g.beginPath(); g.moveTo(-3.6, -1.2); g.lineTo(-10.4, -3); g.quadraticCurveTo(-11.6, 0, -10.4, 3); g.lineTo(-3.6, 1.2); g.closePath();
+      g.fillStyle = sh ? col() : vfill(g, CROW.c, -3, 3, 0.15, -0.3); g.fill();
+      if (!sh) { outline(g, 0.5); g.strokeStyle = CROW.dark; g.lineWidth = 0.45; for (const y of [-1.6, 0, 1.6]) { g.beginPath(); g.moveTo(-5, y * 0.4); g.lineTo(-10.2, y * 1.4); g.stroke(); } }
+      // the wings: folded along its back, or spread and beating
+      for (const s of [-1, 1]) {
+        if (open) {
+          const span = 10.5 + beat * 2.2, W = y => s * y * (span / 10.5);
+          g.beginPath(); g.moveTo(1.8, s * 1.8); g.quadraticCurveTo(1.2, W(6.5), -0.6, W(11));
+          for (let k = 0; k < 4; k++) { const x = -1.4 - k * 1.4, y = 11.4 - k * 1.5; g.lineTo(x - 1.4, W(y + 0.4)); g.lineTo(x - 0.7, W(y - 1)); }
+          g.quadraticCurveTo(-6.6, W(4.6), -4.8, s * 1.6); g.closePath();
+          g.fillStyle = sh ? col() : vfill(g, CROW.c, -11, 11, 0.12, -0.25); g.fill();
+          if (sh) continue;
+          outline(g, 0.55);
+          g.strokeStyle = 'rgba(120,140,200,0.35)'; g.lineWidth = 0.5; for (let k = 0; k < 3; k++) { g.beginPath(); g.moveTo(-0.4 - k * 1.2, W(3 + k)); g.lineTo(-1.6 - k * 1.4, W(9.4 - k * 1.2)); g.stroke(); }
+        } else {
+          ell(g, -2.2, s * 2.6, 6.2, 2, s * -0.06); g.fillStyle = sh ? col() : vfill(g, CROW.c, s * 2.6 - 2, s * 2.6 + 2, 0.18, -0.3); g.fill();
+          if (sh) continue;
+          outline(g, 0.5);
+          g.strokeStyle = CROW.dark; g.lineWidth = 0.4; for (const x of [-4.6, -6.4]) { g.beginPath(); g.moveTo(x, s * 1.4); g.lineTo(x - 1.4, s * 3.6); g.stroke(); }
+        }
+      }
+      // the body and its blue sheen
+      ell(g, -0.8, 0, 5.4, 3.3); g.fillStyle = sh ? col() : rfill(g, CROW.c, -0.8, 0, 5.4); g.fill(); if (sh) return; outline(g, 0.6);
+      g.fillStyle = 'rgba(86,100,154,0.45)'; ell(g, -1.6, -1, 3, 1, -0.1); g.fill();
+      // the head, pushed forward in a peck
+      const hx = 4.6 + peck * 2.4;
+      ell(g, hx, 0, 2.7, 2.5); g.fillStyle = rfill(g, CROW.c, hx, 0, 2.7); g.fill(); outline(g, 0.5);
+      g.fillStyle = 'rgba(86,100,154,0.5)'; ell(g, hx - 0.6, -0.9, 1.2, 0.6); g.fill();
+      // the beak, a little open at the bottom of a peck
+      const gape = peck > 0.5 ? (peck - 0.5) * 1.2 : 0;
+      for (const s of [-1, 1]) { g.beginPath(); g.moveTo(hx + 1.6, s * 1); g.lineTo(hx + 5.6, s * gape * 0.5); g.lineTo(hx + 1.8, s * 0.1); g.closePath(); g.fillStyle = s < 0 ? CROW.beakHi : CROW.beak; g.fill(); outline(g, 0.35); }
+      for (const s of [-1, 1]) { ell(g, hx + 0.9, s * 1.5, 0.62, 0.56); g.fillStyle = CROW.eye; g.fill(); ell(g, hx + 1.05, s * 1.5, 0.3, 0.34); g.fillStyle = '#0d0d10'; g.fill(); }
+    };
+    g.save(); g.translate(0, -lift); topDown(g, e, body, { x: 1.5 + lift * 0.25, y: lift + 4 }); g.restore();
+    // the feet, when it stands: two little three-toed prints of shadow under it
+    if (!e.moving && lift < 0.6) { g.strokeStyle = 'rgba(0,0,0,0.3)'; g.lineWidth = 0.5; for (const s of [-1, 1]) { g.beginPath(); g.moveTo(s * 1.4, 3.8); g.lineTo(s * 1.4 - 1, 5); g.moveTo(s * 1.4, 3.8); g.lineTo(s * 1.4 + 1, 5); g.stroke(); } }
+  }
+
+  // ---------- the giant rat ----------
+  const RAT = { c: '#7b6b5c', belly: '#bcae9a', dark: '#4e4238', skin: '#dba2a0', nose: '#c46f74' };
+  function ratTail(g, x, y, e, len, sideways) {
+    const wig = Math.sin(time * Math.PI * 2 + (e.seed || 0)) * 0.6 + (e.moving ? Math.sin(e.walkT) * 0.8 : 0);
+    g.lineCap = 'round';
+    for (const [w, c] of [[2.4, OUT], [1.5, RAT.skin]]) {
+      g.strokeStyle = c; g.lineWidth = w; g.beginPath(); g.moveTo(x, y);
+      if (sideways) g.bezierCurveTo(x - len * 0.4, y + 3 + wig, x - len * 0.7, y - 2 - wig, x - len, y + 1 + wig * 1.5);
+      else g.bezierCurveTo(x + 2 + wig, y + len * 0.4, x - 2 - wig, y + len * 0.7, x + wig * 1.5, y + len);
+      g.stroke();
+    }
+    g.strokeStyle = 'rgba(120,60,60,0.35)'; g.lineWidth = 0.4;
+    for (let k = 1; k < 5; k++) { const t = k / 5; const px = sideways ? x - len * t : x + Math.sin(t * 3) * 1.2, py = sideways ? y + Math.sin(t * 6 + wig) * 1.6 : y + len * t; g.beginPath(); g.moveTo(px - 0.6, py - 0.6); g.lineTo(px + 0.6, py + 0.6); g.stroke(); }
+  }
+  function ratSide(g, e, sw, bob) {
+    ratTail(g, -9.5, 1.6 + bob, e, 13, true);
+    quadLegs(g, e, { xs: [-6, 3.8], y: 3 + bob, len: 4.2, w: 2, c: RAT.c, foot: RAT.skin, k: 0.6 });
+    g.translate(0, bob);
+    // a long low body, its back arched
+    g.beginPath(); g.moveTo(-10.4, 2.4); g.quadraticCurveTo(-11, -4.6, -3, -5.4); g.quadraticCurveTo(4, -5.8, 7.4, -2.6); g.quadraticCurveTo(8.4, 2, 5, 4); g.quadraticCurveTo(-3, 5.4, -10.4, 2.4); g.closePath();
+    g.fillStyle = vfill(g, RAT.c, -6, 5, 0.18, -0.3); g.fill(); outline(g, 0.8);
+    g.beginPath(); g.moveTo(-8.6, 3); g.quadraticCurveTo(-1, 5.2, 4.6, 3.6); g.quadraticCurveTo(-1, 2.6, -8.6, 3); g.fillStyle = RAT.belly; g.fill();
+    // a rough coat
+    g.strokeStyle = 'rgba(40,30,22,0.45)'; g.lineWidth = 0.45; for (const x of [-7.4, -4.6, -1.8, 1]) { g.beginPath(); g.moveTo(x, -4.6); g.lineTo(x + 1, -2.8); g.stroke(); }
+    // the head: a long wedge to a pink nose, a round ear
+    const bite = sw >= 0 ? Math.sin(sw * Math.PI) : 0;
+    g.save(); g.translate(6.4, -2.2); g.rotate(sw >= 0 ? 0.12 : Math.sin(time * Math.PI * 3) * 0.04);
+    g.beginPath(); g.moveTo(-2.4, -3.2); g.quadraticCurveTo(2, -3.6, 7, -0.4); g.quadraticCurveTo(7.2, 1, 6, 1.6); g.quadraticCurveTo(1, 3.4, -2.6, 2.4); g.closePath();
+    g.fillStyle = vfill(g, RAT.c, -3.4, 2.6); g.fill(); outline(g, 0.7);
+    ell(g, 7, 0.5, 1.1, 0.95); g.fillStyle = RAT.nose; g.fill(); outline(g, 0.35);
+    // whiskers
+    g.strokeStyle = 'rgba(240,235,225,0.75)'; g.lineWidth = 0.35; for (const a of [-0.35, 0, 0.35]) { g.beginPath(); g.moveTo(6, 0.8); g.lineTo(6 + Math.cos(a) * 4.4, 0.8 + Math.sin(a) * 2.6); g.stroke(); }
+    // teeth in a bite
+    if (bite > 0.1) { g.fillStyle = '#f6eed2'; g.fillRect(5.2, 1.4, 0.9, 1.2 * bite + 0.4); g.fillStyle = '#6a2a2a'; ell(g, 4.6, 1.8, 1.4, 0.6 * bite); g.fill(); }
+    // the ear and the eye
+    ell(g, -0.8, -3.6, 2.3, 2.1, -0.2); g.fillStyle = RAT.c; g.fill(); outline(g, 0.5); ell(g, -0.7, -3.5, 1.4, 1.2, -0.2); g.fillStyle = RAT.skin; g.fill();
+    ell(g, 2.6, -1.1, 0.8, 0.75); g.fillStyle = '#120a08'; g.fill(); ell(g, 2.8, -1.3, 0.28, 0.28); g.fillStyle = '#fff'; g.fill();
+    g.restore();
+    snap(g, 13.6, -1.6, sw);
+  }
+  function ratFront(g, e, sw) {
+    quadLegs(g, e, { xs: [-3, 1.4], y: 3.2, len: 4, w: 2, c: RAT.c, foot: RAT.skin, k: 0.25 });
+    ell(g, 0, 0.8, 7, 5.2); g.fillStyle = vfill(g, RAT.c, -4, 6); g.fill(); outline(g, 0.8);
+    g.fillStyle = RAT.belly; ell(g, 0, 2.4, 3.6, 2.6); g.fill();
+    const hy = -3.4;
+    for (const s of [-1, 1]) { ell(g, s * 3.8, hy - 3.2, 2.4, 2.2); g.fillStyle = RAT.c; g.fill(); outline(g, 0.5); ell(g, s * 3.8, hy - 3.1, 1.5, 1.35); g.fillStyle = RAT.skin; g.fill(); }
+    g.beginPath(); g.moveTo(-4, hy - 1.6); g.quadraticCurveTo(0, hy - 4.4, 4, hy - 1.6); g.quadraticCurveTo(2, hy + 3.4, 0, hy + 4); g.quadraticCurveTo(-2, hy + 3.4, -4, hy - 1.6); g.closePath();
+    g.fillStyle = rfill(g, RAT.c, 0, hy, 4.4); g.fill(); outline(g, 0.7);
+    ell(g, 0, hy + 3.6, 1.1, 0.9); g.fillStyle = RAT.nose; g.fill();
+    g.strokeStyle = 'rgba(240,235,225,0.75)'; g.lineWidth = 0.35; for (const s of [-1, 1]) for (const a of [-0.2, 0.15]) { g.beginPath(); g.moveTo(s * 0.8, hy + 3.2); g.lineTo(s * 5, hy + 3.2 + a * 6); g.stroke(); }
+    for (const s of [-1, 1]) { ell(g, s * 1.7, hy, 0.75, 0.75); g.fillStyle = '#120a08'; g.fill(); ell(g, s * 1.85, hy - 0.2, 0.26, 0.26); g.fillStyle = '#fff'; g.fill(); }
+    if (sw >= 0) { g.fillStyle = '#f6eed2'; g.fillRect(-0.9, hy + 4.4, 0.8, 1.4); g.fillRect(0.1, hy + 4.4, 0.8, 1.4); }
+  }
+  function ratRear(g, e) {
+    quadLegs(g, e, { xs: [-3, 1.4], y: 3.2, len: 4, w: 2, c: RAT.c, foot: RAT.skin, k: 0.25 });
+    ell(g, 0, 0.6, 7, 5.4); g.fillStyle = vfill(g, RAT.c, -5, 6); g.fill(); outline(g, 0.8);
+    g.strokeStyle = 'rgba(40,30,22,0.45)'; g.lineWidth = 0.45; for (const x of [-3, 0, 3]) { g.beginPath(); g.moveTo(x, -3.6); g.lineTo(x + 0.6, -1.6); g.stroke(); }
+    for (const s of [-1, 1]) { ell(g, s * 3.4, -5.4, 2.2, 2); g.fillStyle = RAT.c; g.fill(); outline(g, 0.5); }
+    ratTail(g, 0, 4.4, e, 9, false);
+  }
+  function drawRat(g, e) { drawQuad(g, e, { ground: 7.2, sh: 9.5, side: ratSide, front: ratFront, rear: ratRear, lunge: 3.5 }); }
+
+  // ---------- the snakes ----------
+  const GRASS_SNAKE = { c: '#5f7a3a', back: '#4a6230', belly: '#c9c178', collar: '#efd35a', fleck: '#2c3a1c', eye: '#f0d060', tongue: '#d8455a' };
+  const ADDER = { c: '#8a7a62', back: '#6e604c', belly: '#c8b896', zig: '#2a221c', eye: '#d24a32', tongue: '#d8455a' };
+  // the body as a chain of discs from the tail (0) to the head (N - 1), its S travelling down it as it slithers
+  function snakeSpine(e, S) {
+    const N = 20, sw = swingOf(e), strike = sw >= 0 ? Math.sin(sw * Math.PI) : 0;
+    const ph = e.moving ? e.walkT : time * Math.PI, amp = e.moving ? 2.8 : 1.5;
+    const pts = [];
+    for (let i = 0; i < N; i++) {
+      const u = i / (N - 1);
+      let x = lerp(-S.len / 2, S.len / 2, u), y = Math.sin(u * 7.2 - ph) * amp * (0.35 + 0.65 * Math.sin(Math.min(1, u * 1.15) * Math.PI));
+      // the strike: the front third straightens and throws the head forward
+      if (strike > 0 && u > 0.6) { const k = (u - 0.6) / 0.4; x += strike * 4.8 * k * k; y *= 1 - strike * k; }
+      const w = S.w * (u < 0.85 ? 0.32 + 0.68 * Math.sin(Math.min(1, (u + 0.08) * 1.25) * Math.PI / 2) : 0.82);
+      pts.push([x, y, w]);
+    }
+    return { pts, strike };
+  }
+  function drawSnakeBody(g, e, S) {
+    // its shadow follows the S it lies in (drawn by topDown, a little below it)
+    topDown(g, e, (g, sh) => {
+      const { pts, strike } = snakeSpine(e, S), N = pts.length;
+      if (sh) { g.fillStyle = 'rgba(0,0,0,0.2)'; for (const [x, y, w] of pts) { ell(g, x, y, w / 2 + 0.6, w / 2 + 0.6); g.fill(); } return; }
+      // the outline, then the body, then the back's darker line
+      for (const [x, y, w] of pts) { ell(g, x, y, w / 2 + 0.7, w / 2 + 0.7); g.fillStyle = OUT; g.fill(); }
+      for (let i = 0; i < N; i++) { const [x, y, w] = pts[i]; ell(g, x, y, w / 2, w / 2); g.fillStyle = i % 2 ? S.c : shade(S.c, 0.06); g.fill(); }
+      for (let i = 1; i < N - 2; i++) { const [x, y, w] = pts[i]; ell(g, x, y + w * 0.22, w * 0.3, w * 0.16); g.fillStyle = S.belly; g.fill(); }
+      g.strokeStyle = S.back; g.lineWidth = Math.max(1, S.w * 0.28); g.lineCap = 'round'; g.beginPath(); g.moveTo(pts[1][0], pts[1][1] - pts[1][2] * 0.12);
+      for (let i = 2; i < N - 2; i++) g.lineTo(pts[i][0], pts[i][1] - pts[i][2] * 0.12); g.stroke();
+      // its pattern: the adder's zigzag, the grass snake's black flecks and yellow collar
+      if (S.zig) {
+        g.strokeStyle = S.zig; g.lineWidth = Math.max(1, S.w * 0.2); g.lineJoin = 'miter'; g.beginPath();
+        for (let i = 2; i < N - 2; i++) { const [x, y, w] = pts[i]; const o = (i % 2 ? 1 : -1) * w * 0.26; if (i === 2) g.moveTo(x, y + o); else g.lineTo(x, y + o); }
+        g.stroke();
+      } else {
+        g.fillStyle = S.fleck; for (let i = 3; i < N - 3; i += 2) { const [x, y, w] = pts[i]; for (const s of [-1, 1]) { ell(g, x, y + s * w * 0.3, 0.55, 0.45); g.fill(); } }
+        const [cx, cy, cw] = pts[N - 3]; for (const s of [-1, 1]) { ell(g, cx, cy + s * cw * 0.28, 0.9, 0.7); g.fillStyle = S.collar; g.fill(); }
+      }
+      // the head: along the last stretch of the body, a little wider than the neck
+      const [hx, hy] = pts[N - 1], [nx, ny] = pts[N - 3], ha = Math.atan2(hy - ny, hx - nx);
+      g.save(); g.translate(hx, hy); g.rotate(ha);
+      // the tongue, flicking out (twice in each 2 s loop) or out in a strike
+      const flick = strike > 0.2 || Math.max(0, Math.sin(time * Math.PI * 2 + (e.seed || 0))) > 0.72;
+      if (flick) { g.strokeStyle = S.tongue; g.lineWidth = 0.55; g.lineCap = 'round'; g.beginPath(); g.moveTo(2.4, 0); g.lineTo(5.2, 0); g.lineTo(6.4, -0.8); g.moveTo(5.2, 0); g.lineTo(6.4, 0.8); g.stroke(); }
+      ell(g, 0.6, 0, S.head * 1.25, S.head); g.fillStyle = OUT; g.fill();
+      ell(g, 0.6, 0, S.head * 1.25 - 0.6, S.head - 0.6); g.fillStyle = rfill(g, S.c, 0.6, 0, S.head); g.fill();
+      if (S.zig) { g.fillStyle = S.zig; g.beginPath(); g.moveTo(-0.8, -0.9); g.lineTo(0.8, 0); g.lineTo(-0.8, 0.9); g.lineTo(-0.2, 0); g.closePath(); g.fill(); }
+      for (const s of [-1, 1]) { ell(g, 1.3, s * (S.head * 0.55), 0.6, 0.5); g.fillStyle = S.eye; g.fill(); ell(g, 1.4, s * (S.head * 0.55), 0.18, 0.4); g.fillStyle = '#0d0d10'; g.fill(); }
+      g.restore();
+    }, { x: 0.6, y: 1.8 });
+  }
+  const drawSnake = (g, e) => drawSnakeBody(g, e, Object.assign({ len: 24, w: 3.8, head: 2.3 }, GRASS_SNAKE));
+  const drawAdder = (g, e) => drawSnakeBody(g, e, Object.assign({ len: 26, w: 4.4, head: 2.7 }, ADDER));
+
+  // ---------- the wild dog ----------
+  const DOG = { c: '#9a7652', belly: '#dcc8a2', dark: '#5a4330', patch: '#6e5236', nose: '#1d1612' };
+  function dogTail(g, x, y, e) {
+    const wag = Math.sin(time * Math.PI * 4 + (e.seed || 0)) * 0.25 + (e.moving ? Math.sin(e.walkT * 2) * 0.15 : 0);
+    g.save(); g.translate(x, y); g.rotate(-1.1 + wag);
+    g.beginPath(); g.moveTo(0, -1.2); g.quadraticCurveTo(-5, -2.4, -7.6, 1.6); g.quadraticCurveTo(-7.2, 3.4, -5.6, 2.4); g.quadraticCurveTo(-3.4, 0.6, 0, 1.4); g.closePath();
+    g.fillStyle = vfill(g, DOG.c, -2, 3); g.fill(); outline(g, 0.6);
+    g.fillStyle = DOG.belly; ell(g, -6.8, 1.8, 1.2, 0.9); g.fill();
+    g.restore();
+  }
+  function dogSide(g, e, sw, bob) {
+    dogTail(g, -9.6, -3 + bob, e);
+    quadLegs(g, e, { xs: [-6.2, 4.4], y: 2.6 + bob, len: 7, w: 2.3, c: DOG.c, foot: DOG.dark, k: 0.55 });
+    g.translate(0, bob);
+    g.beginPath(); g.moveTo(-10.6, -1); g.quadraticCurveTo(-10, -5.8, -3, -5.6); g.quadraticCurveTo(4, -6, 8.4, -2.4); g.quadraticCurveTo(9, 2.6, 5, 3.8); g.quadraticCurveTo(-3, 5, -9, 3.4); g.quadraticCurveTo(-11.2, 1.8, -10.6, -1); g.closePath();
+    g.fillStyle = vfill(g, DOG.c, -6, 5, 0.18, -0.25); g.fill(); outline(g, 0.8);
+    // a dark saddle patch, a pale belly, a scruffy back
+    g.save(); g.clip(); g.fillStyle = DOG.patch; ell(g, -3.4, -4.4, 4.6, 2.6, -0.1); g.fill(); g.restore();
+    g.beginPath(); g.moveTo(-8, 3.2); g.quadraticCurveTo(-1, 5, 4.6, 3.4); g.quadraticCurveTo(0, 2.2, -8, 3.2); g.fillStyle = DOG.belly; g.fill();
+    g.fillStyle = DOG.c; for (const x of [-8.4, -6, -1, 2]) { g.beginPath(); g.moveTo(x, -5.2); g.lineTo(x + 0.8, -6.8); g.lineTo(x + 1.6, -5.2); g.closePath(); g.fill(); }
+    // the head
+    const jaw = sw >= 0 ? Math.sin(sw * Math.PI) * 0.5 : 0;
+    g.save(); g.translate(7.2, -4.2); g.rotate(sw >= 0 ? 0.15 : Math.sin(time * Math.PI) * 0.05);
+    ell(g, 1.8, 0, 4.8, 4.1); g.fillStyle = rfill(g, DOG.c, 1.8, 0, 4.6); g.fill(); outline(g, 0.7);
+    g.fillStyle = DOG.belly; ell(g, 2.6, 2.2, 3.2, 1.6); g.fill();
+    // one ear up, one flopped over
+    g.beginPath(); g.moveTo(-1.2, -2.6); g.lineTo(-0.2, -7.6); g.lineTo(1.4, -2.8); g.closePath(); g.fillStyle = DOG.patch; g.fill(); outline(g, 0.5);
+    g.beginPath(); g.moveTo(1.6, -3.2); g.quadraticCurveTo(3.6, -6.6, 4.8, -3.6); g.quadraticCurveTo(4.6, -1.6, 3.6, -1.2); g.closePath(); g.fillStyle = DOG.c; g.fill(); outline(g, 0.5);
+    // the muzzle, shorter than a wolf's
+    g.save(); g.rotate(jaw * 0.35);
+    g.beginPath(); g.moveTo(4.6, -1.4); g.lineTo(9.6, -0.4); g.quadraticCurveTo(10.2, 1.4, 8.6, 1.8); g.lineTo(4.6, 2.2); g.closePath(); g.fillStyle = vfill(g, DOG.c, -1.4, 2.2); g.fill(); outline(g, 0.6);
+    ell(g, 9.6, 0.1, 1.15, 0.95); g.fillStyle = DOG.nose; g.fill();
+    g.restore();
+    if (jaw > 0.05) { g.save(); g.rotate(jaw * 0.7); g.beginPath(); g.moveTo(4.8, 2.2); g.lineTo(9, 2.8); g.lineTo(5.2, 4); g.closePath(); g.fillStyle = '#b84a4a'; g.fill(); g.fillStyle = '#ffffff'; for (const x of [6, 7.6]) { g.beginPath(); g.moveTo(x, 2.3); g.lineTo(x + 0.5, 3.4); g.lineTo(x + 1, 2.4); g.closePath(); g.fill(); } g.restore(); }
+    ell(g, 3.8, -1, 1.15, 0.95); g.fillStyle = '#e8b04a'; g.fill(); ell(g, 4.05, -1, 0.5, 0.65); g.fillStyle = '#140e0a'; g.fill();
+    g.restore();
+    snap(g, 18.4, -2.6, sw);
+  }
+  function dogFront(g, e, sw) {
+    quadLegs(g, e, { xs: [-3.4, 1.8], y: 3, len: 6.6, w: 2.3, c: DOG.c, foot: DOG.dark, k: 0.25 });
+    ell(g, 0, 1, 8, 6); g.fillStyle = vfill(g, DOG.c, -5, 7); g.fill(); outline(g, 0.8);
+    g.fillStyle = DOG.belly; g.beginPath(); g.moveTo(-3.6, -1); g.quadraticCurveTo(0, 6.4, 3.6, -1); g.quadraticCurveTo(0, 1, -3.6, -1); g.fill();
+    const hy = -5.2; ell(g, 0, hy, 5.8, 5); g.fillStyle = rfill(g, DOG.c, 0, hy, 5.6); g.fill(); outline(g, 0.8);
+    // the up ear and the flopped one
+    g.beginPath(); g.moveTo(-2.2, hy - 3.4); g.lineTo(-4.8, hy - 8.6); g.lineTo(-5.6, hy - 2.4); g.closePath(); g.fillStyle = DOG.patch; g.fill(); outline(g, 0.5);
+    g.beginPath(); g.moveTo(2.2, hy - 3.6); g.quadraticCurveTo(6.4, hy - 6.4, 6.6, hy - 1.4); g.quadraticCurveTo(5, hy - 1, 4, hy - 2); g.closePath(); g.fillStyle = DOG.c; g.fill(); outline(g, 0.5);
+    g.fillStyle = DOG.belly; ell(g, 0, hy + 2.4, 3.4, 2.8); g.fill(); outline(g, 0.5);
+    ell(g, 0, hy + 1.4, 1.4, 1.05); g.fillStyle = DOG.nose; g.fill();
+    for (const s of [-1, 1]) { ell(g, s * 2.4, hy - 1.4, 1.1, 0.95); g.fillStyle = '#e8b04a'; g.fill(); ell(g, s * 2.4, hy - 1.4, 0.5, 0.7); g.fillStyle = '#140e0a'; g.fill(); }
+    if (sw >= 0) { g.fillStyle = '#7a2a2a'; ell(g, 0, hy + 4.2, 1.8, 1 + Math.sin(sw * Math.PI)); g.fill(); g.fillStyle = '#fff'; g.fillRect(-1.3, hy + 3.4, 0.8, 1); g.fillRect(0.5, hy + 3.4, 0.8, 1); }
+  }
+  function dogRear(g, e) {
+    quadLegs(g, e, { xs: [-3.4, 1.8], y: 3, len: 6.6, w: 2.3, c: DOG.c, foot: DOG.dark, k: 0.25 });
+    ell(g, 0, 0.6, 7.8, 6.2); g.fillStyle = vfill(g, DOG.c, -6, 7); g.fill(); outline(g, 0.8);
+    g.save(); ell(g, 0, 0.6, 7.8, 6.2); g.clip(); g.fillStyle = DOG.patch; ell(g, 0, -3.6, 5, 2.6); g.fill(); g.restore();
+    // the tail curled up over its back, wagging
+    const t = Math.sin(time * Math.PI * 4 + (e.seed || 0)) * 1.4;
+    g.beginPath(); g.moveTo(-1.4, -1); g.quadraticCurveTo(t - 3, -7, t + 0.6, -8.6); g.quadraticCurveTo(t + 2.6, -6.4, 1.4, -1); g.closePath(); g.fillStyle = vfill(g, DOG.c, -9, -1); g.fill(); outline(g, 0.6);
+    ell(g, 0, -6.2, 4.6, 3.8); g.fillStyle = DOG.c; g.fill(); outline(g, 0.6);
+    g.beginPath(); g.moveTo(-1.6, -8.4); g.lineTo(-4.2, -13); g.lineTo(-4.8, -7); g.closePath(); g.fillStyle = DOG.patch; g.fill(); outline(g, 0.5);
+    g.beginPath(); g.moveTo(1.6, -8.6); g.quadraticCurveTo(5.4, -10.6, 5.6, -6.4); g.lineTo(3.8, -6.4); g.closePath(); g.fillStyle = DOG.c; g.fill(); outline(g, 0.5);
+  }
+  function drawDog(g, e) { drawQuad(g, e, { ground: 9.6, sh: 10.5, side: dogSide, front: dogFront, rear: dogRear, lunge: 4 }); }
+
+  // ---------- into the look (MONSTER_LOOK.addType) ----------
+  // boxes: [x0, y0, x1, y1] at rest, then with a bite, in game pixels round the middle (measure.cjs, 3 px all round)
+  const LOOKS = {
+    crow: { draw: drawCrow, size: 1.25, r: 10, pic: true, top: true, box: [-21, -30, 24, 25, -21, -30, 24, 25] },
+    giant_rat: { draw: drawRat, size: 1.3, r: 12, pic: true, box: [-34, -16, 34, 23, -34, -16, 34, 23] },
+    snake: { draw: drawSnake, size: 1.3, r: 11, pic: true, top: true, box: [-28, -28, 28, 28, -33, -33, 33, 33] },
+    adder: { draw: drawAdder, size: 1.3, r: 12, pic: true, top: true, box: [-29, -29, 29, 29, -35, -35, 35, 35] },
+    wild_dog: { draw: drawDog, size: 1.15, r: 13, pic: true, box: [-24, -20, 24, 19, -33, -20, 33, 19] },
+  };
+  if (window.MONSTER_LOOK && MONSTER_LOOK.addType) for (const t in LOOKS) MONSTER_LOOK.addType(t, LOOKS[t]);
+  window.CRITTER_LOOKS = LOOKS;
+
+  // ---------- a falling body's legs (79-deaths): a bird shows two, a snake none ----------
+  if (window.DEATHS && DEATHS.LEGS) {
+    DEATHS.LEGS.crow = { n: 2, col: '#3e3c3a', w: 0.07 };
+    DEATHS.LEGS.snake = { n: 0 }; DEATHS.LEGS.adder = { n: 0 };
+    DEATHS.LEGS.giant_rat = { n: 4, col: '#c98a88' };
+  }
+
+  // ---------- the icons (80-icons' rules: inside -9..+9, nothing under 2 units across, never branch on size) ----------
+  if (window.ICONS && ICONS.set) {
+    const dk = a => 'rgba(0,0,0,' + a + ')';
+    const line = (g, col, w, cap) => { g.strokeStyle = col; g.lineWidth = w; g.lineCap = cap || 'butt'; };
+    ICONS.set('crow_feather', (g, size, item) => {                     // a long black flight feather, curved, with a blue sheen down its vane
+      g.save(); g.rotate(-0.85);
+      g.fillStyle = item.color;
+      g.beginPath(); g.moveTo(-8.6, 0.4); g.quadraticCurveTo(-2, -4.4, 8.6, -1.6); g.quadraticCurveTo(2, 3.4, -8.6, 0.4); g.closePath(); g.fill(); line(g, 'rgba(0,0,0,0.55)', 1.1); g.stroke();
+      g.fillStyle = 'rgba(110,130,200,0.5)'; g.beginPath(); g.moveTo(-5, -0.8); g.quadraticCurveTo(0, -3.4, 7, -1.8); g.quadraticCurveTo(0, -1.4, -5, -0.2); g.closePath(); g.fill();
+      line(g, dk(0.4), 1);                                                                                   // the barbs, slanting back
+      for (let k = 0; k < 4; k++) { const x = -4 + k * 3; g.beginPath(); g.moveTo(x, -0.2); g.lineTo(x + 1.6, -2.6 + k * 0.3); g.stroke(); }
+      line(g, '#c8ccd8', 1.2, 'round');                                                                     // the quill
+      g.beginPath(); g.moveTo(-9.4, 1.2); g.quadraticCurveTo(-1, -0.6, 8.2, -1.4); g.stroke();
+      g.restore();
+    });
+    ICONS.set('snakeskin', (g, size, item) => {                         // a shed skin in a loose coil, papery, scaled in diamonds
+      g.lineCap = 'round'; g.lineJoin = 'round';
+      const path = () => { g.beginPath(); g.moveTo(-6.4, 5.2); g.bezierCurveTo(-7.2, -1.6, -1.6, -6.8, 3.4, -5.2); g.bezierCurveTo(7.4, -3.8, 6.8, 2.8, 2.4, 3.4); g.bezierCurveTo(-1.2, 3.8, -2, -1, 1.2, -1.6); };
+      line(g, 'rgba(0,0,0,0.5)', 4.4); path(); g.stroke();
+      line(g, item.color, 3); path(); g.stroke();
+      line(g, 'rgba(255,255,240,0.55)', 1); path(); g.stroke();
+      line(g, dk(0.32), 1);                                                                                  // the scales' crossing lines
+      for (const [x, y] of [[-5.8, 1.6], [-4.8, -2.6], [-1.8, -5.2], [2.2, -5.2], [5.4, -2.8], [5.2, 1.4], [1.8, 3.4]]) { g.beginPath(); g.moveTo(x - 1, y - 1); g.lineTo(x + 1, y + 1); g.moveTo(x - 1, y + 1); g.lineTo(x + 1, y - 1); g.stroke(); }
+      g.fillStyle = item.color; g.beginPath(); g.arc(1.4, -1.6, 1.5, 0, 7); g.fill(); line(g, 'rgba(0,0,0,0.5)', 1); g.stroke();   // the empty head end
+    });
+  }
+
+  // ---------- the book (44-wiki): plain words for each creature ----------
+  if (window.WIKI && WIKI.add) {
+    // [name, words] (87-critters' MONSTER_DEFS names: this file loads first, and the self-test holds the two the same)
+    const BLURB = {
+      crow: ['Crow', "Crows peck about the meadow by the old signpost. A crow grabs anything shiny, so one sometimes drops a coin it stole. Leave it be and it leaves you be."],
+      giant_rat: ['Giant rat', "A rat as big as a cat, up out of the cave and into the grass. It nibbles everything: bread, seeds, even coins. It only bites back if you hit it first."],
+      snake: ['Snake', "A grass snake that lives in the reeds round Miller's Pond. Hit it and it bites. It sheds a fine skin that shops will buy."],
+      adder: ['Adder', "An adder: grey-brown, with a black zigzag down its back and a red eye. Tougher than a grass snake, and its bite hurts more. It always leaves its skin behind."],
+      wild_dog: ['Wild dog', "Wild dogs hunt in packs of three, out in the fields away from the road. Come within four steps and the whole pack runs at you. Keep to the road, or come back when you are stronger."],
+    };
+    for (const id in BLURB) WIKI.add('monsters', { id, name: BLURB[id][0], blurb: BLURB[id][1] });
+  }
+
+  // ---------- self-test ----------
+  HOOKS.selfTest.push((check) => {
+    const types = Object.keys(LOOKS);
+    // the book: each creature's page under its own name (the same as 87-critters' MONSTER_DEFS), with its words, where it lives and what it drops
+    if (window.WIKI && WIKI.get) {
+      const bad = types.filter(t => { const e = WIKI.get('monsters', t); return !e || !MONSTER_DEFS[t] || e.name !== MONSTER_DEFS[t].name || !e.blurb || !(e.where || []).length || !(e.drops || []).length; });
+      check('critter look: the book has a page for each creature under its own name, with its words, where it lives and what it drops', !bad.length, { bad }); }
+    // the look: each drawn in the new hand (addType), its hit circle the rules' r, and the icons of what they leave drawn
+    { const L = window.MONSTER_LOOK, bad = types.filter(t => !L || !L.ADDED.has(t) || L.HIT_R[t] !== MONSTER_DEFS[t].r || !L.BOX[t]);
+      const icons = ['crow_feather', 'snakeskin'].filter(id => !(window.ICONS && ICONS.audit && ITEMS[id]));
+      const legs = window.DEATHS && DEATHS.LEGS ? [DEATHS.LEGS.crow && DEATHS.LEGS.crow.n === 2, DEATHS.LEGS.snake && DEATHS.LEGS.snake.n === 0, DEATHS.LEGS.adder && DEATHS.LEGS.adder.n === 0] : [false];
+      check('critter look: the five creatures are drawn through MONSTER_LOOK.addType with their rules\' hit circles, the feather and the skin have their items, and a falling crow shows two legs and a snake none', !bad.length && !icons.length && legs.every(Boolean), { bad, icons, legs }); }
+  });
+}
+
+// ---- src/87-critters.js ----
+// ============================================================================
+// THE STARTING CREATURES (the Great Spread, Stage 5a: ~/.fanglands/work/spread/spec.md §4 "Starting creatures", §13)
+// src/87-critters.js
+//
+// The first walk out of the cave had goblins and boars and little else. These are the small things of the fields, the
+// rungs between the cave spiders and the goblins on the way up (42-playthrough lists each one's kill on its curve):
+//
+//   crow       lv 2,  8 hp   peaceful   round the story signpost's meadow              drops feathers, now and then a coin it stole
+//   giant rat  lv 3, 12 hp   peaceful   the meadow below the cave mouth                drops what it stole: coins, bread, seeds
+//   snake      lv 4, 14 hp   peaceful   the reeds round Miller's Pond                  drops its skin
+//   adder      lv 6, 18 hp   peaceful   the pond's quiet side                          always leaves its skin
+//   wild dog   lv 6, 18 hp   ATTACKS    two packs of three in the fields, well off the road (sight 4 tiles)
+//
+// Where (§4): spawns are written in place frames (the signpost's, the pond's) or as world points (open land), so they move
+// with the land. Every spawn stands where its point says, on open ground with nothing a new game clears round it (no tree,
+// rock, flower or mushroom in its 3 x 3), so the world's tiles are exactly the last build's (the FOOTPRINT proof). The
+// wild dogs stand 8.5+ tiles off every main road's centre line and keep to 2 tiles of home (def.roam), so a knight
+// walking the road is never seen by one (2 + 4 + 1.5 < 8.5); the west pack is the Cave Road's beat at about 110 (§6: a
+// stop within 10 tiles of the road). The places still staked (Millbrook, Saltmere, the Old Bridge, Beacon Hills) get
+// their crows, rats and snakes when they are built (Stage 5b, 5d): CRITTERS.DEFS is the table they spawn from.
+//
+// The footprint (§10 "worldRev sweeps"): WORLD_REV 1 is this stage. ATLAS.REVS[1] is the 3 x 3 round each new spawn: a
+// knight's own plank or wall standing there in a world-2 save of rev 0 comes back to him (SPREAD.sweep), so no creature
+// wakes inside it.
+//
+// The look is 87-critterart (pictures only, stripped from the server's copy); the book's pages and the item icons too.
+// Feature file: registers through HOOKS; the one core line it reads is def.roam (07-update).
+// window.CRITTERS is the test handle.
+// ============================================================================
+{
+  const A = ATLAS, W = A.world, SG = A.frame('signpost'), PD = A.frame('pond');
+
+  // ---------- the creatures ----------
+  // XP is the core's (hp x 4 below level 10): crow 32, giant rat 48 (a goblin's), snake 56, adder 72, wild dog 72.
+  // drops: always [[id,min,max]], table [[id,min,max,weight]] ('nothing' allowed), rare {chance, table} (01-items)
+  const DEFS = {
+    crow: { name: 'Crow', level: 2, r: 10, hp: 8, att: 2, maxHit: 1, def: 1, speed: 150, aggro: false, sight: 3 * TILE, respawn: 30,
+      drops: { table: [['nothing', 0, 0, 5], ['crow_feather', 1, 2, 6], ['coins', 1, 3, 2]] } },
+    giant_rat: { name: 'Giant rat', level: 3, r: 12, hp: 12, att: 3, maxHit: 2, def: 2, speed: 125, aggro: false, sight: 3 * TILE, respawn: 30,
+      drops: { table: [['nothing', 0, 0, 8], ['coins', 1, 4, 4], ['bread', 1, 1, 2], ['potato_seed', 1, 2, 3], ['wheat_seed', 1, 2, 2]] } },
+    snake: { name: 'Snake', level: 4, r: 11, hp: 14, att: 5, maxHit: 3, def: 3, speed: 95, aggro: false, sight: 3 * TILE, respawn: 35, roam: 2,
+      drops: { table: [['nothing', 0, 0, 4], ['snakeskin', 1, 1, 5]] } },
+    adder: { name: 'Adder', level: 6, r: 12, hp: 18, att: 7, maxHit: 4, def: 4, speed: 105, aggro: false, sight: 3 * TILE, respawn: 40, roam: 2,
+      drops: { always: [['snakeskin', 1, 1]] } },
+    // aggro at sight 4 (§4), and a pack keeps to its patch: 2 tiles of home while it idles
+    wild_dog: { name: 'Wild dog', level: 6, r: 13, hp: 18, att: 6, maxHit: 4, def: 4, speed: 165, aggro: true, sight: 4 * TILE, respawn: 45, roam: 2,
+      drops: { table: [['nothing', 0, 0, 6], ['raw_beef', 1, 1, 3], ['wool', 1, 1, 2]] } },
+  };
+  Object.assign(MONSTER_DEFS, DEFS);
+
+  // ---------- what they leave ----------
+  // (added after 01-items' id-and-stack pass, so each sets its own)
+  ITEMS.crow_feather = { id: 'crow_feather', name: 'Crow feather', value: 2, color: '#262a36', shape: 'silk', stack: 50 };
+  ITEMS.snakeskin = { id: 'snakeskin', name: 'Snakeskin', value: 12, color: '#a8b47a', shape: 'pelt', stack: 50 };
+
+  // ---------- where (§4) ----------
+  // [type, points]: open land as world points (the old map's numbers, stretched), a place's own spots in its frame.
+  // Each is a whole tile on the new map: rats (33,18) (35,21) (40,17); crows (107,40) (107,45) (112,37); snakes (75,52)
+  // (78,57) (76,62); the adder (66,55); the west pack (122,35) (124,36) (122,37); the east pack (219,59) (221,60) (219,61).
+  // Each stands where 92-worldshape's outline and its region's box agree (the spawn's region is the one its box says).
+  const HAUNTS = [
+    // the cave meadow (§4: 24..40 x 12..22), between Death's House and the road's first bend
+    { id: 'cave_meadow', type: 'giant_rat', at: () => W.pts([[21, 12], [22, 14], [25, 11]]) },
+    // the story signpost's meadow, both sides of the Cave Road (R1's stop at 85: the signpost and the crows)
+    { id: 'signpost_meadow', type: 'crow', at: () => SG.pts([[67, 25], [67, 30]]).concat([W.p(69.5, 24)]) },
+    // Miller's Pond: the reeds of its north, east and south shores, and the adder on the quiet west side
+    { id: 'pond_reeds', type: 'snake', at: () => PD.pts([[46, 31], [49, 36], [47, 41]]) },
+    { id: 'pond_reeds', type: 'adder', at: () => [PD.p(37, 34)] },
+    // the fields between the signpost and the west gate, north of the Cave Road (R1's stop at 110)
+    { id: 'west_fields', type: 'wild_dog', pack: true, at: () => W.pts([[75.5, 23], [77, 23.5], [75.5, 24]]) },
+    // the fields between the town and the camp, south of the Sea Road's run to the camp gap and north of the outpost's stakes
+    { id: 'east_fields', type: 'wild_dog', pack: true, at: () => W.pts([[135.5, 38], [136.5, 38.5], [135.5, 39.5]]) },
+  ];
+  const tilesOf = h => h.at().map(([x, y]) => [Math.round(x), Math.round(y)]);
+  // every spawn this file makes, as whole tiles
+  const SPOTS = () => HAUNTS.flatMap(h => tilesOf(h).map(([x, y]) => ({ id: h.id, type: h.type, x, y })));
+
+  // ---------- the footprint (§10): WORLD_REV 1 ----------
+  if (A.REVS) A.REVS[1] = { stage: '5a', by: '87-critters', why: 'the ground each new creature wakes on', boxes: SPOTS().map(s => [s.x - 1, s.y - 1, s.x + 1, s.y + 1]) };
+
+  // ---------- the spawns ----------
+  // On the finished land (HOOKS.built, after 92-worldshape, 93-ashedge and the stakes): those passes draw their own dice
+  // tile by tile round every spawn, so a spawn added before them moved flowers and trees all over the map. No dice here:
+  // every spawn stands where its point says, and the shared rnd is not drawn.
+  HOOKS.built.push((rnd, api) => { for (const h of HAUNTS) api.spawnList(h.type, tilesOf(h)); });
+
+  // ---------- the handle ----------
+  const API = { DEFS, HAUNTS, SPOTS, ROAD_CLEAR: 8.5 };
+  window.CRITTERS = API;
+
+  // ---------- self-tests ----------
+  HOOKS.selfTest.push((check, F, h) => {
+    const P = 'critters: ';
+    const segD = (px, py, ax, ay, bx, by) => { const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy || 1, t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / l2)); return Math.hypot(px - ax - t * dx, py - ay - t * dy); };
+    const roadD = (x, y) => { let b = Infinity; for (const id of A.MAIN_ROADS) { const pl = A.track(id); for (let k = 1; k < pl.length; k++) b = Math.min(b, segD(x, y, pl[k - 1][0], pl[k - 1][1], pl[k][0], pl[k][1])); } return b; };
+    const spots = SPOTS(), mine = new Set(spots.map(s => s.type + '@' + s.x + ',' + s.y));
+    // the spawns as the world has them (a fresh map: a --play run has changed this one)
+    const tiles = window.PLAYTHROUGH ? PLAYTHROUGH.pristine : map;
+    const ours = MONSTER_SPAWNS.filter(s => DEFS[s.type]);
+
+    // 1. the table as §4 has it
+    { const D = MONSTER_DEFS, want = { crow: { lv: 2, hp: 8 }, giant_rat: { lv: 3, hp: 12 }, snake: { lv: 4, hp: 14 }, adder: { lv: 6, hp: 18 }, wild_dog: { lv: 6, hp: 18 } };
+      const bad = Object.keys(want).filter(t => !D[t] || D[t].level !== want[t].lv || D[t].hp !== want[t].hp);
+      const aggro = Object.keys(DEFS).filter(t => D[t].aggro);
+      const drops = Object.keys(DEFS).flatMap(t => { const d = D[t].drops; return [...(d.always || []), ...(d.table || []), ...((d.rare && d.rare.table) || [])].map(r => r[0]).filter(id => id !== 'nothing' && !ITEMS[id]); });
+      const xp = Object.keys(DEFS).map(t => D[t].hp * 4), spider = D.spider.hp * 4;
+      check(P + 'crow lv 2 (8 hp), giant rat lv 3 (12 hp), snake lv 4, adder lv 6, wild dog lv 6 (18 hp), only the wild dogs attack on sight (4 tiles), every drop a real item, each kill worth more xp than a cave spider\'s',
+        !bad.length && aggro.join() === 'wild_dog' && D.wild_dog.sight / TILE === 4 && !drops.length && xp.every(v => v > spider), { bad, aggro, drops, xp }); }
+
+    // 2. every spawn where its point says, nothing moved, the count as written
+    { const counts = {}; for (const s of ours) counts[s.type] = (counts[s.type] || 0) + 1;
+      const moved = ours.filter(s => s.movedFrom).map(s => s.type + ' ' + s.movedFrom + '->' + s.tx + ',' + s.ty), stray = ours.filter(s => !mine.has(s.type + '@' + s.tx + ',' + s.ty)).map(s => s.type + '@' + s.tx + ',' + s.ty);
+      check(P + 'the spawns stand where they are written: 3 giant rats, 3 crows, 3 snakes, 1 adder, 6 wild dogs, none moved by the door rule or the road pass',
+        ours.length === spots.length && counts.giant_rat === 3 && counts.crow === 3 && counts.snake === 3 && counts.adder === 1 && counts.wild_dog === 6 && !moved.length && !stray.length, { counts, moved, stray }); }
+
+    // 3. clean ground: open, with nothing a new game clears in the 3 x 3 round it (so not one tile of the world changed), off doors and staked ground
+    { const CLEAR = new Set([T.TREE, T.OAK, T.ROCK, T.IRON, T.COAL, T.FLOWERS, T.MUSHROOM]), bad = [];
+      for (const s of spots) {
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const t = tiles[idx(s.x + dx, s.y + dy)]; if (CLEAR.has(t) || (SOLID.has(t) && t !== T.WATER) || buildingAt(s.x + dx, s.y + dy)) bad.push(s.type + '@' + s.x + ',' + s.y + ' ' + tileName(t)); }
+        const t0 = tiles[idx(s.x, s.y)]; if (t0 === T.WATER || SOLID.has(t0)) bad.push(s.type + '@' + s.x + ',' + s.y + ' stands in ' + tileName(t0));
+        if (A.reservedAt(s.x, s.y) || A.onMainRoad(s.x, s.y)) bad.push(s.type + '@' + s.x + ',' + s.y + ' on staked ground or a main road');
+      }
+      check(P + 'every spawn stands on open ground with nothing a new game clears round it (the world\'s tiles are the last build\'s), off staked ground and off the main roads', !bad.length, { bad: bad.slice(0, 8) }); }
+
+    // 4. the right ground: each in its haunt's region (where 92's outline and the region's box agree) and the Atlas zone of that region
+    { const want = { cave_meadow: ['goblin_fields'], signpost_meadow: ['goblin_fields'], pond_reeds: ['miller_pond'], west_fields: ['goblin_fields'], east_fields: ['goblin_fields'] };
+      const bad = spots.filter(s => !want[s.id].includes(A.zoneAt('over', s.x, s.y)) || A.slug(regionAt(s.x, s.y).name) !== A.zoneAt('over', s.x, s.y) || WORLDSHAPE.boxRegion(s.x, s.y).name !== regionAt(s.x, s.y).name)
+        .map(s => s.type + '@' + s.x + ',' + s.y + ' ' + A.zoneAt('over', s.x, s.y) + ' / ' + regionAt(s.x, s.y).name);
+      const MB = W.box([15, 8, 25, 14]).map(Math.round);   // §4's cave meadow, 24..40 x 12..21 on the new map
+      const meadow = spots.filter(s => s.id === 'cave_meadow').every(s => s.x >= MB[0] && s.x <= MB[2] && s.y >= MB[1] && s.y <= MB[3]);
+      const sign = spots.filter(s => s.id === 'signpost_meadow').every(s => dist(s.x, s.y, SIGN_TILE.x, SIGN_TILE.y) <= 10);
+      const dry = spots.filter(s => s.id === 'pond_reeds' && !(() => { for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) if (tiles[idx(s.x + dx, s.y + dy)] === T.WATER) return true; return false; })()).map(s => s.type + '@' + s.x + ',' + s.y);
+      check(P + 'each haunt on its own ground: rats in the cave meadow (24..40 x 12..21), crows within 10 tiles of the story signpost, snakes and the adder on Miller\'s Pond\'s shore (water within 2), the packs in the Goblin Fields; each spawn\'s Atlas zone is its region\'s, and 92\'s outline and the box agree on the region',
+        !bad.length && meadow && sign && !dry.length, { bad, meadow, sign, dry, MB }); }
+
+    // 5. the wild dogs: 8.5+ off every main road (sight 4 + roam 2 + the road's half-width never reach one); the west pack is the Cave Road's beat (within 10 tiles of it)
+    { const dogs = spots.filter(s => s.type === 'wild_dog'), d = dogs.map(s => roadD(s.x, s.y));
+      const west = dogs.map((s, i) => [s, d[i]]).filter(([s]) => s.id === 'west_fields'), r1 = Math.min(...west.map(([s]) => { const pl = A.track('r1_cave'); let b = Infinity; for (let k = 1; k < pl.length; k++) b = Math.min(b, segD(s.x, s.y, pl[k - 1][0], pl[k - 1][1], pl[k][0], pl[k][1])); return b; }));
+      const reach = DEFS.wild_dog.roam + DEFS.wild_dog.sight / TILE + 1.5;
+      check(P + `the wild dogs stand ${API.ROAD_CLEAR}+ tiles off every main road (a knight on the road is beyond a dog's roam and sight: ${reach} tiles), and the west pack is within 10 of the Cave Road (its beat)`,
+        dogs.length === 6 && d.every(v => v >= API.ROAD_CLEAR && v > reach) && r1 <= 10, { d: d.map(v => +v.toFixed(1)), r1: +r1.toFixed(1), reach }); }
+
+    // 6. reachable: a knight walks from the cave mouth to every one (4 ways over the tiles a knight can stand on)
+    { const N = MAP_W * MAP_H, seen = new Uint8Array(N), q = new Int32Array(N); let n = 0;
+      const take = i => { if (!seen[i] && !SOLID.has(tiles[i])) { seen[i] = 1; q[n++] = i; } };
+      take(idx(Math.floor(SPAWN.x / TILE), Math.floor(SPAWN.y / TILE)));
+      for (let k = 0; k < n; k++) { const c = q[k], x = c % MAP_W; if (x > 0) take(c - 1); if (x < MAP_W - 1) take(c + 1); if (c >= MAP_W) take(c - MAP_W); if (c + MAP_W < N) take(c + MAP_W); }
+      const cut = spots.filter(s => !seen[idx(s.x, s.y)]).map(s => s.type + '@' + s.x + ',' + s.y);
+      check(P + 'a knight walks from the cave to every creature\'s ground', !cut.length, { cut }); }
+
+    // 7. the footprint: WORLD_REV 1 is this stage, its boxes the 3 x 3 round each spawn
+    { const R = A.REVS && A.REVS[1], boxes = R ? R.boxes : [];
+      const every = spots.every(s => boxes.some(b => b[0] === s.x - 1 && b[1] === s.y - 1 && b[2] === s.x + 1 && b[3] === s.y + 1));
+      check(P + 'the footprint: WORLD_REV is 1 and ATLAS.REVS[1] is the 3 x 3 round each of the 16 spawns', WORLD_REV === 1 && boxes.length === spots.length && every, { WORLD_REV, n: boxes.length }); }
+
+    // 8. a wild dog wakes at 4 tiles and not at 5; idle, a dog keeps to 2 tiles of home; a crow fights back only when hit, and its kill pays 32 xp
+    if (!window.__instance) {
+      const px0 = player.x, py0 = player.y, hp0 = player.hp, peace0 = window.__peace;
+      h.peace(false);
+      const dog = monsters.find(m => m.type === 'wild_dog' && !m.dead), crow = monsters.find(m => m.type === 'crow' && !m.dead);
+      const res = {};
+      if (dog && crow) {
+        const keep = monsters.map(m => [m, m.x, m.y, m.hp, m.state, m.angry, m.dead]);
+        const reset = () => { for (const m of monsters) if (DEFS[m.type]) { m.x = m.home.x; m.y = m.home.y; m.state = 'idle'; m.angry = MONSTER_DEFS[m.type].aggro; m.attackCd = 1; } };
+        // a knight of combat level 3 (the dogs leave a strong one alone: 07-update's aggressive rule)
+        const sk0 = JSON.stringify(player.skills); for (const k of ['melee', 'defence', 'hitpoints', 'range']) if (player.skills[k]) player.skills[k].xp = 0;
+        try {
+          // its sight is 4 tiles: a knight 5 tiles off (1.25 sights) is not seen, one 3.5 off (0.875) is
+          const S = DEFS.wild_dog.sight;
+          reset(); player.x = dog.home.x + S * 1.25; player.y = dog.home.y; F.step([]); res.at5 = dog.state;
+          reset(); player.x = dog.home.x + S * 0.875; player.y = dog.home.y; F.step([]); res.at35 = dog.state;
+          // idle for 40 s with him 30 tiles off: never past 2 tiles (and the push of a packmate) from home
+          reset(); player.x = dog.home.x + S * 7.5; player.y = dog.home.y; let far = 0;
+          for (let i = 0; i < 2400; i++) { F.step([]); far = Math.max(far, dist(dog.x, dog.y, dog.home.x, dog.home.y)); }
+          res.far = +(far / TILE).toFixed(2);
+          // the crow: idle beside it nothing happens; blows until it falls pay 4 melee xp a point of damage (32 for its 8 hp, more on an overkill)
+          reset(); const C = DEFS.crow.sight;   // 3 tiles
+          player.x = crow.home.x + C * 0.5; player.y = crow.home.y; player.hp = player.maxHp; F.sim(30, []); res.calm = crow.state !== 'chase';
+          const xp0 = player.skills.melee.xp, k0 = player.kills | 0; crow.hp = crow.maxHp;
+          for (let i = 0; i < 60 && !crow.dead; i++) { crow.x = player.x + 30; crow.y = player.y; crow.attackCd = 1; player.hp = player.maxHp; player.facing = { x: 1, y: 0 }; pressed.add('Space'); F.step([]); F.sim(40, []); }
+          res.killed = crow.dead; res.xp = player.skills.melee.xp - xp0; res.kills = (player.kills | 0) - k0;
+        } finally {
+          for (const [m, x, y, hp, st, an, dd] of keep) { m.x = x; m.y = y; m.hp = hp; m.state = st; m.angry = an; if (!dd && m.dead) { m.dead = false; m.respawnT = 0; } }
+          const sk = JSON.parse(sk0); for (const k in sk) player.skills[k] = sk[k];
+          drops = drops.filter(d => dist(d.x, d.y, crow.home.x, crow.home.y) > DEFS.crow.sight * 2);
+          player.x = px0; player.y = py0; player.hp = hp0; window.__peace = peace0;
+        }
+      }
+      check(P + 'a wild dog wakes at 3.5 tiles but not at 5, idles within 2 tiles of home (and a packmate\'s push), a crow lets a knight stand beside it, and the blows that fell it pay at least its 32 melee xp',
+        !!dog && !!crow && res.at5 !== 'chase' && res.at35 === 'chase' && res.far <= 2.6 && res.calm && res.killed && res.kills === 1 && res.xp >= DEFS.crow.hp * 4, res);
+    }
+  });
+}
+
 // ---- src/88-aerie.js ----
 // ============================================================================
 // AERIE, PART TWO — the light, the city, the Spire Run and what only the sky has. src/88-aerie.js
@@ -75210,6 +75794,9 @@ const MOUNT_LOOK = (() => {
       set(best.x, best.y, T.SIGN); SP.signs.push([best.x, best.y, nx, ny]); S.signs++;
     }
   });
+  // the passes that build on the finished land (HOOKS.built: the Stage 5 places and creatures): right after the stakes, so a
+  // place can take its own up, and before 95-thistledown's snapshot and 96-atlas's build (both pushed by later files)
+  HOOKS.world.push((rnd, api) => { for (const f of HOOKS.built) f(rnd, api); });
 
   // ---------- what a road's signpost shows on its arms (08-draw's drawSignProp asks) ----------
   // up to three arms, each a short name pointing left (west-ish) or right; the story's own signpost keeps its arms

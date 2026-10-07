@@ -59,6 +59,8 @@ export const STRIP_FILES = [
   '61-maplabels',
   // the teacher view's screen and its drawing of a kid's point of view (round 2): a page's, never the world's
   '79-teacherscreen', '79-view',
+  // the starting creatures' look (the Great Spread, Stage 5a: their drawings, icons, book words and falling legs): pictures only, no rules
+  '87-critterart',
 ];
 // What a stripped name reads before anything is written to it (the rest reads as the no-op stand-in).
 const STUB_SEED = { title: { active: false, bootActive: false } };
