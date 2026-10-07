@@ -16,7 +16,6 @@
   const GONE_AFTER = 1;       // a puppet missing from the stream this long is hidden
   const DROP_AFTER = 2;       // ...and dropped from the array this long after that
   const STALL_AFTER = 6;      // when the WHOLE stream has stopped, everything stays standing this long (longer than a handoff takes)
-  const BEAT_EVERY = 1;       // a keeper with nobody near still sends an empty snapshot this often: the world's sign it is alive
   const NEAR = 24 * TILE;     // snapshot radius around every knight on the map
   const FREEZE = 1e6;         // the stunT value that makes the core loop skip a monster for one frame
   const MAX_DMG = 500;
@@ -495,23 +494,19 @@
       }
       return;
     }
+    // A keeper with nobody near sends nothing here: its presence (73-players, at least once a second while its game runs) is
+    // what tells the world it is alive (room.js KEEPER_STALE reads presence as well as monsters since 4 Oct 2026). It used to
+    // send an empty snapshot once a second as well, which doubled a lone open page's messages (measured: 7,186 an hour, half of
+    // them these). That heartbeat was never sent paused or on the title screen, so a paused keeper is unchanged: it streams
+    // its (frozen) monsters to the knights near it, as ever, and keeps the map.
     // A teacher is watching this knight (the world said view on) and he keeps his map with nobody near: his game sends its
-    // monsters at most twice a second while they change, so the teacher sees them too; never while paused or on the title.
-    const watchedAlone = S.viewed && isKeeper() && !S.here.length;
-    if (watchedAlone) aloneStream(dt);
-    // a keeper whose game is running keeps talking even with nobody near: an empty snapshot is a heartbeat, so the world never
-    // takes a working keeper for a frozen one and hands the map to a knight whose phone is locked (the monsters then vanished).
-    // A paused keeper or one on the title screen stays quiet on purpose, so the world hands the map to someone who is playing.
-    // A watched lone keeper's heartbeat carries his monsters instead of nothing (an empty list would read on the teacher's
-    // screen as a stream that stopped listing them), and each list the alone stream sends counts as the heartbeat.
-    if (isKeeper() && online() && !paused && !(title && title.active)) {
-      S.beatAcc = (S.beatAcc || 0) + dt;
-      if (S.beatAcc >= BEAT_EVERY && !(pre && pre.kind === 'keeper' && S.here.length)) { S.beatAcc = 0; if (watchedAlone) aloneSend(); else NET.send({ t: 'mon', list: [] }); }
-    }
+    // monsters about twice a second so the teacher sees them too (an unchanged list only once every 5 s); never while paused
+    // or on the title. With anyone near, the stream below is the one it always was.
+    if (S.viewed && isKeeper() && !S.here.length) { aloneStream(dt); return; }
     if (!pre || pre.kind !== 'keeper') return;
     if (!paused) for (const f of pre.frozen) { const m = f.m; if (!m.dead && m.stunT <= 0 && monsters.includes(m)) stepRemote(m, f.target, dt); }
     S.snapAcc += dt;
-    if (S.snapAcc >= SNAP_EVERY && isKeeper() && S.here.length) { S.snapAcc = 0; S.beatAcc = 0; NET.send({ t: 'mon', list: snapshot(S.here) }); }
+    if (S.snapAcc >= SNAP_EVERY && isKeeper() && S.here.length) { S.snapAcc = 0; NET.send({ t: 'mon', list: snapshot(S.here) }); }
   }
   function aloneStream(dt) {
     if (paused || (title && title.active)) { S.alone.acc = 0; return; }
@@ -520,11 +515,7 @@
     S.alone.acc = 0;
     const list = snapshot([]), str = JSON.stringify(list);
     if (str === S.alone.last && time >= S.alone.at && time - S.alone.at < ALONE_KEEP) return;
-    aloneSend(list, str);
-  }
-  function aloneSend(list, str) {
-    if (!list) { list = snapshot([]); str = JSON.stringify(list); }
-    if (NET.send({ t: 'mon', list })) { S.alone.last = str; S.alone.at = time; S.alone.sent++; S.beatAcc = 0; }
+    if (NET.send({ t: 'mon', list })) { S.alone.last = str; S.alone.at = time; S.alone.sent++; }
   }
   // the teacher's page (79-view): what update() does for puppets, alone (it never runs there): the map the drawn knight is
   // on, the puppets gliding onto each snapshot over the gap between them, and the core's tip and fade of a fallen one
@@ -775,13 +766,18 @@
       const farExists = real.some(m => !m.dead && !near(m.x, m.y)), farListed = list.some(e => !sentNear(e[2], e[3]));
       check(P + 'the keeper streams snapshots in the contract shape, only for monsters near a knight', NET.online() && COOP.isKeeper() && COOP.map() === 'over' && mons.length >= 1 && shapeOk && farExists && !farListed && list.some(e => e[0] === gob.nid), { online: NET.online(), keeper: COOP.keeper(), map: COOP.map(), snapshots: mons.length, listed: list.length, shapeOk, farExists, farListed });
 
-      // (a2) a keeper with nobody near still sends a heartbeat (an empty snapshot) about once a second, so the world never
-      // takes it for frozen; a paused keeper stays quiet on purpose so the world hands the map to someone playing
-      { push({ t: 'left', n: 'Ann', map: 'over' }); sent.length = 0; F.sim(90);
-        const beats = sentOf('mon').filter(m => Array.isArray(m.list) && m.list.length === 0).length;
-        const p0 = paused; paused = true; sent.length = 0; F.sim(90); const whilePaused = sentOf('mon').length; paused = p0;
-        check(P + 'a keeper with nobody near sends a heartbeat about once a second, and none while paused', beats >= 1 && beats <= 3 && whilePaused === 0, { beats, whilePaused });
+      // (a2) a keeper with nobody near sends no snapshot at all, not even an empty one: its presence, about once a second, is
+      // what tells the world it is alive (an empty snapshot each second doubled a lone open page's messages); paused, it sends
+      // neither, as before
+      { push({ t: 'left', n: 'Ann', map: 'over' }); sent.length = 0; F.sim(150);
+        const mons = sentOf('mon').length, pres = sentOf('p').length;
+        const p0 = paused; paused = true; sent.length = 0; F.sim(90); const whilePaused = sentOf('mon').length + sentOf('p').length; paused = p0;
+        check(P + 'a keeper with nobody near sends no empty snapshot, only its presence (about once a second), and nothing while paused', mons === 0 && pres >= 2 && whilePaused === 0, { mons, pres, whilePaused });
         push({ t: 'p', n: 'Ann', map: 'over', x: ann.x, y: ann.y, def: 576, dead: false, hp: 25, lv: 1 }); }
+      // (a2b) paused with a knight near, the keeper streams its (frozen) monsters as ever, so it keeps the map and every boss's
+      // count and death stay on one game (docs/ONLINE.md, "Named bosses")
+      { const p0 = paused; paused = true; sent.length = 0; F.sim(30); const whilePaused = sentOf('mon').filter(m => Array.isArray(m.list) && m.list.length > 0).length; paused = p0;
+        check(P + 'a paused keeper with a knight near still streams its monsters', whilePaused >= 2, { whilePaused }); }
       // (a3) the world taking the map over asks for the full snapshot ('snap'): the keeper answers once with every monster it
       // runs (far ones and fallen ones too), marked full; a snap for another map, or to a game that does not keep it, gets nothing
       { const fell = real.find(m => !m.dead && m !== gob && !m.remote && m.nid), was = fell ? { dead: fell.dead, deadT: fell.deadT } : null;
@@ -1119,8 +1115,6 @@
     const push = m => { if (sock && sock.onmessage) sock.onmessage({ data: JSON.stringify(m) }); };
     const fake = { call: async () => ({}), open: () => { sock = { readyState: 1, send(str) { const m = JSON.parse(str); sent.push(m); if (m.t === 'hello') push({ t: 'welcome', me: 'Cohen', at: 0, keeper: 'Cohen' }); }, close() { sock.readyState = 3; } }; return sock; } };
     const mons = () => sent.filter(m => m.t === 'mon').length;
-    // a list with monsters in it (master's keeper heartbeat, an empty list once a second, goes on watched or not)
-    const full = () => sent.filter(m => m.t === 'mon' && Array.isArray(m.list) && m.list.length).length;
     const real = monsters, gob = real.find(m => m.type === 'goblin' && !m.dead && m.nid) || real.find(m => !m.dead && m.nid);
     const keep = gob ? { x: gob.x, y: gob.y, stunT: gob.stunT, state: gob.state } : null;
     try {
@@ -1132,13 +1126,13 @@
       player.x = gob.x - 3 * TILE; player.y = gob.y;
       const run = (secs, move) => { for (let i = 0; i < secs * 60; i++) { if (move) { gob.x += (i % 2 ? 1 : -1) * 0.75; gob.stunT = 1; } F.step([]); } };
       sent.length = 0; run(10, true);
-      const notViewed = full(), notViewedBeats = mons();
+      const notViewed = mons();
       const pNo = sent.filter(m => m.t === 'p'), noTod = pNo.length > 0 && pNo.every(m => !('tod' in m) && !('vw' in m) && !('vh' in m));
       push({ t: 'view', on: true });
       sent.length = 0; run(10, true);
       const moving = mons();
       const pYes = sent.filter(m => m.t === 'p'), tod = pYes.length > 0 && pYes.every(m => typeof m.tod === 'number' && m.tod >= 0 && m.tod < 600 && Math.round(m.tod * 10) === m.tod * 10 && m.vw === Math.round(VW) && m.vh === Math.round(VH));
-      // nothing near him changes (no monsters at all here for 12 s): the same list only as the heartbeat, once a second
+      // nothing near him changes (no monsters at all here for 12 s): the same empty list, once every 5 s
       monsters = []; sent.length = 0; run(12, false); monsters = real;
       const still = mons();
       paused = true; sent.length = 0; run(4, true); const whilePaused = mons(); paused = false;
@@ -1148,9 +1142,9 @@
       const withFriend = mons();
       push({ t: 'left', n: 'Ava', map: 'over' });
       push({ t: 'view', on: false });
-      sent.length = 0; run(4, true); const after = full(), afterBeats = mons();
-      check(P + 'the hello names the \'view\' capability; not watched, alone: only master\'s heartbeat (' + notViewedBeats + ' empty lists in 10 s) and no tod (as before); watched and alone: at most 2 a second (' + moving + ' in 10 s), an unchanged list only as the heartbeat, once a second (' + still + ' in 12 s), none while paused, the time of day and the size of the screen (vw, vh: what the Watch draws) on its presence; with a friend near, 8 a second (' + withFriend + ' in 1 s); view off: the heartbeat alone again (' + afterBeats + ' empty lists in 4 s)',
-        caps && notViewed === 0 && notViewedBeats >= 9 && notViewedBeats <= 11 && noTod && moving >= 18 && moving <= 21 && still >= 11 && still <= 13 && whilePaused === 0 && tod && withFriend >= 7 && withFriend <= 9 && after === 0 && afterBeats >= 3 && afterBeats <= 5, { caps, notViewed, notViewedBeats, noTod, moving, still, whilePaused, tod, withFriend, after, afterBeats });
+      sent.length = 0; run(4, true); const after = mons();
+      check(P + 'the hello names the \'view\' capability; not watched, alone: no snapshot and no tod (as before); watched and alone: at most 2 a second (' + moving + ' in 10 s), an unchanged list only once every 5 s (' + still + ' in 12 s), none while paused, the time of day and the size of the screen (vw, vh: what the Watch draws) on its presence; with a friend near, 8 a second (' + withFriend + ' in 1 s); view off: nothing again',
+        caps && notViewed === 0 && noTod && moving >= 18 && moving <= 21 && still >= 2 && still <= 4 && whilePaused === 0 && tod && withFriend >= 7 && withFriend <= 9 && after === 0, { caps, notViewed, noTod, moving, still, whilePaused, tod, withFriend, after });
       // on the title: nothing
       push({ t: 'view', on: true }); title.active = true; sent.length = 0; run(2, true); const onTitle = mons(); title.active = false;
       push({ t: 'welcome', me: 'Cohen', at: 0, keeper: 'Cohen' }); const offAtWelcome = COOP.viewed() === false;

@@ -3,7 +3,7 @@
 //                           save version, the chat log, the settings, and the admins' tables: the moderation log, the
 //                           pinned backups, the drop parties and their crackers (who lit each, the prize, claimed or
 //                           not), the logins (when each knight's sockets opened and closed), every finished trade, the request
-//                           meter (one row per UTC day), the movement check's counts and violations (move_day, move_log), and the shared world's
+//                           meter (one row per UTC day, with its admin, alarm and rows-written columns), the movement check's counts and violations (move_day, move_log), and the shared world's
 //                           map changes and boss rests (sim_log, realm_state). Sessions are left
 //                           out on purpose: they are short-lived tokens.
 // GET  /api/admin/bookmark  a Cloudflare point-in-time restore bookmark for this moment, also kept in settings with the
@@ -30,6 +30,8 @@ export async function backupCall(world, req, url, call, method) {
       logins: rows('SELECT * FROM logins ORDER BY id'),
       req_meter: rows('SELECT * FROM req_meter ORDER BY day'),
       req_meter_admin: rows('SELECT * FROM req_meter_admin ORDER BY day'),
+      req_meter_alarm: rows('SELECT * FROM req_meter_alarm ORDER BY day'),
+      req_meter_rows: rows('SELECT * FROM req_meter_rows ORDER BY day'),
       move_day: rows('SELECT * FROM move_day ORDER BY day'),
       move_log: rows('SELECT * FROM move_log ORDER BY id'),
       sim_log: rows('SELECT * FROM sim_log ORDER BY id'),

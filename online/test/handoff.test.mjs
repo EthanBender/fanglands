@@ -391,14 +391,16 @@ test('hand-over: per account ACCT_PER_HOUR offers an hour; one past it is refuse
   const tok = account(w, 'Cohen'), sam = account(w, 'Sam');
   assert.equal(ACCT_PER_HOUR, 30);
   for (let i = 0; i < ACCT_PER_HOUR; i++) assert.equal((await offer(w, keysOf(tok), { ip: '10.0.0.' + i })).status, 200, 'offer ' + i);
-  const before = waiting(w), wrote = w.log.filter(e => e.write).length;
+  // the request meter (meter.js) writes every request to the World as it comes, a refused one's too: not the hand-over's
+  const writes = () => w.log.filter(e => e.write && !/req_meter/.test(e.q)).length;
+  const before = waiting(w), wrote = writes();
   const req = unread('https://gorkscape.ca/api/handoff/offer', { auth: tok, length: 300 });
   assert.deepEqual([await call(w, req), req.reads], [429, 0]);
   const r = await offer(w, keysOf(tok));
   assert.deepEqual([r.status, r.data.code], [429, 'wait']);
   assert.ok(r.data.wait > 0 && r.data.wait <= 3600);
   assert.equal(waiting(w), before, 'nothing kept');
-  assert.equal(w.log.filter(e => e.write).length, wrote, 'nothing written');
+  assert.equal(writes(), wrote, 'nothing written');
   assert.equal((await offer(w, keysOf(sam))).status, 200);
   T += 3600000;
   assert.equal((await offer(w, keysOf(tok))).status, 200);
@@ -412,7 +414,7 @@ test('hand-over: the free plan: a hand-over writes NO row, ever (offers, claims,
   await claim(w, 'c'.repeat(64)); await claim(w, 'nope'); await offer(w, keysOf('b'.repeat(64)));
   await post(w, 'https://gorkscape.ca/api/handoff/claim', { code: 'x' });
   T += HANDOFF_MS + 1; await claim(w, 'd'.repeat(64));
-  // the request meter (meter.js) counts every call to the World, a hand-over's too, in its own rows every 10 s: not the hand-over's
+  // the request meter (meter.js) counts every call to the World, a hand-over's too, in its own rows: not the hand-over's
   const mine = w.log.filter(e => !/req_meter/.test(e.q));
   assert.deepEqual(mine.filter(e => e.write || e.rowsWritten), [], 'no write');
   assert.ok(mine.length > 0 && mine.every(e => /^SELECT s\.name_lc AS lc FROM sessions s JOIN accounts a|^SELECT json FROM saves WHERE name_lc = \? ORDER BY ver DESC LIMIT 1$/.test(e.q)), mine.map(e => e.q).join('\n'));

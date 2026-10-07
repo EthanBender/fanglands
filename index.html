@@ -4571,7 +4571,9 @@ window.FANGLANDS = {
     give('coins', 300);
     { const wm = F.talk('marta'); const open = panel === 'shop'; const inside = !!insideBuilding(Math.floor(player.x / TILE), Math.floor(player.y / TILE)); const b1 = F.clickButton('Buy 60'), b2 = F.clickButton('Buy 5'), b3 = F.clickButton('Buy 10'); closePanel(); check('walk in through the door, buy rod, hammer, bread', open && inside && b1 && b2 && b3 && countItem('fishing_rod') === 1 && countItem('hammer') === 1 && countItem('bread') >= 1, { wm, open, inside, coins: coins() }); }
     { topUp('plank', 4); const wa = F.talk('aldous'); const open = panel === 'bank'; const slot = player.inv.findIndex(s => s && s.id === 'plank'); const dep = F.clickButton('slot' + slot); const inBank = player.bank.some(b => b.id === 'plank' && b.qty === 4); const wd = F.clickButton('bank0'); closePanel(); check('bank deposit + withdraw', open && dep && inBank && wd && countItem('plank') === 4 && player.bank.length === 0, { wa, open, inBank, planks: countItem('plank') }); }
-    { F.calm(); const d = DUMMIES[0]; F.goAdjacent(d[0], d[1]); const x0 = player.skills.melee.xp; for (let i = 0; i < 6; i++) { F.press('Space'); F.sim(30, []); } check('training dummies: small xp, misses possible, records best hit', player.skills.melee.xp > x0 && player.skills.melee.xp - x0 <= 24 && player.highestHit >= 1, { gained: player.skills.melee.xp - x0, best: player.highestHit }); }
+    // (seeded; and xp is the damage, so 6 swings give at most 6 max hits at the level reached: the old flat 24 held only at max hit 4,
+    // and the fights before this are not seeded, so melee 6 (max hit 5) failed it about 1 run in 400: review round 2, 6 Oct 2026)
+    { const unseed = seedRandom(0xD077); F.calm(); const d = DUMMIES[0]; F.goAdjacent(d[0], d[1]); const x0 = player.skills.melee.xp; for (let i = 0; i < 6; i++) { F.press('Space'); F.sim(30, []); } unseed(); const most = 6 * playerMaxHit(); check('training dummies: small xp, misses possible, records best hit', player.skills.melee.xp > x0 && player.skills.melee.xp - x0 <= most && player.highestHit >= 1, { gained: player.skills.melee.xp - x0, best: player.highestHit, most }); }
     { const wt = F.talk('tobin'); const q1 = quest.bread; const c0 = coins(); F.press('KeyE'); F.sim(2, []); check("Tobin's bread quest", q1 === 'active' && quest.bread === 'done' && coins() === c0 + 30, { wt, bread: quest.bread }); }
     { quest.tracked = null; openPanel('quests'); render(); const t = F.clickButton('Track'); closePanel(); check('quests are tracked on demand, not by default', t && quest.tracked === 'main', { tracked: quest.tracked }); }
     { const wd = F.walkTo(...TD.p(112, 48), 6000); F.face(...ATLAS.port('thistledown.duke')); F.press('KeyE'); F.sim(2, []); const st = quest.stage; player.skills.melee.xp = XP_TABLE[5]; player.skills.woodcutting.xp = XP_TABLE[3]; F.press('KeyE'); F.sim(2, []); check('Duke inside the castle keep gates Chapter 2', typeof wd === 'number' && st === 6 && quest.stage === 7 && player.region === 'Castle Thistledown', { wd, st, stage: quest.stage, region: player.region }); }
@@ -23942,9 +23944,10 @@ window.SETTINGS = SETTINGS;
   }
 
   // ---------- opening and closing faces ----------
-  function openFace() {
+  // (notX, notY): the face just closed, never the one that opens (a swing closes a face and opens another somewhere else)
+  function openFace(notX, notY) {
     if (!run) return;
-    const free = FACE_SPOTS.filter(([x, y]) => tileAt(x, y) !== T_SEAM && !(Math.floor(player.x / TILE) === x && Math.floor(player.y / TILE) === y));
+    const free = FACE_SPOTS.filter(([x, y]) => tileAt(x, y) !== T_SEAM && !(x === notX && y === notY) && !(Math.floor(player.x / TILE) === x && Math.floor(player.y / TILE) === y));
     if (!free.length) return;
     const [x, y] = free[Math.floor(Math.random() * free.length)];
     changeTile(x, y, T_SEAM); run.faces.push([x, y]);
@@ -24044,7 +24047,7 @@ window.SETTINGS = SETTINGS;
     gainXp('mining', 18);
     burst(tc(a.tx), tc(a.ty), '#2b2b33', 12, 70); sfx('mine');
     floatText(tc(a.tx), tc(a.ty) - 20, `+${n}`, '#c9d1d9', 13);
-    closeFace(a.tx, a.ty); openFace();
+    closeFace(a.tx, a.ty); openFace(a.tx, a.ty);
   });
 
   // ---------- the shift clock on screen ----------
@@ -24215,7 +24218,13 @@ window.SETTINGS = SETTINGS;
         for (const hk of HOOKS.use) if (hk(COALMINE.tiles.seam, fx, fy)) break;
         const started = !!player.action && player.action.type === 'coalface';
         player.action.t = player.action.need; const c0 = r.coal, mx0 = player.skills.mining.xp;
-        for (const u of HOOKS.update) u(0.016);
+        // the dice pinned to the closed face's place among every spot a face could open in once it is closed (it failed about 1
+        // run in 331 when the dice picked it: review round 2, 6 Oct 2026); the face that opens must be another one
+        const ptx = Math.floor(player.x / TILE), pty = Math.floor(player.y / TILE);
+        const could = COALMINE.FACE_SPOTS.filter(([x, y]) => (x === fx && y === fy) || (tileAt(x, y) !== COALMINE.tiles.seam && !(ptx === x && pty === y)));
+        const k = could.findIndex(([x, y]) => x === fx && y === fy), r0 = Math.random;
+        if (k >= 0) Math.random = () => (k + 0.5) / could.length;
+        try { for (const u of HOOKS.update) u(0.016); } finally { Math.random = r0; }
         const mined = r.coal - c0, gone = tileAt(fx, fy) !== COALMINE.tiles.seam, refilled = r.faces.length === COALMINE.SEAM_LIVE, xp = player.skills.mining.xp - mx0;
         check(P + 'a swing at a face pays 2-4 coal into the cart, closes that face and opens another', started && mined >= 2 && mined <= 4 && gone && refilled && xp === 18, { started, mined, gone, refilled, xp, faces: r.faces.length });
       } else check(P + 'a swing at a face pays 2-4 coal into the cart, closes that face and opens another', false, { noFaces: true });
@@ -36648,10 +36657,15 @@ window.RETALIATE = RETALIATE;
 // so a burst of saves is one call, and flushed at once when the page hides or goes away (NET.call sets keepalive
 // on PUT). A failed push is kept for the next save; three failures in a row say so once, then stay quiet.
 // Coming back online (the world's welcome) pushes once if the cloud may be behind.
+// A save that changes nothing the cloud does not already have is not pushed: 99-boot saves every 15 s whatever the knight is
+// doing, and a paused page (only the world clock `time` moves) or a page in the background (nothing moves) used to push every
+// one of them, 210 to 240 calls an hour each (measured 4 Oct 2026). Now the same string is never pushed again, and a save that
+// differs only in `time` goes up at most every 10 minutes. Leaving the page (hide, pagehide) still pushes anything that differs.
 // Feature file: registers through HOOKS and wraps save by reassignment. window.CLOUD is the register.
 // ============================================================================
 {
   const DEBOUNCE = 12000, TICK = 1.5;   // a 12 s hold: the free plan counts every call, and the page-hide flush covers leaving
+  const TIME_ONLY_EVERY = 600000;        // ms: a save that differs from the cloud's only in the world clock goes up this seldom
   const lsGet = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
   const lsDel = k => { try { localStorage.removeItem(k); } catch (e) { } };
   const canListen = typeof document !== 'undefined' && typeof document.addEventListener === 'function' && typeof window.addEventListener === 'function';
@@ -36667,6 +36681,7 @@ window.RETALIATE = RETALIATE;
     pushes: 0,
   };
   window.CLOUD = CLOUD;
+  let pushedAt = -1e15;   // Date.now() of the last good push (TIME_ONLY_EVERY); kept off CLOUD so its data is master's
   const active = () => NET.enabled && !!NET.token && !!(window.LOGIN && window.LOGIN.playing);
   CLOUD.active = active;
   const slotString = () => (typeof title === 'undefined' || title.active) ? null : lsGet(title.slotKey(title.slot));
@@ -36690,7 +36705,7 @@ window.RETALIATE = RETALIATE;
     const raw = CLOUD.pending; CLOUD.pending = null; CLOUD.inflight = true;
     let result = null;
     const ok = () => {
-      CLOUD.inflight = false; CLOUD.fails = 0; CLOUD.nagged = false; CLOUD.known = raw; CLOUD.pushes++; CLOUD.savedAt = performance.now();
+      CLOUD.inflight = false; CLOUD.fails = 0; CLOUD.nagged = false; CLOUD.known = raw; CLOUD.pushes++; CLOUD.savedAt = performance.now(); pushedAt = Date.now();
       if (CLOUD.pending) schedule();
       result = true;
     };
@@ -36711,7 +36726,21 @@ window.RETALIATE = RETALIATE;
     const raw = slotString(); if (!raw || (!force && raw === CLOUD.known)) return false;
     CLOUD.pending = raw; return CLOUD.flush();
   };
-  CLOUD.reset = () => { clearTimer(); CLOUD.pending = null; CLOUD.inflight = false; CLOUD.fails = 0; CLOUD.nagged = false; CLOUD.known = null; };
+  CLOUD.reset = () => { clearTimer(); CLOUD.pending = null; CLOUD.inflight = false; CLOUD.fails = 0; CLOUD.nagged = false; CLOUD.known = null; pushedAt = -1e15; };
+
+  // the slot string without its top-level world clock (`time`), so two saves that differ only there compare equal; the
+  // cloud's side is kept for the string it was made from (CLOUD.known is also set by 71-login)
+  const sansTime = raw => { try { const d = JSON.parse(raw); if (d && typeof d === 'object' && !Array.isArray(d)) { delete d.time; return JSON.stringify(d); } } catch (e) { } return raw; };
+  let knownSans = { raw: null, sans: null };
+  const cloudSans = () => { if (knownSans.raw !== CLOUD.known) knownSans = { raw: CLOUD.known, sans: CLOUD.known == null ? null : sansTime(CLOUD.known) }; return knownSans.sans; };
+  // does this slot string need to go up? Anything already on its way goes on being replaced by the newest string; otherwise
+  // the very string the cloud holds never does, and one that differs only in `time` waits TIME_ONLY_EVERY since the last push
+  CLOUD.needs = raw => {
+    if (CLOUD.pending != null || CLOUD.inflight || CLOUD.known == null) return true;
+    if (raw === CLOUD.known) return false;
+    if (sansTime(raw) !== cloudSans()) return true;
+    return Date.now() - pushedAt >= TIME_ONLY_EVERY;
+  };
 
   // ---------- save, wrapped after 14-title's wrapper (and 63-house's), so the slot string it wrote is what goes up ----------
   const _save = save;
@@ -36724,15 +36753,17 @@ window.RETALIATE = RETALIATE;
       return;
     }
     const raw = slotString(); if (raw == null) return;
+    if (!CLOUD.needs(raw)) return;   // nothing the cloud does not already have (see the top of this file)
     CLOUD.pending = raw; schedule();
   };
 
   // ---------- flush when the page hides or goes away; push once when the world says welcome ----------
   if (canListen) {
-    const now = () => { if (!active()) return; save(); CLOUD.flush(); };
-    window.addEventListener('pagehide', now);
-    document.addEventListener('visibilitychange', () => { if (document.hidden) now(); });
+    window.addEventListener('pagehide', () => CLOUD.leaving());
+    document.addEventListener('visibilitychange', () => { if (document.hidden) CLOUD.leaving(); });
   }
+  // leaving the page (hidden, or gone): whatever differs from what the cloud holds goes up now, the world clock included
+  CLOUD.leaving = () => { if (!active()) return; save(); const raw = slotString(); if (raw && raw !== CLOUD.known && CLOUD.pending == null) CLOUD.pending = raw; return CLOUD.flush(); };
   NET.on('welcome', () => { CLOUD.push(false); });
 
   // ---------- the tick on the HUD ----------
@@ -36755,21 +36786,34 @@ window.RETALIATE = RETALIATE;
       check(P + 'a save while online books a push and sends nothing yet (4 s hold)', active() && CLOUD.pending === raw1 && CLOUD.timer !== null && puts.length === 0, { pending: !!CLOUD.pending, puts: puts.length });
       CLOUD.flush();
       check(P + 'the flush sends the slot string the title wrote, word for word, and shows the tick', puts.length === 1 && puts[0] === raw1 && CLOUD.pending === null && CLOUD.timer === null && CLOUD.fails === 0 && CLOUD.known === raw1 && performance.now() - CLOUD.savedAt < 1000, { puts: puts.length, same: puts[0] === raw1 });
+      // (each save below changes the knight: a save that changes nothing is not pushed at all, see the next checks)
       down = true; notice = null;
-      save(); CLOUD.flush(); save(); CLOUD.flush(); const quiet = !notice && CLOUD.fails === 2 && CLOUD.pending === lsGet(title.slotKey(title.slot));
-      save(); CLOUD.flush();
+      player.kills++; save(); CLOUD.flush(); player.kills++; save(); CLOUD.flush(); const quiet = !notice && CLOUD.fails === 2 && CLOUD.pending === lsGet(title.slotKey(title.slot));
+      player.kills++; save(); CLOUD.flush();
       check(P + 'three failed pushes say so once, in plain words, and the save waits on this device', quiet && CLOUD.fails === 3 && CLOUD.nagged && !!notice && notice.text === 'Could not reach the world — your progress is saved on this device for now.' && puts.length === 1, { quiet, fails: CLOUD.fails, notice: notice && notice.text });
-      notice = null; save(); CLOUD.flush();
+      notice = null; player.kills++; save(); CLOUD.flush();
       check(P + 'a fourth failure stays quiet', CLOUD.fails === 4 && notice === null && CLOUD.nagged, { fails: CLOUD.fails });
       down = false; player.kills++; save(); CLOUD.flush();
       check(P + 'the next good push clears the count and the nag', CLOUD.fails === 0 && !CLOUD.nagged && puts.length === 2 && puts[1] === lsGet(title.slotKey(title.slot)), { fails: CLOUD.fails, puts: puts.length });
+      // an idle page: 99-boot saves every 15 s. Nothing changed (a page in the background): never pushed. Only the world clock
+      // moved (a paused page): pushed at most every 10 minutes. A real change: pushed as before. Leaving: anything that differs.
+      { const n0 = puts.length;
+        save(); const same = CLOUD.pending === null && CLOUD.timer === null;
+        time += 15; save(); time += 15; save(); const clockOnly = CLOUD.pending === null && CLOUD.timer === null;
+        pushedAt -= 600000; time += 15; save(); const tenMin = CLOUD.pending !== null; CLOUD.flush();
+        const clockUp = puts.length === n0 + 1 && JSON.parse(puts[puts.length - 1]).time === time;
+        time += 15; save(); const quietAgain = CLOUD.pending === null;
+        player.kills++; save(); const real = CLOUD.pending === lsGet(title.slotKey(title.slot)) && CLOUD.timer !== null; CLOUD.flush();
+        time += 15; CLOUD.leaving(); const left = puts.length === n0 + 3 && CLOUD.known === lsGet(title.slotKey(title.slot));
+        CLOUD.leaving(); const leftOnce = puts.length === n0 + 3;
+        check(P + 'an idle page pushes nothing new: the same save never, a clock-only one every 10 minutes, a real change at once, and leaving pushes what differs once', same && clockOnly && tenMin && clockUp && quietAgain && real && left && leftOnce, { same, clockOnly, tenMin, clockUp, quietAgain, real, left, leftOnce, puts: puts.length - n0 }); }
       // the world's welcome pushes once, only if the cloud may be behind
-      NET.connect(); const same = puts.length === 2 && NET.status === 'on';
+      NET.connect(); const same = puts.length === 5 && NET.status === 'on';
       NET.disconnect(); player.kills++; _save(); const raw2 = lsGet(title.slotKey(title.slot)); NET.connect();
-      check(P + 'coming back online pushes the knight once when the cloud is behind, and not when it is not', same && puts.length === 3 && puts[2] === raw2 && CLOUD.known === raw2, { same, puts: puts.length });
+      check(P + 'coming back online pushes the knight once when the cloud is behind, and not when it is not', same && puts.length === 6 && puts[5] === raw2 && CLOUD.known === raw2, { same, puts: puts.length });
       NET.disconnect();
       if (L) L.playing = false; CLOUD.reset(); save();
-      check(P + 'with no knight playing online, a save never touches the cloud', !active() && CLOUD.pending === null && CLOUD.timer === null && puts.length === 3, { pending: CLOUD.pending });
+      check(P + 'with no knight playing online, a save never touches the cloud', !active() && CLOUD.pending === null && CLOUD.timer === null && puts.length === 6, { pending: CLOUD.pending });
       NET.setToken(null); if (L) L.playing = true; save(); const noToken = CLOUD.pending === null && CLOUD.timer === null;
       check(P + 'without a session there is nothing to push to', noToken, { noToken });
     } finally {
@@ -38528,7 +38572,6 @@ window.RETALIATE = RETALIATE;
   const GONE_AFTER = 1;       // a puppet missing from the stream this long is hidden
   const DROP_AFTER = 2;       // ...and dropped from the array this long after that
   const STALL_AFTER = 6;      // when the WHOLE stream has stopped, everything stays standing this long (longer than a handoff takes)
-  const BEAT_EVERY = 1;       // a keeper with nobody near still sends an empty snapshot this often: the world's sign it is alive
   const NEAR = 24 * TILE;     // snapshot radius around every knight on the map
   const FREEZE = 1e6;         // the stunT value that makes the core loop skip a monster for one frame
   const MAX_DMG = 500;
@@ -39007,23 +39050,19 @@ window.RETALIATE = RETALIATE;
       }
       return;
     }
+    // A keeper with nobody near sends nothing here: its presence (73-players, at least once a second while its game runs) is
+    // what tells the world it is alive (room.js KEEPER_STALE reads presence as well as monsters since 4 Oct 2026). It used to
+    // send an empty snapshot once a second as well, which doubled a lone open page's messages (measured: 7,186 an hour, half of
+    // them these). That heartbeat was never sent paused or on the title screen, so a paused keeper is unchanged: it streams
+    // its (frozen) monsters to the knights near it, as ever, and keeps the map.
     // A teacher is watching this knight (the world said view on) and he keeps his map with nobody near: his game sends its
-    // monsters at most twice a second while they change, so the teacher sees them too; never while paused or on the title.
-    const watchedAlone = S.viewed && isKeeper() && !S.here.length;
-    if (watchedAlone) aloneStream(dt);
-    // a keeper whose game is running keeps talking even with nobody near: an empty snapshot is a heartbeat, so the world never
-    // takes a working keeper for a frozen one and hands the map to a knight whose phone is locked (the monsters then vanished).
-    // A paused keeper or one on the title screen stays quiet on purpose, so the world hands the map to someone who is playing.
-    // A watched lone keeper's heartbeat carries his monsters instead of nothing (an empty list would read on the teacher's
-    // screen as a stream that stopped listing them), and each list the alone stream sends counts as the heartbeat.
-    if (isKeeper() && online() && !paused && !(title && title.active)) {
-      S.beatAcc = (S.beatAcc || 0) + dt;
-      if (S.beatAcc >= BEAT_EVERY && !(pre && pre.kind === 'keeper' && S.here.length)) { S.beatAcc = 0; if (watchedAlone) aloneSend(); else NET.send({ t: 'mon', list: [] }); }
-    }
+    // monsters about twice a second so the teacher sees them too (an unchanged list only once every 5 s); never while paused
+    // or on the title. With anyone near, the stream below is the one it always was.
+    if (S.viewed && isKeeper() && !S.here.length) { aloneStream(dt); return; }
     if (!pre || pre.kind !== 'keeper') return;
     if (!paused) for (const f of pre.frozen) { const m = f.m; if (!m.dead && m.stunT <= 0 && monsters.includes(m)) stepRemote(m, f.target, dt); }
     S.snapAcc += dt;
-    if (S.snapAcc >= SNAP_EVERY && isKeeper() && S.here.length) { S.snapAcc = 0; S.beatAcc = 0; NET.send({ t: 'mon', list: snapshot(S.here) }); }
+    if (S.snapAcc >= SNAP_EVERY && isKeeper() && S.here.length) { S.snapAcc = 0; NET.send({ t: 'mon', list: snapshot(S.here) }); }
   }
   function aloneStream(dt) {
     if (paused || (title && title.active)) { S.alone.acc = 0; return; }
@@ -39032,11 +39071,7 @@ window.RETALIATE = RETALIATE;
     S.alone.acc = 0;
     const list = snapshot([]), str = JSON.stringify(list);
     if (str === S.alone.last && time >= S.alone.at && time - S.alone.at < ALONE_KEEP) return;
-    aloneSend(list, str);
-  }
-  function aloneSend(list, str) {
-    if (!list) { list = snapshot([]); str = JSON.stringify(list); }
-    if (NET.send({ t: 'mon', list })) { S.alone.last = str; S.alone.at = time; S.alone.sent++; S.beatAcc = 0; }
+    if (NET.send({ t: 'mon', list })) { S.alone.last = str; S.alone.at = time; S.alone.sent++; }
   }
   // the teacher's page (79-view): what update() does for puppets, alone (it never runs there): the map the drawn knight is
   // on, the puppets gliding onto each snapshot over the gap between them, and the core's tip and fade of a fallen one
@@ -39287,13 +39322,18 @@ window.RETALIATE = RETALIATE;
       const farExists = real.some(m => !m.dead && !near(m.x, m.y)), farListed = list.some(e => !sentNear(e[2], e[3]));
       check(P + 'the keeper streams snapshots in the contract shape, only for monsters near a knight', NET.online() && COOP.isKeeper() && COOP.map() === 'over' && mons.length >= 1 && shapeOk && farExists && !farListed && list.some(e => e[0] === gob.nid), { online: NET.online(), keeper: COOP.keeper(), map: COOP.map(), snapshots: mons.length, listed: list.length, shapeOk, farExists, farListed });
 
-      // (a2) a keeper with nobody near still sends a heartbeat (an empty snapshot) about once a second, so the world never
-      // takes it for frozen; a paused keeper stays quiet on purpose so the world hands the map to someone playing
-      { push({ t: 'left', n: 'Ann', map: 'over' }); sent.length = 0; F.sim(90);
-        const beats = sentOf('mon').filter(m => Array.isArray(m.list) && m.list.length === 0).length;
-        const p0 = paused; paused = true; sent.length = 0; F.sim(90); const whilePaused = sentOf('mon').length; paused = p0;
-        check(P + 'a keeper with nobody near sends a heartbeat about once a second, and none while paused', beats >= 1 && beats <= 3 && whilePaused === 0, { beats, whilePaused });
+      // (a2) a keeper with nobody near sends no snapshot at all, not even an empty one: its presence, about once a second, is
+      // what tells the world it is alive (an empty snapshot each second doubled a lone open page's messages); paused, it sends
+      // neither, as before
+      { push({ t: 'left', n: 'Ann', map: 'over' }); sent.length = 0; F.sim(150);
+        const mons = sentOf('mon').length, pres = sentOf('p').length;
+        const p0 = paused; paused = true; sent.length = 0; F.sim(90); const whilePaused = sentOf('mon').length + sentOf('p').length; paused = p0;
+        check(P + 'a keeper with nobody near sends no empty snapshot, only its presence (about once a second), and nothing while paused', mons === 0 && pres >= 2 && whilePaused === 0, { mons, pres, whilePaused });
         push({ t: 'p', n: 'Ann', map: 'over', x: ann.x, y: ann.y, def: 576, dead: false, hp: 25, lv: 1 }); }
+      // (a2b) paused with a knight near, the keeper streams its (frozen) monsters as ever, so it keeps the map and every boss's
+      // count and death stay on one game (docs/ONLINE.md, "Named bosses")
+      { const p0 = paused; paused = true; sent.length = 0; F.sim(30); const whilePaused = sentOf('mon').filter(m => Array.isArray(m.list) && m.list.length > 0).length; paused = p0;
+        check(P + 'a paused keeper with a knight near still streams its monsters', whilePaused >= 2, { whilePaused }); }
       // (a3) the world taking the map over asks for the full snapshot ('snap'): the keeper answers once with every monster it
       // runs (far ones and fallen ones too), marked full; a snap for another map, or to a game that does not keep it, gets nothing
       { const fell = real.find(m => !m.dead && m !== gob && !m.remote && m.nid), was = fell ? { dead: fell.dead, deadT: fell.deadT } : null;
@@ -39631,8 +39671,6 @@ window.RETALIATE = RETALIATE;
     const push = m => { if (sock && sock.onmessage) sock.onmessage({ data: JSON.stringify(m) }); };
     const fake = { call: async () => ({}), open: () => { sock = { readyState: 1, send(str) { const m = JSON.parse(str); sent.push(m); if (m.t === 'hello') push({ t: 'welcome', me: 'Cohen', at: 0, keeper: 'Cohen' }); }, close() { sock.readyState = 3; } }; return sock; } };
     const mons = () => sent.filter(m => m.t === 'mon').length;
-    // a list with monsters in it (master's keeper heartbeat, an empty list once a second, goes on watched or not)
-    const full = () => sent.filter(m => m.t === 'mon' && Array.isArray(m.list) && m.list.length).length;
     const real = monsters, gob = real.find(m => m.type === 'goblin' && !m.dead && m.nid) || real.find(m => !m.dead && m.nid);
     const keep = gob ? { x: gob.x, y: gob.y, stunT: gob.stunT, state: gob.state } : null;
     try {
@@ -39644,13 +39682,13 @@ window.RETALIATE = RETALIATE;
       player.x = gob.x - 3 * TILE; player.y = gob.y;
       const run = (secs, move) => { for (let i = 0; i < secs * 60; i++) { if (move) { gob.x += (i % 2 ? 1 : -1) * 0.75; gob.stunT = 1; } F.step([]); } };
       sent.length = 0; run(10, true);
-      const notViewed = full(), notViewedBeats = mons();
+      const notViewed = mons();
       const pNo = sent.filter(m => m.t === 'p'), noTod = pNo.length > 0 && pNo.every(m => !('tod' in m) && !('vw' in m) && !('vh' in m));
       push({ t: 'view', on: true });
       sent.length = 0; run(10, true);
       const moving = mons();
       const pYes = sent.filter(m => m.t === 'p'), tod = pYes.length > 0 && pYes.every(m => typeof m.tod === 'number' && m.tod >= 0 && m.tod < 600 && Math.round(m.tod * 10) === m.tod * 10 && m.vw === Math.round(VW) && m.vh === Math.round(VH));
-      // nothing near him changes (no monsters at all here for 12 s): the same list only as the heartbeat, once a second
+      // nothing near him changes (no monsters at all here for 12 s): the same empty list, once every 5 s
       monsters = []; sent.length = 0; run(12, false); monsters = real;
       const still = mons();
       paused = true; sent.length = 0; run(4, true); const whilePaused = mons(); paused = false;
@@ -39660,9 +39698,9 @@ window.RETALIATE = RETALIATE;
       const withFriend = mons();
       push({ t: 'left', n: 'Ava', map: 'over' });
       push({ t: 'view', on: false });
-      sent.length = 0; run(4, true); const after = full(), afterBeats = mons();
-      check(P + 'the hello names the \'view\' capability; not watched, alone: only master\'s heartbeat (' + notViewedBeats + ' empty lists in 10 s) and no tod (as before); watched and alone: at most 2 a second (' + moving + ' in 10 s), an unchanged list only as the heartbeat, once a second (' + still + ' in 12 s), none while paused, the time of day and the size of the screen (vw, vh: what the Watch draws) on its presence; with a friend near, 8 a second (' + withFriend + ' in 1 s); view off: the heartbeat alone again (' + afterBeats + ' empty lists in 4 s)',
-        caps && notViewed === 0 && notViewedBeats >= 9 && notViewedBeats <= 11 && noTod && moving >= 18 && moving <= 21 && still >= 11 && still <= 13 && whilePaused === 0 && tod && withFriend >= 7 && withFriend <= 9 && after === 0 && afterBeats >= 3 && afterBeats <= 5, { caps, notViewed, notViewedBeats, noTod, moving, still, whilePaused, tod, withFriend, after, afterBeats });
+      sent.length = 0; run(4, true); const after = mons();
+      check(P + 'the hello names the \'view\' capability; not watched, alone: no snapshot and no tod (as before); watched and alone: at most 2 a second (' + moving + ' in 10 s), an unchanged list only once every 5 s (' + still + ' in 12 s), none while paused, the time of day and the size of the screen (vw, vh: what the Watch draws) on its presence; with a friend near, 8 a second (' + withFriend + ' in 1 s); view off: nothing again',
+        caps && notViewed === 0 && noTod && moving >= 18 && moving <= 21 && still >= 2 && still <= 4 && whilePaused === 0 && tod && withFriend >= 7 && withFriend <= 9 && after === 0, { caps, notViewed, noTod, moving, still, whilePaused, tod, withFriend, after });
       // on the title: nothing
       push({ t: 'view', on: true }); title.active = true; sent.length = 0; run(2, true); const onTitle = mons(); title.active = false;
       push({ t: 'welcome', me: 'Cohen', at: 0, keeper: 'Cohen' }); const offAtWelcome = COOP.viewed() === false;

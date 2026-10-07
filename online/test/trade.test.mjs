@@ -260,7 +260,7 @@ test('the same knight logging in elsewhere mid-trade ends the trade (nothing mov
   assert.equal(ada2.last('trade_end').code, 'gone');
 });
 
-test('a nap: the open trade is gone (a new Room over the same store), its messages are answered gone, nothing moved', () => {
+test('a nap whose attachments carry no trade (an older world\'s): the open trade is gone, its messages are answered gone, nothing moved', () => {
   const store = new MemoryStore();
   const w = world(store);
   const sam = w.knight('Sam'), ada = w.knight('Ada', 560, 500);
@@ -273,6 +273,76 @@ test('a nap: the open trade is gone (a new Room over the same store), its messag
   w2.say(sam, { t: 'trade_accept', id, ver: 2 });
   assert.deepEqual(sam.last('trade_end'), { t: 'trade_end', id, code: 'gone', n: 'Sam' });
   assert.equal(store.tradeLog(5).length, 0);
+});
+
+// 5 Oct 2026: two knights on one map at "Are you sure?" who both stop playing for 10 s let the world nap (nothing watches a
+// quiet keeper any more), and the trade was gone: both read "That trade is over. Nothing was swapped." It rides both
+// attachments now, and the second socket restored puts it back as it stood.
+for (const order of ['Sam first', 'Ada first']) test(`a nap keeps an open trade at "Are you sure?": restored ${order}, both confirm, and it is done once`, () => {
+  const store = new MemoryStore();
+  const w = world(store);
+  const sam = w.knight('Sam'), ada = w.knight('Ada', 560, 500);
+  for (const s of [sam, ada]) s.attach = st => { s.state = JSON.parse(JSON.stringify(st)); };
+  const id = w.open(sam, ada);
+  offer(w, sam, id, [{ id: 'bread', qty: 3 }]); offer(w, ada, id, [{ id: 'coins', qty: 20 }]);
+  w.say(sam, { t: 'trade_accept', id, ver: 3 }); w.say(ada, { t: 'trade_accept', id, ver: 3 });
+  w.say(sam, { t: 'trade_confirm', id, ver: 3 });
+  assert.equal(state(sam).stage, 'confirm');
+  assert.deepEqual(sam.state.trade, ada.state.trade);
+  assert.deepEqual(sam.state.trade, { id, a: 'sam', b: 'ada', offer: { a: [{ id: 'bread', qty: 3 }], b: [{ id: 'coins', qty: 20 }] }, acc: { a: true, b: true }, conf: { a: true, b: false }, stage: 'confirm', ver: 3 });
+  // the nap: a new Room over the same store, the sockets restored from their attachments in either order
+  const w2 = world(store);
+  const both = order === 'Sam first' ? [sam, ada] : [ada, sam];
+  for (const s of both) w2.room.restore(s, s.state);
+  sam.clear(); ada.clear();
+  // Sam had confirmed before the nap; Ada confirms now
+  w2.say(ada, { t: 'trade_confirm', id, ver: 3 });
+  assert.deepEqual(sam.of('trade_end').concat(ada.of('trade_end')), []);
+  assert.deepEqual(sam.last('trade_done'), { t: 'trade_done', tid: sam.last('trade_done').tid, id, with: 'Ada', gave: [{ id: 'bread', qty: 3 }], got: [{ id: 'coins', qty: 20 }] });
+  assert.deepEqual(ada.last('trade_done').got, [{ id: 'bread', qty: 3 }]);
+  assert.equal(store.tradeLog(5).length, 1);
+  // over: neither attachment carries it, a late confirm is answered gone, and a new trade gets a new id
+  assert.equal(sam.state.trade, undefined); assert.equal(ada.state.trade, undefined);
+  w2.say(sam, { t: 'trade_confirm', id, ver: 3 });
+  assert.equal(sam.last('trade_end').code, 'gone');
+  assert.equal(store.tradeLog(5).length, 1);
+  w2.later(5000, sam, ada);
+  w2.at(sam, 500, 500); w2.at(ada, 560, 500);
+  w2.say(sam, { t: 'trade_ask', to: 'Ada' }); w2.say(ada, { t: 'trade_answer', from: 'Sam', yes: true });
+  assert.ok(sam.last('trade_open').id > id);
+});
+
+test('a nap with only one side of an open trade back (the other socket closed in it): the trade stays over, nothing moved', () => {
+  const store = new MemoryStore();
+  const w = world(store);
+  const sam = w.knight('Sam'), ada = w.knight('Ada', 560, 500), bo = w.knight('Bo', 540, 500);
+  for (const s of [sam, ada, bo]) s.attach = st => { s.state = JSON.parse(JSON.stringify(st)); };
+  const id = w.open(sam, ada);
+  offer(w, sam, id, [{ id: 'bread', qty: 3 }]);
+  const w2 = world(store);
+  w2.room.restore(sam, sam.state);
+  // a knight who carries a trade with Sam's id but is not the other side of it does not complete it
+  w2.room.restore(bo, Object.assign({}, bo.state, { trade: Object.assign({}, sam.state.trade, { a: 'bo' }) }));
+  sam.clear();
+  w2.say(sam, { t: 'trade_accept', id, ver: 2 });
+  assert.equal(sam.last('trade_end').code, 'gone');
+  assert.equal(store.tradeLog(5).length, 0);
+});
+
+test('an open trade too big for a socket\'s attachment beside its gifts is left out of it (the attachment is still written)', () => {
+  const w = world();
+  const sam = w.knight('Sam'), ada = w.knight('Ada', 560, 500);
+  for (const s of [sam, ada]) s.attach = st => { s.state = st; s.size = JSON.stringify(st).length; };
+  // four gifts on their way from Sam, never answered
+  for (let i = 0; i < 4; i++) w.say(sam, { t: 'gift', to: 'Ada', id: 'g'.repeat(39) + i, qty: 999999 }), w.t += 1500;
+  const id = w.open(sam, ada);
+  const many = n => Array.from({ length: TRADE_ITEMS }, (_, i) => ({ id: n.repeat(38) + String(i).padStart(2, '0'), qty: TRADE_QTY_MAX }));
+  offer(w, sam, id, many('a')); offer(w, ada, id, many('b'));
+  assert.equal(state(sam).mine.length, TRADE_ITEMS);
+  assert.equal(sam.state.trade, undefined);
+  assert.equal(sam.state.gifts.length, 4);
+  assert.ok(sam.size <= 2048, String(sam.size));
+  assert.ok(ada.size <= 2048, String(ada.size));
 });
 
 test('a finished trade is re-sent after every welcome until that knight acks it; only the two knights in it can ack', () => {
