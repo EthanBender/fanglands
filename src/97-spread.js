@@ -120,7 +120,7 @@
   const placeCell = (x, y) => cellOf(ATLAS.oldToNew(x, y));
   const anyCell = (x, y) => placeCell(x, y) || cellOf(ATLAS.oldToNewWorld(x, y));
   function newReport(kind) {
-    return { kind, refunds: { bank: {}, pack: {}, owed: {} }, parked: {}, mare: null, remade: {}, dropped: {}, sorted: { remade: 0, same: 0, machine: 0, mare: 0, crop: 0, placed: 0, dropped: 0 }, crops: 0, lines: [] };
+    return { kind, refunds: { bank: {}, pack: {}, owed: {} }, parked: {}, mare: null, remade: {}, dropped: {}, sorted: { remade: 0, same: 0, machine: 0, mare: 0, crop: 0, placed: 0, dropped: 0 }, crops: 0, lines: [], list: [] };
   }
   // (a) one of `id` back: the bank, then the pack, then Aldous keeps it (quest.spread.owed)
   function refund(R, id, qty) {
@@ -154,6 +154,7 @@
   function parkMachine(R, name) {
     const [bx, by] = bayCell(), s = parkAround(bx, by);
     changeTile(s.x, s.y, T[name]); R.parked[name] = (R.parked[name] || 0) + 1;
+    (R.parkedAt = R.parkedAt || []).push([s.x, s.y, name, Math.max(Math.abs(s.x - bx), Math.abs(s.y - by))]);
     return s;
   }
   function tieMare(R) {
@@ -185,20 +186,23 @@
     const machines = []; let mare = false;
     for (const e of P.diffs) {
       const t = T[e.name], c = cell(e.x, e.y), ci = c && inMap(c[0], c[1]) ? idx(c[0], c[1]) : -1;
-      // (d) the story's own tile, already made again at its new cell by a remake
-      if (ci >= 0 && typeof t === 'number' && remade.get(ci) === t) { R.sorted.remade++; continue; }
-      if (e.name === MARE) { mare = true; R.sorted.mare++; continue; }
-      // (b) a machine or a wreck: parked, never deleted
-      if (MACHINES.includes(e.name)) { machines.push(e.name); R.sorted.machine++; continue; }
-      // (c) a crop: refunded from the crop list below
-      if (e.name === 'CROP') { R.sorted.crop++; continue; }
-      // the new world already has this very tile there (a door or a bed the world itself makes): nothing to give back
-      if (ci >= 0 && typeof t === 'number' && tileAt(c[0], c[1]) === t && !mapDiffs.has(ci)) { R.sorted.same++; continue; }
-      // (a) placed from an item
-      const id = placedItemFor(e.name);
-      if (id) { refund(R, id, 1); R.sorted.placed++; continue; }
-      // (e) everything else: stumps, rubble, tilled soil, fires, mined rock, regrown trees, cleared ground
-      R.dropped[e.name] = (R.dropped[e.name] || 0) + 1; R.sorted.dropped++;
+      const cls = (() => {
+        // (d) the story's own tile, already made again at its new cell by a remake
+        if (ci >= 0 && typeof t === 'number' && remade.get(ci) === t) return 'remade';
+        if (e.name === MARE) { mare = true; return 'mare'; }
+        // (b) a machine or a wreck: parked, never deleted
+        if (MACHINES.includes(e.name)) { machines.push(e.name); return 'machine'; }
+        // (c) a crop: refunded from the crop list below
+        if (e.name === 'CROP') return 'crop';
+        // the new world already has this very tile there (a door or a bed the world itself makes): nothing to give back
+        if (ci >= 0 && typeof t === 'number' && tileAt(c[0], c[1]) === t && !mapDiffs.has(ci)) return 'same';
+        // (a) placed from an item
+        const id = placedItemFor(e.name);
+        if (id) { refund(R, id, 1); return 'placed'; }
+        // (e) everything else: stumps, rubble, tilled soil, fires, mined rock, regrown trees, cleared ground
+        R.dropped[e.name] = (R.dropped[e.name] || 0) + 1; return 'dropped';
+      })();
+      R.sorted[cls]++; R.list.push([e.x, e.y, e.name, cls, c]);
     }
     for (const c of P.crops) {
       const ripe = c.stage >= 3, crop = c.crop && ITEMS[c.crop] ? c.crop : 'potato';

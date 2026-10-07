@@ -17,6 +17,8 @@
 "61-maplabels.js",
 "97-spreadchecks.js",
 "97-spread.js",
+"tools/spread-old-saves.mjs",
+"tools/spread-migrate-check.mjs",
 "tools/compass.mjs",
 "96-atlas.js",
 "16-instances.js",
