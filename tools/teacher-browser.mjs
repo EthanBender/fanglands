@@ -387,7 +387,7 @@ async function main() {
       const per = (a, b) => ({ wsIn: b.wsIn - a.wsIn, http: b.http - a.http, rows: (b.rows || 0) - (a.rows || 0) });
       const not = per(m0, m1), yes = per(m2, m3);
       const extra = { wsIn: yes.wsIn - not.wsIn, rows: yes.rows - not.rows };
-      const hour = { msgs: extra.wsIn * 60, requests: Math.round(extra.wsIn * 60 / 20 * 10) / 10, rows: extra.rows * 60 };
+      const hour = { msgs: extra.wsIn * 60, requests: Math.round(extra.wsIn * 60 / 20 * 10) / 10, rows: Math.max(0, extra.rows) * 60 };
       note('a minute not watched: ' + JSON.stringify(not) + '; a minute watched: ' + JSON.stringify(yes) + '; the teacher got ' + JSON.stringify(fr));
       note('Watch, alone in a place he keeps: about ' + hour.msgs + ' incoming messages an hour = ' + hour.requests + ' requests an hour (of 100,000 a day), ' + hour.rows + ' rows written');
       fs.writeFileSync(path.join(OUT, 'cost.json'), JSON.stringify({ notWatched: not, watched: yes, perHour: hour, frames: fr }, null, 2));

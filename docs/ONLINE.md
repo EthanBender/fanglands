@@ -2719,8 +2719,9 @@ written a day.
 - **Watch:** starting and stopping, 2 messages (0.1 requests). The frames it forwards are outgoing: free. His presence and his
   friends' streams are already received: 0 extra. The alone stream (only while watched, only alone on a map he keeps): at most
   2 a second = 7,200 messages an hour = **360 requests an hour**, about 36 an hour when nothing near him moves. Measured on a local
-  world on 6 Oct 2026 (`tools/teacher-browser.mjs`): a kid alone in the Spider Den, spiders moving, watched for a minute: 101
-  more incoming messages than the same minute unwatched, about 6,060 an hour = **303 requests an hour**, and no row written for it;
+  world on 6 Oct 2026 (`tools/teacher-browser.mjs`, two runs): a kid alone in the Spider Den, spiders moving, watched for a
+  minute: 85 to 101 more incoming messages than the same minute unwatched, about 5,100 to 6,060 an hour = **255 to 303 requests
+  an hour**, and no more rows written than unwatched;
   `tools/mmo-sim-teacher.js`: 20 snapshots in 10 s alone (7,200 an hour, 360 requests), and 0 extra with a friend near. The
   daily ceiling: 40,000 messages = **2,000 requests (2% of the day)**, whatever happens. Rows: at most 1 per teacher per knight
   per 10 minutes (the `watch` row). Alarms: 0. SQL per frame: 0. A teacher is never in `knights`, `byName`, `members`, the keeper
