@@ -5,7 +5,9 @@
 //   node tools/idle-pages.cjs <scenario> <seconds> [--restart <s>]
 // Scenarios: solo-|duo-, over|inst, then each knight's state: playing (standing still), paused, hidden (document.hidden and rAF
 // parked; timers NOT throttled, so an upper bound for a desktop background tab), ipad-over-playing (hide, drop the socket,
-// come back, repeated). --restart appends a comment to online/src/worker.js so wrangler reloads the object (a deploy's restart),
+// come back, repeated). 'frozen' (Page.setWebLifecycleState) has NO effect in chrome-headless-shell: a 'frozen' page keeps
+// streaming, sending presence and saving exactly as a playing one (measured 7 Oct 2026), so a *-frozen row is a playing row,
+// never a locked device's cost; model a locked iPad with the ipad cycle, which drops the socket. --restart appends a comment to online/src/worker.js so wrangler reloads the object (a deploy's restart),
 // and takes it out again at the end. It prints, per hour: alarms (counted by a meter with the alarm column; on an older meter,
 // the World's game requests minus the pages' own and minus this harness's own /api/status calls), the pages' calls (each
 // /api call and each socket opening, /ws, which Cloudflare bills as a request too; the browser reports a socket opening as a
@@ -66,6 +68,7 @@ async function state(K, s) {
   if (s === 'playing') return set(K, 'paused = false');
   if (s === 'paused') return set(K, 'paused = true');
   if (s === 'hidden') return set(K, 'window.__setHidden(true)');
+  // (no effect in chrome-headless-shell: the page plays on; see the header)
   if (s === 'frozen') { K.cdp = await K.ctx.newCDPSession(K.page); return K.cdp.send('Page.setWebLifecycleState', { state: 'frozen' }); }
 }
 const SC = {
