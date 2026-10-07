@@ -48,7 +48,9 @@
     sylvaris_growth: "Builders' stakes. Sylvaris is growing.",
     blood_portal: "Builders' stakes. Something will open here one day.",
   };
-  const plaqueText = id => PLAQUE[id] || (NAMES[id] && NAMES[id][1] ? `Builders' stakes. ${NAMES[id][1]} is coming.` : "Builders' stakes.");
+  // a name whose last word is plural takes "are" ("The Bandit Hills are coming."), the rest "is"
+  const isAre = name => /[^s']s$/.test(name.split(' ').pop()) ? 'are' : 'is';
+  const plaqueText = id => PLAQUE[id] || (NAMES[id] && NAMES[id][1] ? `Builders' stakes. ${NAMES[id][1]} ${isAre(NAMES[id][1])} coming.` : "Builders' stakes.");
   SP.plaqueText = plaqueText;
 
   // ---------- REGIONS ----------
@@ -322,6 +324,9 @@
     check(P + "every reserved place has builders' stakes round it and a plaque (the Glasshouse's says \"Builders' stakes. The Glasshouse is coming.\", the Old Barrow's \"... The Old Barrow is coming.\"), and Wreck Rock's buoys float in the Grey Sea",
       !unstaked.length && !noPlaque.length && !!glass && !!barrow && plaqueText('alchemy') === "Builders' stakes. The Glasshouse is coming." && plaqueText('necromancy') === "Builders' stakes. The Old Barrow is coming." && S.buoys >= 4,
       { unstaked, noPlaque, stakes: S.stakes, buoys: S.buoys, skipped: S.skipped });
+    // the plaques' grammar: a plural name is "are" (the review of c34fddf read "The Bandit Hills is coming.")
+    { const texts = res.map(r => [r.id, plaqueText(r.id)]), bad = texts.filter(([, t]) => /\b\w+s is coming\.$/.test(t));
+      check(P + "every plaque reads right: \"Builders' stakes. The Bandit Hills are coming.\", and no plural name \"is coming\"", plaqueText('bandit_hills') === "Builders' stakes. The Bandit Hills are coming." && !bad.length, { bad, bandit: plaqueText('bandit_hills') }); }
     // E on a plaque reads it
     { const [i] = glass || []; let said = null;
       if (i !== undefined) { const x = i % MAP_W, y = (i / MAP_W) | 0, spot = [[0, 1], [0, -1], [1, 0], [-1, 0]].map(([dx, dy]) => [x + dx, y + dy]).find(([sx, sy]) => !SOLID.has(tileAt(sx, sy)));
@@ -356,8 +361,8 @@
     // a signpost by every road node, readable from the road; its words name the roads' places
     { const want = A.SIGNPOSTS.filter(q => { const p = A.pointOf(q.at); return !(Math.round(p[0]) === SIGN_TILE.x && Math.round(p[1]) === SIGN_TILE.y); }).length, bad = SP.signs.filter(([x, y]) => tileAt(x, y) !== T.SIGN), fork = SP.signs.find(([, , nx, ny]) => { const p = A.pointOf(A.SIGNPOSTS[0].at); return nx === p[0] && ny === p[1]; });
       const words = fork ? A.signText(fork[0], fork[1]) : null;
-      check(P + "a signpost stands beside every road node (" + want + " besides the story's), and the Mill Lane fork's names Millbrook, Thistledown and the cave",
-        SP.signs.length === want && !bad.length && !!words && /Millbrook/.test(words) && /Thistledown/.test(words) && /cave/.test(words), { signs: SP.signs.length, want, bad, words, skipped: S.skipped }); }
+      check(P + "a signpost stands beside every road node (" + want + " besides the story's), and the Mill Lane fork's names Millbrook, Thistledown and the cave, and says the way to Thistledown goes past the old signpost (chapter 4's sign)",
+        SP.signs.length === want && !bad.length && !!words && /Millbrook/.test(words) && /Thistledown, south-east, past the old signpost\./.test(words) && /cave/.test(words), { signs: SP.signs.length, want, bad, words, skipped: S.skipped }); }
     // the road network is laid whole: each main road's centre line is open ground (a bridge, a gate or a door counts) from
     // end to end, bar the story signpost, the gates' own tiles and Hollowford's ruins
     { const gaps = {}, OKT = new Set([T.SIGN, Tn('WARDEN_GATE'), Tn('LAIR_GATE'), T.GATE, T.DOOR].filter(v => v >= 0)), hf = A.box('hollowford');

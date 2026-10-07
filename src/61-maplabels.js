@@ -109,6 +109,17 @@
     for (const d of res.drawn) HK.text(g, d.text, d.cx, d.box.y + d.size * 0.92, { font: d.font, align: 'center', color: d.lit ? HK.T.goldHi : COLOUR(d.tier), halo: 3 });
   }
 
+  // ---------- the named place a map point stands in: the place that owns its tile, else the smallest named place whose
+  // box holds it (the Goblin Fields and the Wilds are never named, so a point out there is in no named place) ----------
+  function placeOf(x, y) {
+    const list = items(), tx = Math.floor(x), ty = Math.floor(y);
+    const own = list.find(it => it.owns(tx, ty)); if (own) return own.id;
+    let best = null;
+    for (const it of list) { const pl = ATLAS.places.find(q => q.id === it.id && q.map === 'over');
+      if (pl && pl.rects.some(r => tx >= r[0] && tx <= r[2] && ty >= r[1] && ty <= r[3]) && (!best || it.area < best.area)) best = it; }
+    return best ? best.id : null;
+  }
+
   // ---------- the world map's own call (10-hud's drawMapPanel, out in the world) ----------
   // L: { g, ox, oy, sc, ix, iy, iw, ih, narrow, targets } -> the layout drawn (kept as MAP_LABELS.last for the self-test)
   function drawWorld(L) {
@@ -122,6 +133,9 @@
       const word = String(tg.label || '').replace(/^the\s+/i, '').toLowerCase();
       const p = window.ATLAS && ATLAS.at(tg.x, tg.y), byName = list.find(it => it.name.replace(/^the\s+/i, '').toLowerCase() === word);
       if (byName) lit.add(byName.id); else if (p && list.some(it => it.id === p.id) && p.name.replace(/^the\s+/i, '').toLowerCase() === word) lit.add(p.id);
+      // a ring whose own words name no place (a person, a signpost, a walker) lights the named place it stands in, so the
+      // knight still sees where to head (people stay markers: their names are never printed)
+      else { const into = placeOf(tg.x, tg.y); if (into) lit.add(into); }
     }
     if (player.home) rings.push({ x: L.ox + player.home.x / TILE * L.sc, y: L.oy + player.home.y / TILE * L.sc, r: 9 });
     // the markers (61-markers draws them after this, over the map) and the key strip at the map's foot
@@ -132,12 +146,12 @@
     }
     const res = layout(list, { sc: L.sc, ox: L.ox, oy: L.oy, bounds: { x: L.ix + 2, y: L.iy + 2, w: L.iw - 4, h: foot - 4 }, rings, measure, lit, nudge: Math.max(12, base * 1.6) });
     draw(g, res);
-    res.rings = rings; res.bounds = { x: L.ix + 2, y: L.iy + 2, w: L.iw - 4, h: foot - 4 }; res.view = [VW, VH]; res.markers = !!(M && M.show());
+    res.rings = rings; res.lit = [...lit]; res.targets = (L.targets || []).map(t => ({ x: t.x, y: t.y, label: t.label, id: t.id })); res.bounds = { x: L.ix + 2, y: L.iy + 2, w: L.iw - 4, h: foot - 4 }; res.view = [VW, VH]; res.markers = !!(M && M.show());
     MAP_LABELS.last = res;
     return res;
   }
 
-  window.MAP_LABELS = { items, layout, draw, drawWorld, textWidth, TIERS, tierOf, last: null };
+  window.MAP_LABELS = { items, layout, draw, drawWorld, textWidth, placeOf, TIERS, tierOf, last: null };
 
   // ---------- self-test (ADDENDUM B, rule 3) ----------
   // At 1280x800, 1024x768 (iPad landscape), 768x1024 (iPad portrait) and 390x844 (phone), markers on and off: no two drawn
@@ -188,6 +202,21 @@
     check(P + 'one label per place from the Atlas places (no second list); at 1280x800, 1024x768, 768x1024 and 390x844, markers on and off, no two drawn names meet, none sits on a marker or quest ring or off the map, no place is named twice and no person is named',
       tried === 8 && !problems.length && JSON.stringify(want) === JSON.stringify(got) && drawnMin >= 4 && ['thistledown', 'hollowford'].every(id => names.has(id)),
       { tried, problems: problems.slice(0, 8), more: Math.max(0, problems.length - 8), sizes: seenSizes, one: JSON.stringify(want) === JSON.stringify(got) });
+    // the gold ring's place, at every main-quest stage (the review of c34fddf: at 12 of 16 stages the ring had no words and
+    // lit nothing): when the tracked ring stands inside a named place (the tile's own region, or a named box round it) that
+    // place's name is lit gold on the map, whatever words the ring's own target carries
+    { const st0 = quest.stage, tr0 = quest.tracked, u0 = quest.untrackedByPlayer, rows = [], miss = [];
+      for (let s = 1; s <= 16; s++) {
+        quest.stage = s; quest.tracked = 'main'; quest.untrackedByPlayer = false;
+        const tg = trackedTarget(); if (!tg) { rows.push(s + ': no ring'); continue; }
+        const r = recorder(); buttons.length = 0; openPanel('map'); MAP_LABELS.last = null; drawPanels(r.g, VW < 700, VH < 500, 0, 44); buttons.length = 0; closePanel();
+        const res = MAP_LABELS.last, rg = regionAt(Math.floor(tg.x), Math.floor(tg.y)), rid = rg ? (rg.atlas || ATLAS.slug(rg.name)) : null;
+        const named = rid && items().some(it => it.id === rid) ? rid : null, drawn = !!res && res.drawn.some(d => d.id === named);
+        rows.push(s + ': ' + tg.label + ' in ' + (named || '-') + (res ? ' lit ' + res.lit.join('/') : ''));
+        if (named && drawn && !res.lit.includes(named)) miss.push(s + ' ' + tg.label + ' in ' + named);
+      }
+      quest.stage = st0; quest.tracked = tr0; quest.untrackedByPlayer = u0; render();
+      check(P + "the gold ring lights the named place it stands in at every main-quest stage (Dunstan's ring lights THE ASHFIELDS, the goblin walker's THE GOBLIN CAMP), not only a ring whose words are a place's name", !miss.length && rows.length === 16, { miss, rows }); }
     // the layout itself: priority wins, a nudge moves a name off another, and a name with no room is dropped, not drawn over
     { const meas = () => ({ w: 60, size: 10, font: '' });
       const L = (list, rings) => layout(list, { sc: 1, ox: 0, oy: 0, bounds: { x: 0, y: 0, w: 200, h: 100 }, rings: rings || [], measure: meas, nudge: 20 });

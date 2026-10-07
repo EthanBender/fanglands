@@ -654,6 +654,8 @@
     spur_canopy: 'the canopy run', r4_goblin: 'the Goblin Road', r4a_saltmere: 'the Saltmere lane', r4b_coast: 'the Coast Path', r5_wolfwood: 'the Wolfwood Road',
     spur_barrow: 'the Old Barrow', r6_ash: 'the Ash Road', r6a_shrine: 'the shrine path', path_farm: "Dunstan's farm", r7_drovers: "the Drovers' Track",
     r8_bandit: 'the Bandit Track', shaft_lane: 'the mine shaft' };
+  // the landmarks an arm names when its road passes one ("→ Thistledown, south-east, past the old signpost.")
+  const PAST_MARKS = ['signpost', 'old_bridge', 'crossroads_inn', 'goblin_road'];
   const COMPASS = ['east', 'south-east', 'south', 'south-west', 'west', 'north-west', 'north', 'north-east'];
   // the words for a leg's far end: a port names its place (a reserved one says the builders are at work); a junction
   // names the road it meets
@@ -682,7 +684,10 @@
       if (best < 0) continue;
       for (const dir of [-1, 1]) { const end = dir < 0 ? 0 : pl.length - 1; if (best === end) continue;
         const [ax, ay] = Math.hypot(pl[best][0] - nx, pl[best][1] - ny) > 2.5 ? pl[best] : along(pl, best, dir, 8), a = Math.atan2(ay - ny, ax - nx), word = COMPASS[((Math.round(a / (Math.PI / 4)) % 8) + 8) % 8];
-        legs.push({ road: id, to: endWords(pts[end], id), dir: word }); }
+        // a landmark the road passes on the way (the old signpost on the Cave Road, chapter 4's): the first one past this node
+        let past = null; for (let k = best + dir; k !== end && !past; k += dir) { const q = pts[k], pl0 = q[0] === 'port' ? q[1].split('.')[0] : null;
+          if (PAST_MARKS.includes(pl0) && pl0 !== place && Math.hypot(pl[k][0] - nx, pl[k][1] - ny) > 2.5) past = PLACE_WORDS[pl0]; }
+        legs.push({ road: id, to: endWords(pts[end], id), dir: word, past }); }
     }
     return legs;
   }
@@ -703,7 +708,7 @@
   function signText(tx, ty) {
     const at = signNode(tx, ty); if (!at) return null;
     const { node, place } = at, arms = [], cap = w => w.charAt(0).toUpperCase() + w.slice(1);
-    for (const l of signArms(tx, ty)) arms.push('→ ' + cap(l.to) + ', ' + l.dir + '.');
+    for (const l of signArms(tx, ty)) arms.push('→ ' + cap(l.to) + ', ' + l.dir + (l.past ? ', past ' + l.past : '') + '.');
     // a post at a place's own gate or door says where it stands (Thistledown's west gate: the town is through it)
     if (place && PLACE_WORDS[place]) { const b = box(place), here = b && (tx < b[0] || tx > b[2] || ty < b[1] || ty > b[3]) ? null : 'here';
       if (here) arms.unshift('Here: ' + cap(placeWords(place)) + '.'); else if (b) { const a = Math.atan2((b[1] + b[3]) / 2 - ty, (b[0] + b[2]) / 2 - tx); arms.unshift('→ ' + cap(placeWords(place)) + ', ' + COMPASS[((Math.round(a / (Math.PI / 4)) % 8) + 8) % 8] + '.'); } }

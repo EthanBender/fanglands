@@ -178,6 +178,14 @@ function drawRockProp(g, tx, ty, kind) {
   g.strokeStyle = 'rgba(0,0,0,0.25)'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(cx - 6, cy + 2); g.lineTo(cx + 3, cy + 6); g.lineTo(cx + 9, cy + 1); g.stroke();
 }
 function drawRubbleProp(g, tx, ty) { const cx = tc(tx), cy = tc(ty); g.fillStyle = '#8d9098'; for (const [ox, oy, r] of [[-10, 4, 6], [4, 6, 5], [-2, -4, 4], [10, -2, 4], [2, 0, 3]]) { g.beginPath(); g.arc(cx + ox, cy + oy, r, 0, 7); g.fill(); g.strokeStyle = 'rgba(0,0,0,0.3)'; g.lineWidth = 1; g.stroke(); } }
+// a signpost arm's board: the words' font, their width, and how far the board's tail grows past its 52 px of room (a
+// 2 px margin either side of the words) so a long name never runs off the wood
+const SIGN_ROOM = 52;
+function signBoard(g, label) {
+  const font = 'bold 9px sans-serif'; g.font = font;
+  const w = g.measureText ? g.measureText(label).width : label.length * 6;
+  return { font, w, room: SIGN_ROOM, extra: Math.max(0, Math.ceil(w + 4 - SIGN_ROOM)) };
+}
 function drawSignProp(g, tx, ty) {
   const cx = tc(tx), cy = tc(ty);
   g.fillStyle = 'rgba(0,0,0,0.25)'; g.beginPath(); g.ellipse(cx, cy + 16, 9, 4, 0, 0, 7); g.fill();
@@ -186,12 +194,13 @@ function drawSignProp(g, tx, ty) {
   const own = typeof window.SIGN_ARMS === 'function' ? window.SIGN_ARMS(tx, ty) : null;
   const arms = own || [[-42, 'THISTLEDOWN', false], [-26, 'GREY QUARRY', false], [-10, 'HOLLOWFORD', true]];
   for (const [oy, label, burned, left] of arms) {
+    // the board grows at its tail to fit a long name (THISTLEDOWN): signBoard measures it
+    const B = signBoard(g, label), e = B.extra, s = left ? -1 : 1;
     g.fillStyle = burned ? '#8a7350' : '#c9a36a'; g.beginPath();
-    if (left) { g.moveTo(cx + 34, cy + oy - 7); g.lineTo(cx - 22, cy + oy - 7); g.lineTo(cx - 32, cy + oy + 1); g.lineTo(cx - 22, cy + oy + 9); g.lineTo(cx + 34, cy + oy + 9); }
-    else { g.moveTo(cx - 34, cy + oy - 7); g.lineTo(cx + 22, cy + oy - 7); g.lineTo(cx + 32, cy + oy + 1); g.lineTo(cx + 22, cy + oy + 9); g.lineTo(cx - 34, cy + oy + 9); }
+    g.moveTo(cx - s * (34 + e), cy + oy - 7); g.lineTo(cx + s * 22, cy + oy - 7); g.lineTo(cx + s * 32, cy + oy + 1); g.lineTo(cx + s * 22, cy + oy + 9); g.lineTo(cx - s * (34 + e), cy + oy + 9);
     g.closePath(); g.fill();
     g.strokeStyle = '#6b4a2a'; g.lineWidth = 1.5; g.stroke();
-    g.fillStyle = '#4a2e13'; g.font = 'bold 9px sans-serif'; g.textAlign = 'center'; g.fillText(label, left ? cx + 4 : cx - 4, cy + oy + 4);
+    g.fillStyle = '#4a2e13'; g.font = B.font; g.textAlign = 'center'; g.fillText(label, cx - s * (4 + e / 2), cy + oy + 4);
     if (burned) { g.strokeStyle = '#3a2a1a'; g.lineWidth = 2; g.beginPath(); g.moveTo(cx - 28, cy + oy + 1); g.lineTo(cx + 20, cy + oy + 2); g.stroke(); }
   }
 }
