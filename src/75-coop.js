@@ -1133,11 +1133,11 @@
       const run = (secs, move) => { for (let i = 0; i < secs * 60; i++) { if (move) { gob.x += (i % 2 ? 1 : -1) * 0.75; gob.stunT = 1; } F.step([]); } };
       sent.length = 0; run(10, true);
       const notViewed = full(), notViewedBeats = mons();
-      const pNo = sent.filter(m => m.t === 'p'), noTod = pNo.length > 0 && pNo.every(m => !('tod' in m));
+      const pNo = sent.filter(m => m.t === 'p'), noTod = pNo.length > 0 && pNo.every(m => !('tod' in m) && !('vw' in m) && !('vh' in m));
       push({ t: 'view', on: true });
       sent.length = 0; run(10, true);
       const moving = mons();
-      const pYes = sent.filter(m => m.t === 'p'), tod = pYes.length > 0 && pYes.every(m => typeof m.tod === 'number' && m.tod >= 0 && m.tod < 600 && Math.round(m.tod * 10) === m.tod * 10);
+      const pYes = sent.filter(m => m.t === 'p'), tod = pYes.length > 0 && pYes.every(m => typeof m.tod === 'number' && m.tod >= 0 && m.tod < 600 && Math.round(m.tod * 10) === m.tod * 10 && m.vw === Math.round(VW) && m.vh === Math.round(VH));
       // nothing near him changes (no monsters at all here for 12 s): the same list only as the heartbeat, once a second
       monsters = []; sent.length = 0; run(12, false); monsters = real;
       const still = mons();
@@ -1149,7 +1149,7 @@
       push({ t: 'left', n: 'Ava', map: 'over' });
       push({ t: 'view', on: false });
       sent.length = 0; run(4, true); const after = full(), afterBeats = mons();
-      check(P + 'the hello names the \'view\' capability; not watched, alone: only master\'s heartbeat (' + notViewedBeats + ' empty lists in 10 s) and no tod (as before); watched and alone: at most 2 a second (' + moving + ' in 10 s), an unchanged list only as the heartbeat, once a second (' + still + ' in 12 s), none while paused, the time of day on its presence; with a friend near, 8 a second (' + withFriend + ' in 1 s); view off: the heartbeat alone again (' + afterBeats + ' empty lists in 4 s)',
+      check(P + 'the hello names the \'view\' capability; not watched, alone: only master\'s heartbeat (' + notViewedBeats + ' empty lists in 10 s) and no tod (as before); watched and alone: at most 2 a second (' + moving + ' in 10 s), an unchanged list only as the heartbeat, once a second (' + still + ' in 12 s), none while paused, the time of day and the size of the screen (vw, vh: what the Watch draws) on its presence; with a friend near, 8 a second (' + withFriend + ' in 1 s); view off: the heartbeat alone again (' + afterBeats + ' empty lists in 4 s)',
         caps && notViewed === 0 && notViewedBeats >= 9 && notViewedBeats <= 11 && noTod && moving >= 18 && moving <= 21 && still >= 11 && still <= 13 && whilePaused === 0 && tod && withFriend >= 7 && withFriend <= 9 && after === 0 && afterBeats >= 3 && afterBeats <= 5, { caps, notViewed, notViewedBeats, noTod, moving, still, whilePaused, tod, withFriend, after, afterBeats });
       // on the title: nothing
       push({ t: 'view', on: true }); title.active = true; sent.length = 0; run(2, true); const onTitle = mons(); title.active = false;

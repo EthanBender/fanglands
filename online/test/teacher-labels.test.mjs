@@ -97,3 +97,44 @@ test('the instance doors: named only at twice the fit or more, never over a plac
   assert.ok(r.labels.some(l => l.door), 'no door named at 3x');
   invariants('doors at 3x', close, r, []);
 });
+
+// the map's own controls over the canvas (+, −, Whole map at the bottom right; Key at the top left, shut or open), as the page
+// passes them (pane px)
+const controlsOf = (w, h, keyOpen) => [{ x: w - 8 - 230, y: h - 8 - 44, w: 230, h: 44 }, keyOpen ? { x: 8, y: 8, w: Math.min(w - 16, 380), h: 44 + 8 + 62 } : { x: 8, y: 8, w: 60, h: 44 }];
+const circleHitsRect = (c, o) => { const nx = Math.max(o.x, Math.min(c.x, o.x + o.w)), ny = Math.max(o.y, Math.min(c.y, o.y + o.h)); return Math.hypot(c.x - nx, c.y - ny) < c.r; };
+
+test('NEGATIVE: no knight\'s dot or count circle, no name tag and no place name is ever under the map\'s own controls; a knight who stands under one is drawn just beside it (ox, oy say where he is) and none is lost', () => {
+  let runs = 0, nudged = 0;
+  for (const pane of PANES.concat([{ name: '1280x650 at 125%', w: 1024 - 260 - 280 - 24, h: 520 - 48 - 52 - 56 }])) for (const rel of [1, 2, 4]) for (const keyOpen of [false, true]) for (let trial = 0; trial < 3; trial++) {
+    const obstacles = controlsOf(pane.w, pane.h, keyOpen);
+    const view = Object.assign(viewAt(pane.w, pane.h, rel, 20 + rnd() * (M.W - 40), 20 + rnd() * (M.H - 40)), { obstacles });
+    const dots = [];
+    // knights anywhere, and a few standing right under each control
+    for (let i = 0; i < 30; i++) dots.push({ n: 'Kid ' + i, x: rnd() * pane.w, y: rnd() * pane.h, sel: i === 0, flag: false });
+    for (const o of obstacles) for (let i = 0; i < 3; i++) dots.push({ n: 'Under ' + i + ' ' + o.x, x: o.x + rnd() * o.w, y: o.y + rnd() * o.h });
+    const res = layoutLabels(view, withDoors, dots, measure, null);
+    const where = pane.name + ' zoom ' + rel + (keyOpen ? ' key open' : '') + ' trial ' + trial;
+    for (const o of obstacles) {
+      for (const c of res.dots.concat(res.clusters)) assert.ok(!circleHitsRect(c, o), where + ': a knight drawn under a control ' + JSON.stringify([c.x, c.y]));
+      for (const b of res.tags.concat(res.labels)) assert.ok(!overlap(b, o), where + ': ' + (b.n || b.name) + ' under a control');
+    }
+    assert.equal(res.dots.length + res.clusters.reduce((n, c) => n + c.ks.length, 0), dots.length, where + ': a knight lost');
+    for (const d of res.dots) if (d.ox != null) { nudged++; assert.ok(obstacles.some(o => d.ox >= o.x - 17 && d.ox <= o.x + o.w + 17 && d.oy >= o.y - 17 && d.oy <= o.y + o.h + 17), where + ': moved for no control'); }
+    invariants(where, view, res, dots);
+    runs++;
+  }
+  assert.ok(nudged > 50, 'knights under the controls were moved beside them: ' + nudged);
+  assert.equal(runs, 9 * 3 * 2 * 3);
+});
+
+test('a class on the map: 19 knights in and around Thistledown at the whole map (the 1280 x 650 window at 125%): the big places a teacher finds her way by are still named (Thistledown among them), before any name tag', () => {
+  const pane = { w: 1024 - 260 - 280 - 24, h: 520 - 48 - 52 - 56 };
+  const view = Object.assign(viewAt(pane.w, pane.h, 1), { obstacles: controlsOf(pane.w, pane.h, false) });
+  const knights = [];
+  for (let i = 0; i < 19; i++) knights.push({ n: 'Kid ' + String.fromCharCode(65 + i) + ' Long Name', tx: 100 + (i % 7) * 4 + rnd() * 3, ty: 26 + Math.floor(i / 7) * 6 + rnd() * 3 });
+  const dots = knights.map(k => ({ n: k.n, x: view.x + k.tx * view.s, y: view.y + k.ty * view.s }));
+  const res = layoutLabels(view, places, dots, measure, null);
+  const names = res.labels.map(l => l.name);
+  for (const n of ['Thistledown', 'The Jungle', 'The Redcut', 'Goblin Fields', 'Wolfwood']) assert.ok(names.includes(n), n + ' missing: ' + names.join(', '));
+  invariants('a class at the whole map', view, res, dots);
+});

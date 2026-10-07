@@ -20,10 +20,12 @@
 // Feature file: wraps by reassignment at run time (install), registers a self-test. window.VIEW is the register.
 // ============================================================================
 {
-  const MIN_W = 760, MAX_W = 1024;          // the logical width his screen is drawn at (then scaled into the pane)
+  const MIN_W = 760, MAX_W = 1024;          // an older game (no vw on its presence): the logical width his screen is drawn at
+  const NAME_PX = 14.5, LV_PX = 13;         // the CSS px a knight's name and level are drawn at, at the least, in this view
   const V = {
     on: false, installed: false, n: null, v: 0, map: 'over', house: false, unknown: false, frozen: false,
     lastP: null, lastPAt: 0, lastFrameAt: 0, startedAt: 0, zoom: 1, box: null, paneW: 0, paneH: 0, girl: false,
+    kidW: 0, kidH: 0, scale: 1, offX: 0, offY: 0, cssW: 0, cssH: 0,
     stats: { frames: 0, p: 0, mon: 0, chat: 0 },
   };
   const tsOn = () => !!(window.TEACHERSCREEN && TEACHERSCREEN.active);
@@ -68,17 +70,31 @@
     const _resize = resize;
     resize = function () { if (!tsOn() || !V.on || !V.box) return _resize(); sizeToPane(); };
   }
-  // his screen's logical size: the pane's width held between 760 and 1024 (his game's own sizes), divided by the zoom, the
-  // height in the pane's proportion; the canvas's pixels are the pane's (at most 2 per CSS pixel)
+  // his screen's logical size. Fit (zoom 1) is exactly his own screen, VW x VH as his game has it (the vw, vh on his presence
+  // while he is watched), letterboxed into the pane, so the teacher sees exactly the world his camera shows; Closer and Wider
+  // zoom from there. An older game sends no size: the pane's width held between 760 and 1024, the pane's proportion. The
+  // canvas's pixels are its CSS size's (at most 2 per CSS pixel). Names and levels are drawn at NAME_PX / LV_PX CSS px at the
+  // least (PLAYERS.tagScale), however small his screen is drawn here.
   function sizeToPane() {
     const pw = Math.max(1, V.paneW || 1), ph = Math.max(1, V.paneH || 1);
-    const lw = clamp(pw, MIN_W, MAX_W) / V.zoom;
-    VW = lw; VH = lw * ph / pw;
+    let lw, lh;
+    if (V.kidW >= 200 && V.kidH >= 150) { lw = V.kidW / V.zoom; lh = V.kidH / V.zoom; }
+    else { lw = clamp(pw, MIN_W, MAX_W) / V.zoom; lh = lw * ph / pw; }
+    const k = Math.min(pw / lw, ph / lh), cssW = lw * k, cssH = lh * k;
+    const offX = Math.round((pw - cssW) / 2), offY = Math.round((ph - cssH) / 2);
+    VW = lw; VH = lh;
     const dpr = Math.min((window.devicePixelRatio || 1), 2);
-    const cw = Math.max(1, Math.round(pw * dpr)), ch = Math.max(1, Math.round(ph * dpr));
+    const cw = Math.max(1, Math.round(cssW * dpr)), ch = Math.max(1, Math.round(cssH * dpr));
     if (canvas.width !== cw) canvas.width = cw;
     if (canvas.height !== ch) canvas.height = ch;
     DPR = cw / VW;
+    V.scale = k; V.offX = offX; V.offY = offY; V.cssW = cssW; V.cssH = cssH;
+    if (V.box) {
+      const st = canvas.style, want = [offX + 'px', offY + 'px', cssW.toFixed(2) + 'px', cssH.toFixed(2) + 'px'];
+      if (st.left !== want[0]) st.left = want[0]; if (st.top !== want[1]) st.top = want[1];
+      if (st.width !== want[2]) st.width = want[2]; if (st.height !== want[3]) st.height = want[3];
+    }
+    if (window.PLAYERS) PLAYERS.tagScale = Math.max(1, NAME_PX / (11 * k), LV_PX / (9 * k));
   }
   // the page's knight in the kid's place: his drawn position, facing and time of day; never dead, never on a machine (his
   // own knight, drawn by 73-players, shows those)
@@ -122,13 +138,14 @@
     install();
     if (V.on) stop();
     V.on = true; V.frozen = false; V.v = v; V.n = frame && typeof frame.n === 'string' ? frame.n : null;
-    V.map = 'over'; V.house = false; V.unknown = false; V.lastP = null; V.lastPAt = 0; V.lastFrameAt = 0; V.startedAt = nowMs0();
+    V.map = 'over'; V.house = false; V.unknown = false; V.lastP = null; V.lastPAt = 0; V.lastFrameAt = 0; V.startedAt = nowMs0(); V.kidW = 0; V.kidH = 0;
     V.box = host && host.box || null; if (host && host.zoom) V.zoom = clamp(+host.zoom || 1, 0.6, 2);
     V.css = canvas.style.cssText || '';
     V.stats = { frames: 0, p: 0, mon: 0, chat: 0 };
     emit({ t: 'offline' });             // whatever an earlier view left: knights, bubbles
     if (window.COOP && COOP.viewMode) COOP.viewMode(true);
     if (V.box) { try { V.box.appendChild(canvas); } catch (e) { } canvas.style.display = 'block'; canvas.style.position = 'absolute'; canvas.style.left = '0'; canvas.style.top = '0'; canvas.style.width = '100%'; canvas.style.height = '100%'; }
+    // (his screen's size and the frame's place in the pane come with his first presence: sizeToPane)
     if (!frame) return;
     const map = typeof frame.map === 'string' ? frame.map : 'over';
     if (frame.keeper && typeof frame.keeper.map === 'string' && window.COOP) COOP.viewKeeper(frame.keeper.map, frame.keeper.n);
@@ -144,6 +161,8 @@
       V.lastP = m; V.lastPAt = nowMs0(); V.stats.p++;
       if (m.look && typeof m.look === 'object') V.girl = !!m.look.girl;
       if (typeof m.tod === 'number' && Number.isFinite(m.tod)) player.dayTime = m.tod;
+      // his screen's size (sent while he is watched): Fit draws exactly what his camera shows
+      if (Number.isFinite(m.vw) && Number.isFinite(m.vh) && m.vw >= 200 && m.vh >= 150 && m.vw <= 8000 && m.vh <= 8000) { V.kidW = Math.round(m.vw); V.kidH = Math.round(m.vh); }
       const map = typeof m.map === 'string' && m.map ? m.map : 'over';
       if (map !== V.map) goMap(map);
     }
@@ -162,12 +181,13 @@
     emit({ t: 'offline' });
     // the canvas as it was (79-teacherscreen hides it again on its page)
     try { canvas.style.cssText = V.css || ''; } catch (e) { }
-    V.box = null; V.n = null; V.lastP = null;
+    if (window.PLAYERS) PLAYERS.tagScale = 1;
+    V.box = null; V.n = null; V.lastP = null; V.kidW = 0; V.kidH = 0;
   }
   // a tap on the glass over his screen, in the pane's CSS pixels: the knight under it (within 28 px of his feet), or null
   function knightAt(px, py) {
     if (!V.on || !window.PLAYERS || !PLAYERS.remote) return null;
-    const sx = VW / Math.max(1, V.paneW), wx = cam.x + px * sx, wy = cam.y + py * sx, my = PLAYERS.mapId();
+    const sx = 1 / Math.max(1e-6, V.scale), wx = cam.x + (px - V.offX) * sx, wy = cam.y + (py - V.offY) * sx, my = PLAYERS.mapId();
     let best = null, bd = 28;
     for (const n in PLAYERS.remote) { const e = PLAYERS.remote[n]; if (e.map !== my) continue; const d = Math.hypot(e.shown.x - wx, e.shown.y - 6 - wy); if (d <= bd) { bd = d; best = n; } }
     return best;
@@ -235,6 +255,22 @@
         frame(1 / 8);
       }
       const overOk = near && INSTANCES.active() === null && COOP.puppets().length === 1 && COOP.puppets()[0].nid === 's' + Math.max(0, gob) && CHAT.log.some(l => l.n === 'Ava' && l.text === 'follow me');
+      // an older game (no vw / vh): the pane's width held between 760 and 1024, the pane's proportion, filling the pane
+      const oldSize = VW === 800 && Math.abs(VH - 500) < 1e-6 && V.offX === 0 && V.offY === 0;
+      // his screen's size on his presence (a kid at 1366 x 768): Fit draws exactly his VW x VH, letterboxed into the 800 x 500
+      // pane, so the world the teacher sees is the world his camera shows (the same cam rectangle to within 1 px)
+      const kx = sq.x + 159 * 4;
+      for (let i = 0; i < 16; i++) { feed(pOf(kx, sq.y, 'over', { vw: 1366, vh: 768, mv: false })); frame(1 / 8); }
+      const kidCam = { x: clamp(kx - 1366 / 2, 0, MAP_W * TILE - 1366), y: clamp(sq.y - 768 / 2, 0, MAP_H * TILE - 768) };
+      const k = Math.min(800 / 1366, 500 / 768);
+      const sameRect = VW === 1366 && VH === 768 && Math.abs(cam.x - kidCam.x) <= 1 && Math.abs(cam.y - kidCam.y) <= 1;
+      const boxed = Math.abs(V.scale - k) < 1e-9 && V.offX === 0 && V.offY === Math.round((500 - 768 * k) / 2) && canvas.style.width === (1366 * k).toFixed(2) + 'px' && canvas.style.height === (768 * k).toFixed(2) + 'px' && canvas.style.top === V.offY + 'px';
+      // the names stay readable however small his screen is drawn: 14.5 CSS px at the least, his level 13
+      const names = PLAYERS.tagScale * 11 * V.scale >= 14.5 - 1e-9 && PLAYERS.tagScale * 9 * V.scale >= 13 - 1e-9;
+      // Closer from Fit shows less of the world (the same middle); Fit again is his screen
+      VIEW.setZoom(1.25); frame(1 / 8); const closer = Math.abs(VW - 1366 / 1.25) < 1e-6; VIEW.setZoom(1); frame(1 / 8);
+      check(P + 'Fit draws exactly the kid\'s own screen: his presence\'s vw x vh (1366 x 768) becomes this view\'s VW x VH, letterboxed into the pane, the camera rectangle his game has to within 1 px; names at 14.5 CSS px and levels at 13 at the least (here ' + (PLAYERS.tagScale * 11 * V.scale).toFixed(1) + ' px); Closer zooms in from there; an older game without vw fills the pane as before',
+        oldSize && sameRect && boxed && names && closer && VW === 1366, { oldSize, sameRect, cam: { x: cam.x, y: cam.y }, kidCam, VW, VH, boxed, scale: V.scale, offY: V.offY, style: [canvas.style.width, canvas.style.height, canvas.style.top], names, tagScale: PLAYERS.tagScale, closer });
       // into the Spider Den: the world says who keeps it first (as enterMap does), then his presence there
       const inst = INSTANCES.get(den), ent = inst.entry;
       feed({ t: 'keeper', map: den, n: 'Sam' });

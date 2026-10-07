@@ -81,12 +81,16 @@
     if (o.kind === 'dozer') { const up = dozerUps(); if (up) o.up = up; }
     return o;
   }
-  // the time of day on this game's clock, for a teacher watching it (the Watch, round 2): only while the world says a teacher
-  // is watching this knight (75-coop's view), so other games see the field only then and ignore it; it adds no message
+  // the time of day on this game's clock and the size of this game's screen (VW x VH, what the camera shows), for a teacher
+  // watching it (the Watch, round 2): only while the world says a teacher is watching this knight (75-coop's view), so other
+  // games see the fields only then and ignore them; they add no message. 79-view draws exactly this much of the world.
   const DAY_S = () => (window.NIGHT && NIGHT.DAY) || 600;
   function presence() {
     const p = presenceBody();
-    if (window.COOP && typeof COOP.viewed === 'function' && COOP.viewed()) p.tod = Math.round((((player.dayTime || 0) % DAY_S()) + DAY_S()) % DAY_S() * 10) / 10;
+    if (window.COOP && typeof COOP.viewed === 'function' && COOP.viewed()) {
+      p.tod = Math.round((((player.dayTime || 0) % DAY_S()) + DAY_S()) % DAY_S() * 10) / 10;
+      p.vw = Math.round(VW); p.vh = Math.round(VH);
+    }
     return p;
   }
   function presenceBody() {
@@ -204,14 +208,17 @@
     const top = Math.round(y) - (kind ? ML.top(kind) : onMech ? 46 : 33) + tall, lv = 'lv ' + e.lv, admin = isAdmin(e);
     // where his name is, for a tap on it (78-trade)
     e.tagTop = top;
-    g.font = 'bold 8px sans-serif'; const pw = admin ? Math.ceil(g.measureText('ADMIN').width) + 8 + 4 : 0;
-    g.font = 'bold 11px sans-serif'; const nw = g.measureText(e.n).width;
-    g.font = '9px sans-serif'; const lw = g.measureText(lv).width;
-    const x0 = Math.round(x - (pw + nw + 4 + lw) / 2), nx = x0 + pw;
-    if (admin) adminPill(g, x0, top - 4, 8);
+    // (PLAYERS.tagScale: 1 in every game; a teacher's Watch, which draws a kid's whole screen smaller than he sees it, sets it
+    // so the names stay readable there: 79-view)
+    const ts = PLAYERS.tagScale > 1 ? PLAYERS.tagScale : 1, px = n => (ts === 1 ? n : (n * ts).toFixed(1)) + 'px';
+    g.font = 'bold ' + px(8) + ' sans-serif'; const pw = admin ? Math.ceil(g.measureText('ADMIN').width) + 8 * ts + 4 * ts : 0;
+    g.font = 'bold ' + px(11) + ' sans-serif'; const nw = g.measureText(e.n).width;
+    g.font = px(9) + ' sans-serif'; const lw = g.measureText(lv).width;
+    const x0 = Math.round(x - (pw + nw + 4 * ts + lw) / 2), nx = x0 + pw;
+    if (admin) adminPill(g, x0, top - 4 * ts, 8 * ts);
     g.textAlign = 'left'; g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.75)';
-    g.font = 'bold 11px sans-serif'; g.strokeText(e.n, nx, top); g.fillStyle = admin ? GOLD : '#ffffff'; g.fillText(e.n, nx, top);
-    g.font = '9px sans-serif'; g.strokeText(lv, nx + nw + 4, top); g.fillStyle = '#9aa3b2'; g.fillText(lv, nx + nw + 4, top);
+    g.font = 'bold ' + px(11) + ' sans-serif'; g.strokeText(e.n, nx, top); g.fillStyle = admin ? GOLD : '#ffffff'; g.fillText(e.n, nx, top);
+    g.font = px(9) + ' sans-serif'; g.strokeText(lv, nx + nw + 4 * ts, top); g.fillStyle = '#9aa3b2'; g.fillText(lv, nx + nw + 4 * ts, top);
     if (e.hp < e.mhp) { g.fillStyle = 'rgba(0,0,0,0.5)'; g.fillRect(x - 14, top + 3, 28, 4); g.fillStyle = e.hp / e.mhp > 0.5 ? '#3fb950' : e.hp / e.mhp > 0.25 ? '#d29922' : '#f85149'; g.fillRect(x - 14, top + 3, 28 * clamp(e.hp / e.mhp, 0, 1), 4); }
     // (a teacher watching this knight's view stands in his place: no ring around him on his own screen)
     if (dist(x, y, player.x, player.y) <= NEAR && !(window.VIEW && VIEW.watching() === e.n)) { g.strokeStyle = 'rgba(111,177,255,0.5)'; g.lineWidth = 1.5; g.setLineDash([4, 4]); g.beginPath(); g.arc(x, y + 2, onMech ? 30 : 22, 0, 7); g.stroke(); g.setLineDash([]); }
@@ -431,7 +438,7 @@
   const roleOf = n => { const e = REMOTE[n]; if (e) return isAdmin(e) ? 'admin' : 'player'; const o = ONLINE.find(k => k.n === n); return isAdmin(o) ? 'admin' : 'player'; };
 
   window.PLAYERS = {
-    lookOf, presence, mapId, remote: REMOTE, near, give, roleOf, adminPill, GOLD, step,
+    lookOf, presence, mapId, remote: REMOTE, near, give, roleOf, adminPill, GOLD, step, tagScale: 1,
     get online() { return ONLINE; }, get me() { return NET.me; },
     follow: n => { following = n && REMOTE[n] ? n : null; }, get following() { return following; },
   };

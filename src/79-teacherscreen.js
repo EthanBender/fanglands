@@ -31,6 +31,9 @@
   // the panes (docs/ONLINE.md, "The teacher view", the layout): wide at 900 px and over
   const WIDE_MIN = 900, CHAT_MIN = 260, WHO_MIN = 280, MID_MIN = 380, SIDE_MAX = 0.4, CHAT_DEF = 0.24, WHO_DEF = 0.26;
   const SPLIT_DEF = 0.55, SPLIT_MIN = 240, SPLIT_MAX = 0.75, FOLD_H = 420, KEY_STEP = 24;
+  // narrow and watching a kid: his screen gets more of the window (its own fraction, dragged and saved the same way)
+  const WSPLIT_DEF = 0.7, WSPLIT_MAX = 0.82;
+  const TIGHT = 700;   // under this the bar may take a second row
   const ZOOM_MIN = 0.6, ZOOM_MAX = 2, ZOOM_STEP = 1.25;
   const divW = coarse => coarse ? 20 : 12;
   const BYE = {
@@ -68,69 +71,85 @@
     return { chat, who, mid: W - chat - who - 2 * d, d };
   }
   // Narrow: the map's height in px over the panes' height H (default 55%, at least 240 px, at most 75%)
-  function narrowSplit(H, split) {
-    const f = Number.isFinite(split) ? split : SPLIT_DEF;
-    const lo = Math.min(SPLIT_MIN, H * SPLIT_MAX), hi = Math.max(lo, H * SPLIT_MAX);
+  function narrowSplit(H, split, max = SPLIT_MAX, def = SPLIT_DEF) {
+    const f = Number.isFinite(split) ? split : def;
+    const lo = Math.min(SPLIT_MIN, H * max), hi = Math.max(lo, H * max);
     return Math.round(cl(f * H, lo, hi));
   }
   // what this device remembers of the layout: fractions only, every read and write in try (a private window may throw)
   function readLayout(ls) {
-    const out = { v: 1, wide: { l: CHAT_DEF, r: WHO_DEF }, narrow: { split: SPLIT_DEF }, zoom: 1 };
+    const out = { v: 1, wide: { l: CHAT_DEF, r: WHO_DEF }, narrow: { split: SPLIT_DEF, wsplit: WSPLIT_DEF }, zoom: 1 };
     let raw = null; try { raw = ls ? ls.getItem(LAYOUT_KEY) : null; } catch (e) { raw = null; }
     if (!raw) return out;
     let o = null; try { o = JSON.parse(raw); } catch (e) { return out; }
     if (!o || o.v !== 1) return out;
     const f = (v, lo, hi, d) => Number.isFinite(v) && v >= lo && v <= hi ? v : d;
     if (o.wide) { out.wide.l = f(o.wide.l, 0.05, SIDE_MAX, CHAT_DEF); out.wide.r = f(o.wide.r, 0.05, SIDE_MAX, WHO_DEF); }
-    if (o.narrow) out.narrow.split = f(o.narrow.split, 0.1, SPLIT_MAX, SPLIT_DEF);
+    if (o.narrow) { out.narrow.split = f(o.narrow.split, 0.1, SPLIT_MAX, SPLIT_DEF); out.narrow.wsplit = f(o.narrow.wsplit, 0.1, WSPLIT_MAX, WSPLIT_DEF); }
     out.zoom = f(o.zoom, ZOOM_MIN, ZOOM_MAX, 1);
     return out;
   }
   function writeLayout(ls, L) {
-    try { if (ls) ls.setItem(LAYOUT_KEY, JSON.stringify({ v: 1, wide: { l: +L.wide.l.toFixed(4), r: +L.wide.r.toFixed(4) }, narrow: { split: +L.narrow.split.toFixed(4) }, zoom: +L.zoom.toFixed(3) })); return true; } catch (e) { return false; }
+    try { if (ls) ls.setItem(LAYOUT_KEY, JSON.stringify({ v: 1, wide: { l: +L.wide.l.toFixed(4), r: +L.wide.r.toFixed(4) }, narrow: { split: +L.narrow.split.toFixed(4), wsplit: +(L.narrow.wsplit || WSPLIT_DEF).toFixed(4) }, zoom: +L.zoom.toFixed(3) })); return true; } catch (e) { return false; }
   }
 
   // ---------- the map's names (pure): one label per place, by priority, never over another or over a knight ----------
-  // view {s (px per tile), x, y (where tile 0,0 is), w, h (the pane), fit (the scale the whole map fits at), font (px)}
+  // view {s (px per tile), x, y (where tile 0,0 is), w, h (the pane), fit (the scale the whole map fits at), font (px),
+  //       obstacles: [{x, y, w, h}] (the map's own controls over it: +, −, Whole map, Key; pane px)}
   // places [{name, kind, box: [x0, y0, x1, y1], anchor: [x, y], depth, area, owns(tx, ty)}] (teacher-map.json's labels)
   // dots [{n, x, y, sel, flag}] in pane px; measure(text, font) -> px; prev {name: [tx, ty]} where each name sat last time.
-  // Answers {clusters: [{x, y, r, ks}], dots: [{x, y, r, k}], tags: [{n, x, y, w, h}], labels: [{name, x, y, w, h, cx, cy,
-  // tx, ty, font}]}; a name that fits nowhere at this zoom is left out (its dot stays).
+  // Answers {clusters: [{x, y, r, ks}], dots: [{x, y, r, k, ox, oy}], tags: [{n, x, y, w, h}], labels: [{name, x, y, w, h, cx,
+  // cy, tx, ty, font}]}; a name that fits nowhere at this zoom is left out (its dot stays). A knight whose dot would sit under
+  // a control is drawn just beside it (ox, oy: where he really is; the page draws a thin line there), so every knight can be
+  // seen and tapped. The big places a teacher knows the map by (MAJOR_AREA tiles and over) are placed before any name tag.
   // (LABELS:BEGIN ... LABELS:END: online/test/teacher-labels.test.mjs runs this function as it is written here)
   // LABELS:BEGIN
   function layoutLabels(view, places, dots, measure, prev) {
-    const INSET = 6, PAD = 4, MERGE = 24, DOT_R = 7, CL_R = 13;
+    const INSET = 6, PAD = 4, MERGE = 24, DOT_R = 7, CL_R = 13, MAJOR_AREA = 2000;
     const out = { clusters: [], dots: [], tags: [], labels: [] };
-    // 1. the dots are fixed; within 24 px they merge into a count circle
+    const obst = (view.obstacles || []).filter(o => o && o.w > 0 && o.h > 0);
+    // 0. a knight under one of the map's controls is moved just clear of it (the side nearest, inside the pane)
+    const clear0 = CL_R + PAD;
+    const nudge = d => {
+      let x = d.x, y = d.y;
+      if (!obst.length) return d;
+      for (let pass = 0; pass < 3; pass++) {
+        const o = obst.find(q => x > q.x - clear0 && x < q.x + q.w + clear0 && y > q.y - clear0 && y < q.y + q.h + clear0);
+        if (!o) break;
+        const x0 = CL_R + 2, x1 = Math.max(x0, view.w - CL_R - 2), y0 = CL_R + 2, y1 = Math.max(y0, view.h - CL_R - 2);
+        const under = (cx, cy) => obst.some(q => cx > q.x - clear0 && cx < q.x + q.w + clear0 && cy > q.y - clear0 && cy < q.y + q.h + clear0);
+        const c = [[o.x - clear0, y], [o.x + o.w + clear0, y], [x, o.y - clear0], [x, o.y + o.h + clear0]]
+          .map(([cx, cy]) => [cl(cx, x0, x1), cl(cy, y0, y1)]).filter(([cx, cy]) => !under(cx, cy))
+          .sort((a, b) => Math.hypot(a[0] - x, a[1] - y) - Math.hypot(b[0] - x, b[1] - y));
+        if (!c.length) break;
+        x = c[0][0]; y = c[0][1];
+      }
+      return x === d.x && y === d.y ? d : { x, y };
+    };
+    // 1. the dots are fixed (but for 0); within 24 px they merge into a count circle
     const groups = [];
-    for (const d of dots || []) {
+    for (const d0 of dots || []) {
+      const at = nudge(d0), d = at === d0 ? d0 : Object.assign({}, d0, { x: at.x, y: at.y, ox: d0.x, oy: d0.y });
       const g = groups.find(q => Math.hypot(q.x - d.x, q.y - d.y) < MERGE);
       if (g) { g.ks.push(d); g.x = (g.x * (g.ks.length - 1) + d.x) / g.ks.length; g.y = (g.y * (g.ks.length - 1) + d.y) / g.ks.length; }
       else groups.push({ x: d.x, y: d.y, ks: [d] });
     }
     const circles = [];
     for (const g of groups) {
-      if (g.ks.length > 1) { const c = { x: g.x, y: g.y, r: CL_R, ks: g.ks }; out.clusters.push(c); circles.push(c); }
-      else { const c = { x: g.x, y: g.y, r: DOT_R, k: g.ks[0] }; out.dots.push(c); circles.push(c); }
+      if (g.ks.length > 1) { const at = nudge(g), c = { x: at.x, y: at.y, r: CL_R, ks: g.ks }; out.clusters.push(c); circles.push(c); }
+      else { const k = g.ks[0], c = { x: g.x, y: g.y, r: DOT_R, k }; if (k.ox != null) { c.ox = k.ox; c.oy = k.oy; } out.dots.push(c); circles.push(c); }
     }
     const boxes = [];
-    const inside = b => b.x >= INSET && b.y >= INSET && b.x + b.w <= view.w - INSET && b.y + b.h <= view.h - INSET;
+    const underControl = b => obst.some(o => b.x < o.x + o.w + PAD && o.x < b.x + b.w + PAD && b.y < o.y + o.h + PAD && o.y < b.y + b.h + PAD);
+    const inside = b => b.x >= INSET && b.y >= INSET && b.x + b.w <= view.w - INSET && b.y + b.h <= view.h - INSET && !underControl(b);
     const hitsBox = b => boxes.some(o => b.x < o.x + o.w + PAD && o.x < b.x + b.w + PAD && b.y < o.y + o.h + PAD && o.y < b.y + b.h + PAD);
     const hitsDot = (b, skip) => circles.some(c => c !== skip && (() => { const nx = cl(c.x, b.x, b.x + b.w), ny = cl(c.y, b.y, b.y + b.h); return Math.hypot(c.x - nx, c.y - ny) < c.r + PAD; })());
-    // 2. name tags: the selected or flagged knight first, then the rest by name; right, left, above, below the dot
-    const TAG_FONT = '700 14px sans-serif', TAG_H = 20;
-    const singles = out.dots.slice().sort((a, b) => ((b.k.sel ? 2 : 0) + (b.k.flag ? 1 : 0)) - ((a.k.sel ? 2 : 0) + (a.k.flag ? 1 : 0)) || (String(a.k.n).toLowerCase() < String(b.k.n).toLowerCase() ? -1 : 1));
-    for (const c of singles) {
-      const w = Math.ceil(measure(c.k.n, TAG_FONT)) + 8, h = TAG_H, gap = PAD;
-      const tries = [{ x: c.x + c.r + gap, y: c.y - h / 2 }, { x: c.x - c.r - gap - w, y: c.y - h / 2 }, { x: c.x - w / 2, y: c.y - c.r - gap - h }, { x: c.x - w / 2, y: c.y + c.r + gap }];
-      for (const t of tries) { const b = { x: Math.round(t.x), y: Math.round(t.y), w, h }; if (inside(b) && !hitsBox(b) && !hitsDot(b, c)) { boxes.push(b); out.tags.push({ n: c.k.n, x: b.x, y: b.y, w, h }); break; } }
-    }
-    // 3. the places: depth first, then the bigger, then an area before a region; the first spot that fits wins
+    // the places: depth first, then the bigger, then an area before a region; the first spot that fits wins
     const font = Math.max(13, view.font || 13) + (view.s >= view.fit * 4 ? 2 : view.s >= view.fit * 2 ? 1 : 0);
     const FONT = '600 ' + font + 'px sans-serif', LH = Math.round(font * 1.35);
     const order = (places || []).filter(p => p && p.box && p.anchor && p.kind !== 'door').slice().sort((a, b) => (b.depth - a.depth) || (b.area - a.area) || ((a.kind === 'area' ? 0 : 1) - (b.kind === 'area' ? 0 : 1)) || (a.name < b.name ? -1 : 1));
     const seen = new Set();
-    for (const p of order) {
+    const placeAll = list => { for (const p of list) {
       if (seen.has(p.name)) continue;
       const bw = (p.box[2] - p.box[0] + 1) * view.s, bh = (p.box[3] - p.box[1] + 1) * view.s;
       const w = Math.ceil(measure(p.name, FONT)) + 6, h = LH;
@@ -142,16 +161,35 @@
       cands.push([ax, ay]);
       for (const f of [0.6, -0.6, 1.2, -1.2]) cands.push([ax, ay + f * bh]);
       for (const f of [0.25, -0.25]) cands.push([ax + f * bw, ay]);
-      for (const [cx, cy] of cands) {
+      // then anywhere on its own ground, nearest the anchor first (a crowd of knights round the anchor still leaves room)
+      const grid = [];
+      for (let i = 1; i < 8; i++) for (let j = 1; j < 8; j++) grid.push([view.x + (p.box[0] + (p.box[2] - p.box[0] + 1) * i / 8) * view.s, view.y + (p.box[1] + (p.box[3] - p.box[1] + 1) * j / 8) * view.s]);
+      grid.sort((u, q) => Math.hypot(u[0] - ax, u[1] - ay) - Math.hypot(q[0] - ax, q[1] - ay));
+      // (a spot found this way keeps 4 px more from the pane's edge, so a small pan never moves the name to another spot)
+      for (const c of grid) cands.push([c[0], c[1], 4]);
+      for (const [cx, cy, more] of cands) {
         const tx = (cx - view.x) / view.s, ty = (cy - view.y) / view.s;
         if (!p.owns(Math.floor(tx), Math.floor(ty))) continue;
         const b = { x: Math.round(cx - w / 2), y: Math.round(cy - h / 2), w, h };
         if (!inside(b) || hitsBox(b) || hitsDot(b, null)) continue;
+        if (more && !(b.x >= INSET + more && b.y >= INSET + more && b.x + b.w <= view.w - INSET - more && b.y + b.h <= view.h - INSET - more)) continue;
         boxes.push(b); seen.add(p.name);
         out.labels.push({ name: p.name, x: b.x, y: b.y, w, h, cx: b.x + w / 2, cy: b.y + h / 2, tx, ty, font });
         break;
       }
+    } };
+    // 2. the big places first (a teacher finds her way by them), then the name tags: the selected or flagged knight first,
+    // then the rest by name; right, left, above, below the dot. A tag with no room is left out (the dot stays, tap it).
+    placeAll(order.filter(p => p.area >= MAJOR_AREA));
+    const TAG_FONT = '700 14px sans-serif', TAG_H = 20;
+    const singles = out.dots.slice().sort((a, b) => ((b.k.sel ? 2 : 0) + (b.k.flag ? 1 : 0)) - ((a.k.sel ? 2 : 0) + (a.k.flag ? 1 : 0)) || (String(a.k.n).toLowerCase() < String(b.k.n).toLowerCase() ? -1 : 1));
+    for (const c of singles) {
+      const w = Math.ceil(measure(c.k.n, TAG_FONT)) + 8, h = TAG_H, gap = PAD;
+      const tries = [{ x: c.x + c.r + gap, y: c.y - h / 2 }, { x: c.x - c.r - gap - w, y: c.y - h / 2 }, { x: c.x - w / 2, y: c.y - c.r - gap - h }, { x: c.x - w / 2, y: c.y + c.r + gap }];
+      for (const t of tries) { const b = { x: Math.round(t.x), y: Math.round(t.y), w, h }; if (inside(b) && !hitsBox(b) && !hitsDot(b, c)) { boxes.push(b); out.tags.push({ n: c.k.n, x: b.x, y: b.y, w, h }); break; } }
     }
+    // 3. the other places, in the same order, wherever there is still room
+    placeAll(order);
     // 4. the instance doors (kind 'door', anchor = the door tile): named only at twice the fit or more, under, over, right
     // or left of the mark, by the same rules (never over a name or a knight, inside the pane), after every place
     if (view.s >= view.fit * 2) {
@@ -199,9 +237,14 @@ html.tv-on,html.tv-on body{background:${PAL.bg}}
 #tv-bar{flex:none;display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;min-height:48px;padding:2px 8px;border-bottom:1px solid ${PAL.line};background:#171a1f}
 #tv-bar .title{font-weight:700;white-space:nowrap}
 #tv-bar .mid{flex:1;display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;justify-content:center;min-width:0}
-#tv-bar .right{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
-#tv-bar button{white-space:nowrap;flex:none}
-#tv.narrow #tv-bar .mid{order:3;flex-basis:100%;justify-content:flex-start;min-height:44px}
+#tv-bar .right{display:flex;align-items:center;gap:8px;flex-wrap:nowrap;justify-content:flex-end;min-width:0}
+#tv-bar button,#tv-bar span{white-space:nowrap;flex:none}
+#tv-bar .me{min-width:0;flex:0 1 auto;overflow:hidden;text-overflow:ellipsis}
+#tv.narrow #tv-bar{flex-wrap:nowrap;gap:8px}
+#tv.narrow #tv-bar .mid{flex-wrap:nowrap;gap:8px 12px}
+#tv.narrow #tv-bar .long,#tv.narrow #tv-flagged{display:none}
+#tv.tight #tv-bar{flex-wrap:wrap}
+#tv.tight #tv-bar .mid{order:3;flex-basis:100%;justify-content:flex-start;min-height:44px;flex-wrap:wrap}
 #tv .live{color:${PAL.green};font-weight:700;white-space:nowrap}
 #tv .live::before{content:"";display:inline-block;width:.6rem;height:.6rem;border-radius:50%;background:currentColor;margin-right:6px}
 #tv .live.amber{color:${PAL.amber}}
@@ -272,6 +315,9 @@ html.tv-on,html.tv-on body{background:${PAL.bg}}
 #tv-povhead{flex:none;display:flex;flex-direction:column;border-bottom:1px solid ${PAL.line}}
 #tv-povhead .row1{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;padding:4px 8px;min-height:52px}
 #tv-povhead .what{flex:1;min-width:8rem;font-weight:700}
+#tv.narrow #tv-povhead .row1{gap:4px 8px;padding:4px 8px 2px}
+#tv.narrow #tv-povhead .what{order:9;flex-basis:100%;font-size:.93rem}
+#tv.narrow #tv-povhead .only{display:none}
 #tv-povhead .row2{padding:0 10px 6px;display:flex;flex-direction:column;gap:2px}
 #tv-povhead .state{color:${PAL.amber}}
 #tv-watchbox{position:relative;flex:1 1 0;min-height:0;background:#0b0f14;overflow:hidden}
@@ -305,8 +351,10 @@ html.tv-on,html.tv-on body{background:${PAL.bg}}
   function make(env) {
     const W = env.win, D = env.doc;
     const now = () => env.now();
+    // the session token: in this closure only (never on S, which a page script could reach through a handle; never stored)
+    let token = null;
     const S = {
-      token: null, me: null, expires: 0, notice: true, startedAt: 0,
+      me: null, expires: 0, notice: true, startedAt: 0,
       knights: [], inside: [], gone: [], acts: [], sentOff: [], chatPause: null, frameAt: 0, lastArrive: 0,
       lines: [], hidden: {}, flags: {}, flagLines: [], selected: null, filter: 'all', follow: true, newLines: 0,
       ws: null, status: 'off', tries: 0, timer: null, bye: null, wantOnVisible: false, gaveUp: false, connecting: false,
@@ -345,10 +393,11 @@ html.tv-on,html.tv-on body{background:${PAL.bg}}
       ui.pauseBtn = btn('Pause chat', () => { S.pauseMenu = !S.pauseMenu; renderPauseMenu(); }); ui.pauseBtn.id = 'tv-pausebtn';
       ui.flagged = btn('0 to look at', () => { S.filter = 'flagged'; S.tab = 'chat'; renderChat(); renderTabs(); scrollChatEnd(); }); ui.flagged.id = 'tv-flagged';
       mid.append(ui.live, ui.retry, ui.count, ui.chatState, ui.pauseBtn, ui.flagged);
-      ui.meLine = el('span', 'dim', ''); ui.hint = el('span', 'small', "On a shared computer, press Sign out when you're done."); ui.hint.id = 'tv-hint';
+      ui.meLine = el('span', 'dim me', ''); ui.meName = el('span', '', ''); ui.meUntil = el('span', 'long', ''); ui.meLine.append(ui.meName, ui.meUntil);
       ui.signout = btn('Sign out', () => signOut()); ui.signout.id = 'tv-signout';
-      right.append(ui.meLine, ui.hint, ui.signout);
-      bar.append(el('div', 'title', 'Fanglands — Teacher view'), mid, right);
+      right.append(ui.meLine, ui.signout);
+      const title0 = el('div', 'title'); title0.append(el('span', 'long', 'Fanglands — '), el('span', '', 'Teacher view'));
+      bar.append(title0, mid, right);
       root.appendChild(bar);
       ui.pauseMenu = el('div'); ui.pauseMenu.id = 'tv-pausemenu'; ui.pauseMenu.hidden = true; root.appendChild(ui.pauseMenu);
       ui.banners = el('div'); ui.banners.id = 'tv-banners'; root.appendChild(ui.banners);
@@ -372,11 +421,11 @@ html.tv-on,html.tv-on body{background:${PAL.bg}}
       const mh = el('header'); mh.style.cssText = 'flex:none;display:flex;align-items:center;gap:8px;padding:4px 10px;min-height:52px;border-bottom:1px solid ' + PAL.line; ui.mapHead = el('h2', '', 'World map'); ui.mapHead.style.cssText = 'font-size:1.05rem;margin:0;flex:1;min-width:7rem'; mh.appendChild(ui.mapHead);
       ui.mapBox = el('div'); ui.mapBox.id = 'tv-mapbox';
       ui.canvas = el('canvas'); ui.canvas.id = 'tv-map'; ui.canvas.setAttribute('aria-label', 'The world map with a dot for every knight');
-      const zoom = el('div'); zoom.id = 'tv-zoom';
+      const zoom = el('div'); zoom.id = 'tv-zoom'; ui.zoom = zoom;
       zoom.append(btn('+', () => zoomBy(1.4)), btn('−', () => zoomBy(1 / 1.4)), btn('Whole map', () => { S.mapView = null; relabel(true); drawMap(); }));
       ui.keyBox = el('div'); ui.keyBox.id = 'tv-keybox';
       ui.key = el('div', '', 'Blue: playing. Grey: away. Amber ring: chat off. Gold ring: admin. Red ring: the word filter, the last 10 minutes.'); ui.key.id = 'tv-key'; ui.key.hidden = true;
-      ui.keyBtn = btn('Key', () => { S.keyOpen = !S.keyOpen; ui.key.hidden = !S.keyOpen; ui.keyBtn.className = S.keyOpen ? 'on' : ''; });
+      ui.keyBtn = btn('Key', () => { S.keyOpen = !S.keyOpen; ui.key.hidden = !S.keyOpen; ui.keyBtn.className = S.keyOpen ? 'on' : ''; relabel(true); drawMap(); });
       ui.keyBox.append(ui.keyBtn, ui.key);
       ui.pick = el('div'); ui.pick.id = 'tv-pick'; ui.pick.hidden = true;
       ui.empty = el('div', 'dim', 'Nobody is on right now.'); ui.empty.id = 'tv-empty';
@@ -390,7 +439,7 @@ html.tv-on,html.tv-on body{background:${PAL.bg}}
       ui.what = el('div', 'what'); ui.whatText = el('span', '', ''); ui.whatLive = el('span', 'live', 'Live'); ui.whatLive.style.marginLeft = '8px'; ui.what.append(ui.whatText, ui.whatLive);
       ui.closer = btn('Closer', () => zoomView(ZOOM_STEP)); ui.wider = btn('Wider', () => zoomView(1 / ZOOM_STEP)); ui.fit = btn('Fit', () => zoomView(0));
       r1.append(ui.back, ui.what, ui.closer, ui.wider, ui.fit);
-      ui.only = el('div', 'dim small', ''); ui.state = el('div', 'state small', ''); ui.state2 = el('div', 'dim small', '');
+      ui.only = el('div', 'dim small only', ''); ui.state = el('div', 'state small', ''); ui.state2 = el('div', 'dim small', '');
       r2.append(ui.only, ui.state, ui.state2);
       ui.povHead.append(r1, r2);
       ui.watchBox = el('div'); ui.watchBox.id = 'tv-watchbox';
@@ -433,14 +482,14 @@ html.tv-on,html.tv-on body{background:${PAL.bg}}
       if (!ui.root) return;
       const w = winW(), sizes = wideSizes(w, S.layout.wide, env.coarse);
       S.narrow = !sizes; S.sizes = sizes;
-      ui.root.className = (env.coarse ? 'coarse' : '') + (S.narrow ? ' narrow' : '');
+      ui.root.className = (env.coarse ? 'coarse' : '') + (S.narrow ? ' narrow' : '') + (w < TIGHT ? ' tight' : '');
       if (sizes) {
         ui.chat.style.width = sizes.chat + 'px'; ui.who.style.width = sizes.who + 'px'; ui.mid.style.height = '';
         ui.chat.hidden = false; ui.who.hidden = false; ui.div1.hidden = false; ui.div2.hidden = false; ui.hdiv.hidden = true; ui.switch.hidden = true; ui.sheet.hidden = true;
         ui.mid.style.order = ''; ui.chat.style.order = ''; ui.who.style.order = '';
       } else {
         const ph = rect(ui.panes).height || (winH() - 120);
-        ui.mid.style.height = narrowSplit(ph, S.layout.narrow.split) + 'px';
+        ui.mid.style.height = (S.watch ? narrowSplit(ph, S.layout.narrow.wsplit, WSPLIT_MAX, WSPLIT_DEF) : narrowSplit(ph, S.layout.narrow.split)) + 'px';
         ui.mid.style.order = '1'; ui.hdiv.style.order = '2'; ui.switch.style.order = '3'; ui.chat.style.order = '4'; ui.who.style.order = '4'; ui.sheet.style.order = '5';
         ui.chat.style.width = ''; ui.who.style.width = '';
         ui.div1.hidden = true; ui.div2.hidden = true; ui.hdiv.hidden = false;
@@ -474,7 +523,11 @@ html.tv-on,html.tv-on body{background:${PAL.bg}}
     // the chat's width (div1) or the list's (div2), clamped so every pane keeps its minimum; the map's height (hdiv)
     function setChat(px) { const { w, d, s } = bounds(); if (!s) return; const max = Math.min(Math.floor(SIDE_MAX * w), w - s.who - 2 * d - MID_MIN); S.layout.wide.l = cl(Math.round(px), CHAT_MIN, Math.max(CHAT_MIN, max)) / w; layout(); }
     function setWho(px) { const { w, d, s } = bounds(); if (!s) return; const max = Math.min(Math.floor(SIDE_MAX * w), w - s.chat - 2 * d - MID_MIN); S.layout.wide.r = cl(Math.round(px), WHO_MIN, Math.max(WHO_MIN, max)) / w; layout(); }
-    function setSplit(px) { const ph = rect(ui.panes).height || (winH() - 120); const lo = Math.min(SPLIT_MIN, ph * SPLIT_MAX); S.layout.narrow.split = cl(px, lo, ph * SPLIT_MAX) / Math.max(1, ph); layout(); }
+    function setSplit(px) {
+      const ph = rect(ui.panes).height || (winH() - 120), max = S.watch ? WSPLIT_MAX : SPLIT_MAX, lo = Math.min(SPLIT_MIN, ph * max), f = cl(px, lo, ph * max) / Math.max(1, ph);
+      if (S.watch) S.layout.narrow.wsplit = f; else S.layout.narrow.split = f;
+      layout();
+    }
     function moveDivider(d, x, y) {
       const pr = rect(ui.panes), dd = divW(env.coarse);
       if (d === ui.div1) setChat(x - pr.left - dd / 2);
@@ -488,7 +541,7 @@ html.tv-on,html.tv-on body{background:${PAL.bg}}
       else if (d === ui.hdiv) setSplit((parseFloat(ui.mid.style.height) || 300) + step);
     }
     function resetDivider(d) {
-      if (d === ui.div1) S.layout.wide.l = CHAT_DEF; else if (d === ui.div2) S.layout.wide.r = WHO_DEF; else S.layout.narrow.split = SPLIT_DEF;
+      if (d === ui.div1) S.layout.wide.l = CHAT_DEF; else if (d === ui.div2) S.layout.wide.r = WHO_DEF; else if (S.watch) S.layout.narrow.wsplit = WSPLIT_DEF; else S.layout.narrow.split = SPLIT_DEF;
       layout(); saveSoon();
     }
     let saveTimer = null;
@@ -498,7 +551,7 @@ html.tv-on,html.tv-on body{background:${PAL.bg}}
     // a call's answer may come at once (the self-test's stand-ins) or as a promise (a browser): the flow runs on callbacks
     const when = (v, ok, bad) => { if (v && typeof v.then === 'function') { v.then(ok, bad); return; } ok(v); };
     function ticket(cb) {
-      let p; try { p = env.fetch('/api/teacher/ticket', { method: 'POST', headers: { authorization: 'Bearer ' + S.token }, credentials: 'omit', cache: 'no-store' }); } catch (e) { return cb({ net: true }); }
+      let p; try { p = env.fetch('/api/teacher/ticket', { method: 'POST', headers: { authorization: 'Bearer ' + token }, credentials: 'omit', cache: 'no-store' }); } catch (e) { return cb({ net: true }); }
       when(p, r => {
         if (!r) return cb({ net: true });
         if (r.status === 401) return cb({ dead: true });
@@ -508,7 +561,7 @@ html.tv-on,html.tv-on body{background:${PAL.bg}}
     }
     function wsUrl(t) { const l = W.location || { protocol: 'https:', host: '' }; return (l.protocol === 'https:' ? 'wss://' : 'ws://') + l.host + '/api/teacher/ws?ticket=' + encodeURIComponent(t); }
     function connect() {
-      if (!S.token || S.bye || S.ended || S.connecting) return;
+      if (!token || S.bye || S.ended || S.connecting) return;
       if (D.hidden) { S.wantOnVisible = true; return; }
       if (S.timer) { env.clearTimeout(S.timer); S.timer = null; }
       if (S.ws) return;
@@ -528,7 +581,7 @@ html.tv-on,html.tv-on body{background:${PAL.bg}}
           if (S.ws === ws) S.ws = null;
           const code = (ev && ev.code) || 1006;
           if (S.bye || NO_RECONNECT.includes(code)) return ended(S.bye || code);
-          if (!S.token || S.ended) return;
+          if (!token || S.ended) return;
           if (S.watch) { S.hiddenView = S.watch.n; stopWatch(); }
           retryLater();
         };
@@ -549,7 +602,7 @@ html.tv-on,html.tv-on body{background:${PAL.bg}}
       if (S.timer) { env.clearTimeout(S.timer); S.timer = null; }
       if (S.watch) stopWatch(false);
       const ws = S.ws; S.ws = null; if (ws) { try { ws.onclose = null; ws.close(1000); } catch (e) { } }
-      S.token = null; S.status = 'off';
+      token = null; S.status = 'off';
       try { if (env.ss) env.ss.setItem(BYE_KEY, String(BYE[code] ? code : 4011)); } catch (e) { }
       env.replace('/');
     }
@@ -567,7 +620,7 @@ html.tv-on,html.tv-on body{background:${PAL.bg}}
       logoutBeacon();
       ended(code || 4010);
     }
-    function logoutBeacon() { const token = S.token; if (!token) return; try { env.beacon('/api/teacher/logout', JSON.stringify({ token })); } catch (e) { } }
+    function logoutBeacon() { if (!token) return; try { env.beacon('/api/teacher/logout', JSON.stringify({ token })); } catch (e) { } }
 
     // ---------- what the world says ----------
     function onMessage(m) {
@@ -646,15 +699,15 @@ html.tv-on,html.tv-on body{background:${PAL.bg}}
       ui.retry.hidden = !gave;
       ui.count.textContent = S.knights.length + ' on';
       const p = pauseNow();
-      ui.chatState.textContent = p ? 'Chat paused · ' + mmss(p.until - now()) + ' left' : 'Chat is on';
+      ui.chatState.textContent = p ? (S.narrow ? 'Paused · ' + mmss(p.until - now()) : 'Chat paused · ' + mmss(p.until - now()) + ' left') : S.narrow ? 'Chat on' : 'Chat is on';
       ui.chatState.className = p ? 'paused' : '';
       // pausing lives in the bar's menu when the chat's own controls are folded away (narrow, or a short chat pane)
       ui.pauseBtn.hidden = !(S.narrow || S.folded);
       ui.pauseBtn.textContent = p ? 'Turn chat back on' : 'Pause chat';
       const n = flaggedCount();
       ui.flagged.textContent = n + ' to look at'; ui.flagged.className = n ? 'some' : 'zero';
-      ui.meLine.textContent = (S.me || '') + (S.expires ? ' · signed in until ' + clock(S.expires) : '');
-      ui.hint.hidden = !(S.startedAt && now() - S.startedAt < HINT_MS);
+      ui.meName.textContent = S.me || ''; ui.meUntil.textContent = S.expires ? ' · signed in until ' + clock(S.expires) : '';
+      ui.meLine.title = (S.me || '') + (S.expires ? ' · signed in until ' + clock(S.expires) : '');
     }
     function renderPauseMenu() {
       const m = ui.pauseMenu; clear(m);
@@ -666,6 +719,8 @@ html.tv-on,html.tv-on body{background:${PAL.bg}}
       for (const [span, label] of [['5m', '5 minutes'], ['15m', '15 minutes'], ['1h', '1 hour']]) m.appendChild(btn(label, () => { S.pauseMenu = false; m.hidden = true; send({ t: 'w_pause', span }); }));
       m.appendChild(btn('Cancel', () => { S.pauseMenu = false; m.hidden = true; }));
       m.appendChild(el('div', 'dim small', 'Admins can still talk while chat is paused.'));
+      // narrow: the flagged lines live here (the bar has no room for them)
+      if (S.narrow) { const n = flaggedCount(); m.appendChild(btn(n + ' to look at', () => { S.pauseMenu = false; m.hidden = true; S.filter = 'flagged'; S.tab = 'chat'; S.unread = 0; renderChat(); renderTabs(); scrollChatEnd(); })); }
       const r = rect(ui.pauseBtn), rr = rect(ui.root);
       if (r.height) { m.style.top = Math.round(r.bottom - rr.top + 4) + 'px'; m.style.left = Math.round(Math.max(8, Math.min(r.left - rr.left, winW() - 240))) + 'px'; }
       else { m.style.top = '96px'; m.style.left = '8px'; }
@@ -871,9 +926,9 @@ html.tv-on,html.tv-on body{background:${PAL.bg}}
     }
     function armSendOff(n) { S.confirm = { n, until: now() + CONFIRM_MS }; renderCard(); }
     // ---------- the toast: the answer to every tap ----------
-    function toast(text, actId, bad) {
+    function toast(text, actId, bad, ms) {
       if (S.toast && S.toast.timer) env.clearTimeout(S.toast.timer);
-      S.toast = { text, act: actId, bad: !!bad, timer: env.setTimeout(() => { S.toast = null; renderToast(); }, TOAST_MS) };
+      S.toast = { text, act: actId, bad: !!bad, timer: env.setTimeout(() => { S.toast = null; renderToast(); }, ms || TOAST_MS) };
       renderToast();
     }
     function say(text, bad) { toast(text, null, bad); }
@@ -979,15 +1034,26 @@ html.tv-on,html.tv-on body{background:${PAL.bg}}
     const rootFont = () => { try { return parseFloat(W.getComputedStyle(D.documentElement).fontSize) || 15.5; } catch (e) { return 15.5; } };
     // the names, laid out again at zoom end, pan end, a resize and a new frame (at most once a second); during a drag the
     // last layout is only moved along
+    // the map's own controls over the canvas (+, −, Whole map; Key and its legend; the empty-map note), in pane px: names
+    // and knights are kept off them
+    function obstacles() {
+      const b = rect(ui.mapBox), out = [];
+      for (const e of [ui.zoom, ui.keyBox, ui.empty]) {
+        if (!e || e.hidden) continue;
+        const r = rect(e); if (!(r.width > 0 && r.height > 0)) continue;
+        out.push({ x: r.left - b.left, y: r.top - b.top, w: r.width, h: r.height });
+      }
+      return out;
+    }
     function relabel(force) {
       const box = boxSize(); if (!box || !MAP.W) { S.labels = null; return; }
       const t = now();
       if (!force && S.labels && t - S.labelAt < LABEL_EVERY) return;
       if (S.dragging && S.labels && !force) return;
       const v = viewOf(box.w, box.h);
-      const res = layoutLabels(Object.assign({ font: 0.85 * rootFont() }, v), MAP.places, dotsOf(v), measure, S.labelPrev);
+      const res = layoutLabels(Object.assign({ font: 0.85 * rootFont(), obstacles: obstacles() }, v), MAP.places, dotsOf(v), measure, S.labelPrev);
       const prev = {}; for (const l of res.labels) prev[l.name] = [l.tx, l.ty];
-      S.labelPrev = prev; S.labels = { at: v, res }; S.labelAt = t;
+      S.labelPrev = prev; S.labels = { at: v, res, frameAt: S.frameAt, w: box.w, h: box.h }; S.labelAt = t;
     }
     let drawQueued = false;
     function drawMap() {
@@ -1006,15 +1072,17 @@ html.tv-on,html.tv-on body{background:${PAL.bg}}
       if (!MAP.W) return;
       const v = viewOf(box.w, box.h);
       if (MAP.img) { g.imageSmoothingEnabled = false; g.drawImage(MAP.img, v.x, v.y, MAP.W * v.s, MAP.H * v.s); }
-      // the names from the last layout, moved by however far the view moved since (a drag)
-      const L = S.labels;
-      if (!L) relabel(true);
-      const lay = S.labels;
-      const dx = lay ? v.x - lay.at.x : 0, dy = lay ? v.y - lay.at.y : 0, same = lay && Math.abs(lay.at.s - v.s) < 1e-9;
+      // the names, the dots and the tags from one layout (made again on a new frame, a zoom, a resize, the end of a drag);
+      // during a drag the last layout is only moved along with the map
+      let lay = S.labels;
+      if (!lay || Math.abs(lay.at.s - v.s) > 1e-9 || lay.w !== box.w || lay.h !== box.h || (!S.dragging && lay.frameAt !== S.frameAt)) { relabel(true); lay = S.labels; }
+      const dx = lay ? v.x - lay.at.x : 0, dy = lay ? v.y - lay.at.y : 0;
+      const mv = o => Object.assign({}, o, { x: o.x + dx, y: o.y + dy }, o.ox != null ? { ox: o.ox + dx, oy: o.oy + dy } : {}, o.cx != null ? { cx: o.cx + dx, cy: o.cy + dy } : {});
+      const res = lay ? { clusters: lay.res.clusters.map(mv), dots: lay.res.dots.map(mv), tags: lay.res.tags.map(mv), labels: lay.res.labels.map(mv) } : { clusters: [], dots: [], tags: [], labels: [] };
       g.textAlign = 'center'; g.textBaseline = 'middle';
-      if (lay && same) for (const l of lay.res.labels) {
+      for (const l of res.labels) {
         g.font = '600 ' + l.font + 'px -apple-system, "Segoe UI", sans-serif';
-        g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.8)'; g.strokeText(l.name, l.cx + dx, l.cy + dy); g.fillStyle = l.door ? '#d7dae0' : '#f0e6c8'; g.fillText(l.name, l.cx + dx, l.cy + dy);
+        g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.8)'; g.strokeText(l.name, l.cx, l.cy); g.fillStyle = l.door ? '#d7dae0' : '#f0e6c8'; g.fillText(l.name, l.cx, l.cy);
       }
       // the instance doors: a mark, named only at 2x the fit or more
       for (const d of MAP.doors) {
@@ -1022,9 +1090,9 @@ html.tv-on,html.tv-on body{background:${PAL.bg}}
         if (x < -8 || y < -8 || x > box.w + 8 || y > box.h + 8) continue;
         g.fillStyle = '#0b0d10'; g.fillRect(x - 4, y - 4, 8, 8); g.strokeStyle = '#f0e6c8'; g.lineWidth = 1.5; g.strokeRect(x - 4, y - 4, 8, 8);
       }
-      // the knights: dots and count circles where they are now; the tags from the layout
-      const res = layoutLabels(Object.assign({ font: 0 }, v), [], dotsOf(v), measure, null);
+      // the knights: dots and count circles where they are (one moved clear of a control has a thin line to where he is)
       const t = now(), stale = S.lastArrive && t - S.lastArrive > AWAY_MS;
+      for (const d of res.dots) if (d.ox != null) { g.beginPath(); g.moveTo(d.ox, d.oy); g.lineTo(d.x, d.y); g.strokeStyle = '#6fa8ff'; g.lineWidth = 1.5; g.stroke(); }
       for (const c of res.clusters) {
         g.beginPath(); g.arc(c.x, c.y, 13, 0, Math.PI * 2); g.fillStyle = '#2f4a73'; g.fill(); g.lineWidth = 2; g.strokeStyle = '#0b0d10'; g.stroke();
         g.fillStyle = '#fff'; g.font = '700 14px -apple-system, sans-serif'; g.fillText(String(c.ks.length), c.x, c.y + 1);
@@ -1040,7 +1108,7 @@ html.tv-on,html.tv-on body{background:${PAL.bg}}
       }
       g.font = '700 14px -apple-system, "Segoe UI", sans-serif'; g.textAlign = 'left';
       for (const tg of res.tags) { g.lineWidth = 4; g.strokeStyle = '#0b0d10'; g.strokeText(tg.n, tg.x + 4, tg.y + tg.h / 2); g.fillStyle = '#ffffff'; g.fillText(tg.n, tg.x + 4, tg.y + tg.h / 2); }
-      S.drawn = { v, res, labels: lay && same ? lay.res.labels.map(l => Object.assign({}, l, { x: l.x + dx, y: l.y + dy, cx: l.cx + dx, cy: l.cy + dy })) : [] };
+      S.drawn = { v, res, labels: res.labels, obstacles: obstacles() };
     }
     function renderMapHead() {
       if (!ui.mapHead) return;
@@ -1065,7 +1133,8 @@ html.tv-on,html.tv-on body{background:${PAL.bg}}
     function tapMap(px, py) {
       const box = boxSize(); if (!box || !MAP.W) return;
       const v = viewOf(box.w, box.h);
-      const res = layoutLabels(Object.assign({ font: 0 }, v), [], dotsOf(v), measure, null);
+      // what is drawn (a knight moved clear of a control is tapped where he is drawn)
+      const res = S.drawn && S.drawn.res ? S.drawn.res : layoutLabels(Object.assign({ font: 0, obstacles: obstacles() }, v), [], dotsOf(v), measure, null);
       let best = null, bd = 22;
       for (const c of res.clusters.concat(res.dots)) { const d = Math.hypot(c.x - px, c.y - py); if (d <= bd) { bd = d; best = c; } }
       if (!best) { S.pick = null; ui.pick.hidden = true; return; }
@@ -1092,6 +1161,9 @@ html.tv-on,html.tv-on body{background:${PAL.bg}}
     // ---------- Watch: one kid's point of view ----------
     function watch(n) {
       if (!n) return;
+      // wide: his Knight card docks at the top of Who is on, so Mute and Send off are at hand while watching him (narrow has
+      // the strip under his screen)
+      if (!S.narrow && !(S.selected && lc(S.selected) === lc(n))) select(n);
       if (S.watch && lc(S.watch.n) === lc(n)) return;
       S.watchWant = n;
       send({ t: 'w_view', n });
@@ -1103,8 +1175,9 @@ html.tv-on,html.tv-on body{background:${PAL.bg}}
       S.watch = { n, v: m.v, map: m.map, place: m.place, role: m.role, old: !!m.old, monsters: m.monsters === 'live' ? 'live' : 'friends', limit: m.limit || null, ended: '', at: now(), status: '', statusAt: 0 };
       ui.mapPane.hidden = true; ui.watchPane.hidden = false;
       if (S.narrow) ui.strip.hidden = false;
-      sizeWatch();
+      layout();
       env.view.start(m.v, m, { box: ui.watchBox, zoom: S.layout.zoom });
+      sizeWatch();
       if (env.canvas) env.canvas.style.display = 'block';
       renderPov(); renderWho(); renderCard();
     }
@@ -1119,7 +1192,7 @@ html.tv-on,html.tv-on body{background:${PAL.bg}}
       try { env.view.stop(); } catch (e) { }
       if (env.canvas) env.canvas.style.display = 'none';
       ui.watchPane.hidden = true; ui.mapPane.hidden = false; ui.strip.hidden = true; ui.card0.hidden = true;
-      if (render !== false) { renderWho(); renderCard(); relabel(true); drawMap(); }
+      if (render !== false) { layout(); renderWho(); renderCard(); relabel(true); drawMap(); }
     }
     function onView(m) {
       const w = S.watch;
@@ -1153,6 +1226,7 @@ html.tv-on,html.tv-on body{background:${PAL.bg}}
       const t = now(), st = env.view.state || {}, p = pron(), n = w.n;
       const lastP = st.lastPAt ? t - (st.lastPAt - (env.view.clockOffset || 0)) : null;
       ui.only.textContent = 'Only watching: taps here do nothing in ' + n + "'s game.";
+      ui.glass.title = ui.only.textContent; ui.what.title = ui.only.textContent;
       let state = '', live = true;
       if (w.ended) { state = w.ended; live = false; }
       else if (!w.lastP && t - w.at >= WAIT_MS) { state = 'Waiting for ' + n + "'s game…"; live = false; }
@@ -1176,7 +1250,9 @@ html.tv-on,html.tv-on body{background:${PAL.bg}}
       // narrow: one line under his screen with his controls at hand
       if (S.narrow) {
         clear(ui.strip); ui.strip.hidden = false;
-        ui.strip.append(btn(n, () => select(n)), btn('Mute', () => select(n)), btn('Send off', () => { select(n); armSendOff(n); }, 'red'), btn('Back to the map', () => back()));
+        ui.strip.append(btn(n, () => select(n)), btn('Mute', () => select(n)), btn('Send off', () => { select(n); armSendOff(n); }, 'red'));
+        // (Back to the map is the first button over his screen; the strip repeats it only where there is room on one line)
+        if (winW() >= 600) ui.strip.appendChild(btn('Back to the map', () => back()));
       } else ui.strip.hidden = true;
     }
     function glassInput() {
@@ -1194,7 +1270,7 @@ html.tv-on,html.tv-on body{background:${PAL.bg}}
 
     // ---------- once a second: the clocks on screen (no calls) ----------
     function tick() {
-      if (!S.token || S.ended) return;
+      if (!token || S.ended) return;
       const t = now(), idle = t - S.lastInput;
       if (idle >= IDLE_MS + IDLE_WARN_MS) return signOut('idle');
       if (S.expires && t >= S.expires) return ended(4011);
@@ -1207,20 +1283,22 @@ html.tv-on,html.tv-on body{background:${PAL.bg}}
 
     // ---------- the screen's life ----------
     function start(a) {
-      S.token = a.token; S.me = a.name; S.expires = +a.expires || 0; S.startedAt = now(); S.lastInput = now();
+      token = a.token; S.me = a.name; S.expires = +a.expires || 0; S.startedAt = now(); S.lastInput = now();
       S.bye = null; S.tries = 0; S.gaveUp = false; S.status = 'connecting'; S.ended = false;
       build(); layout(); renderAll();
+      // the shared-computer hint: the toast for the first 10 s (never in the bar, so nothing moves when it goes)
+      toast("On a shared computer, press Sign out when you're done.", null, false, HINT_MS);
       loadMap(); connect();
       const touched = () => { const was = now() - S.lastInput >= IDLE_MS; S.lastInput = now(); if (was) renderBanners(); };
       for (const t of ['pointerdown', 'keydown', 'touchstart', 'wheel', 'click']) D.addEventListener(t, touched, { passive: true, capture: true });
       D.addEventListener('visibilitychange', () => {
         if (D.hidden) { S.hiddenSince = now(); return; }
         S.hiddenSince = 0;
-        if (S.token && !S.ws && (S.wantOnVisible || S.timer)) { S.wantOnVisible = false; if (S.timer) { env.clearTimeout(S.timer); S.timer = null; } connect(); }
+        if (token && !S.ws && (S.wantOnVisible || S.timer)) { S.wantOnVisible = false; if (S.timer) { env.clearTimeout(S.timer); S.timer = null; } connect(); }
         if (S.hiddenView && S.ws && S.ws.readyState === 1) { const n = S.hiddenView; S.hiddenView = null; watch(n); }
       });
       // leaving the page signs out: a shared classroom computer is never left signed in
-      W.addEventListener('pagehide', () => { if (!S.token) return; logoutBeacon(); S.token = null; });
+      W.addEventListener('pagehide', () => { if (!token) return; logoutBeacon(); token = null; });
       W.addEventListener('pageshow', ev => { if (ev && ev.persisted) { try { if (env.ss) env.ss.setItem(BYE_KEY, '4010'); } catch (e) { } S.ended = true; env.replace('/'); } });
       W.addEventListener('resize', () => layout());
       // every key: Esc goes back to the map; none reaches the game (05-input would take arrows, space and Tab)
@@ -1232,10 +1310,8 @@ html.tv-on,html.tv-on body{background:${PAL.bg}}
       // the ping: the runtime answers it without waking the world (exactly this text)
       env.setInterval(() => { if (S.ws && S.ws.readyState === 1) { try { S.ws.send(PING); } catch (e) { } } }, PING_MS);
       env.setInterval(tick, 1000);
-      // the hint beside Sign out goes after 10 s
-      env.setTimeout(() => renderBar(), HINT_MS + 50);
     }
-    return { S, ui, start, onMessage, signOut, watch, back, select, layout, relabel, paint, tick, layoutLabels, MAP, takeMap, moveDivider, nudgeDivider, resetDivider, setChat, setWho, setSplit, viewOf, renderPov, armSendOff };
+    return { S, ui, start, onMessage, signOut, watch, back, select, layout, relabel, paint, tick, layoutLabels, MAP, takeMap, moveDivider, nudgeDivider, resetDivider, setChat, setWho, setSplit, viewOf, renderPov, armSendOff, signedIn: () => !!token };
   }
 
   // ---------- teacher mode on the real page ----------
@@ -1256,11 +1332,9 @@ html.tv-on,html.tv-on body{background:${PAL.bg}}
     try { document.documentElement.classList.add('tv-on'); } catch (e) { }
     if (window.VIEW) VIEW.install();
   }
-  TS.open = a => {
-    if (!a || typeof a.token !== 'string' || !a.token) return false;
-    if (TS.screen) return false;
-    enterMode();
-    const env = {
+  TS.open = a => openWith(a, realEnv(), enterMode);
+  function realEnv() {
+    return {
       win: window, doc: document, fetch: (u, o) => window.fetch(u, o), WebSocket: window.WebSocket, now: () => Date.now(),
       setTimeout: (f, ms) => setTimeout(f, ms), clearTimeout: id => clearTimeout(id), setInterval: (f, ms) => setInterval(f, ms), clearInterval: id => clearInterval(id),
       ls: (() => { try { return window.localStorage; } catch (e) { return null; } })(), ss: (() => { try { return window.sessionStorage; } catch (e) { return null; } })(),
@@ -1272,8 +1346,21 @@ html.tv-on,html.tv-on body{background:${PAL.bg}}
       coarse: !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches),
       view: window.VIEW, canvas,
     };
-    TS.screen = make(env);
-    TS.screen.start(a);
+  }
+  function openWith(a, env, enter) {
+    if (!a || typeof a.token !== 'string' || !a.token) return false;
+    if (TS.screen) return false;
+    enter();
+    const scr = make(env);
+    scr.start(a);
+    // what a page script (and the real-browser proof) may see of the open screen: a copy of what it shows, never S, never
+    // the token (which lives in make()'s closure only)
+    TS.screen = {
+      peek: () => { const S = scr.S; return { status: S.status, me: S.me, expires: S.expires, knights: S.knights.map(k => k.n), selected: S.selected, narrow: S.narrow, sizes: S.sizes ? Object.assign({}, S.sizes) : null, folded: S.folded, watching: S.watch ? S.watch.n : null, drawn: S.drawn ? JSON.parse(JSON.stringify({ labels: S.drawn.labels, obstacles: S.drawn.obstacles, dots: S.drawn.res.dots.map(d => ({ x: d.x, y: d.y, r: d.r, n: d.k.n })), clusters: S.drawn.res.clusters.map(c => ({ x: c.x, y: c.y, r: c.r, n: c.ks.length })), tags: S.drawn.res.tags })) : null }; },
+      // the real-browser proof's two clocks: nothing pressed for that long; the session's end reached
+      idleFor: ms => { scr.S.lastInput = Date.now() - ms; },
+      expireNow: () => { scr.S.expires = Date.now() - 1; },
+    };
     return true;
   };
   // J1 (71-login): a teacher's answer on a page that already held a kid's world: the session ends at once and the page
@@ -1284,6 +1371,8 @@ html.tv-on,html.tv-on body{background:${PAL.bg}}
     try { location.replace('/' + (location.search || '')); } catch (e) { }
   };
   Object.assign(TS, { make, layoutLabels, wideSizes, narrowSplit, readLayout, writeLayout, CSS, enterMode });
+  // (the self-test opens the screen exactly as TS.open does, over a stand-in page and without teacher mode)
+  const openForTest = openWith;
 
   // ---------- self-test: the screen over a small stand-in DOM, a fake clock, socket and fetch ----------
   function fakePage(opts = {}) {
@@ -1358,6 +1447,23 @@ html.tv-on,html.tv-on body{background:${PAL.bg}}
       const ticketAuth = P.calls.some(c => c.url === '/api/teacher/ticket' && c.o.headers && c.o.headers.authorization === 'Bearer ' + tok);
       check(P0 + 'the token is never in localStorage, sessionStorage, the address or the socket\'s address; the socket carries only a single-use ticket', !leaked && urlOk && ticketAuth, { leaked, url: P.ws() && P.ws().url, ticketAuth });
     }
+    // NEGATIVE: the screen opened as the card opens it (TS.open's own path, over a stand-in page): the token is reachable from
+    // none of window.TEACHERSCREEN, window.LOGIN and window.VIEW (their own fields, deep), nor from what TEACHERSCREEN.screen
+    // shows a page script (peek)
+    {
+      const reach = (root, needle) => { const seen = new Set(), stack = [[root, 0]]; while (stack.length) { const [o, d] = stack.pop(); if (typeof o === 'string') { if (o.includes(needle)) return true; continue; } if (!o || (typeof o !== 'object' && typeof o !== 'function') || seen.has(o) || d > 7) continue; seen.add(o); if (typeof Node !== 'undefined' && o instanceof Node) continue; let ks = []; try { ks = Object.keys(o); } catch (e) { } for (const k of ks) { let v; try { v = o[k]; } catch (e) { continue; } stack.push([v, d + 1]); } } return false; };
+      const was = TS.screen, Pg = fakePage(), secret = 'cd'.repeat(32);
+      TS.screen = null;
+      let opened = false, kept = [], peeked = true, hasS = true;
+      try {
+        opened = openForTest(Object.assign({}, ANS, { token: secret }), Pg.env, () => { });
+        Pg.ws().open(); Pg.ws().recv({ t: 'w_hello', me: 'Mrs Smith', expires: ANS.expires, now: Pg.clock.t, tz: 'America/Toronto', notice: true });
+        kept = ['TEACHERSCREEN', 'LOGIN', 'VIEW'].filter(g => window[g] && reach(window[g], secret));
+        peeked = JSON.stringify(TS.screen.peek()).includes(secret);
+        hasS = 'S' in TS.screen || Object.values(TS.screen).some(v => v && typeof v === 'object' && 'ws' in v);
+      } finally { TS.screen = was; }
+      check(P0 + 'NEGATIVE: opened as the card opens it, the token is reachable from none of TEACHERSCREEN, LOGIN and VIEW, TEACHERSCREEN.screen has no S, and what it shows (peek) has no token; the ticket call still carries it', opened && kept.length === 0 && !peeked && !hasS && Pg.calls.some(c => c.url === '/api/teacher/ticket' && c.o.headers.authorization === 'Bearer ' + secret), { opened, kept, peeked, hasS });
+    }
     // NEGATIVE: a kid's token left on this device and the page coming back into view open no knight socket (teacher mode
     // turns the wire off: 70-net's visibilitychange asks NET.connect, which refuses with the wire off)
     {
@@ -1431,6 +1537,27 @@ html.tv-on,html.tv-on body{background:${PAL.bg}}
       const stopped = P.sent('w_unview').length === 1 && P.view.stopped === 1 && s.ui.watchPane.hidden && !s.ui.mapPane.hidden;
       check(P0 + 'Watch: the card\'s Watch sends w_view, the world\'s w_vstart opens his view, only frames of this view (v) are fed, a status frame goes to the header only, w_vend freezes it with the world\'s words, Back to the map sends w_unview and brings the map back', watching && only && cardBack && status && endedOk && stopped, { watching, only, cardBack, status, endedOk, stopped, what: s.ui.what.textContent, state2: s.ui.state2.textContent });
     }
+    // Watch from a Who row (wide): his Knight card docks at the top of Who is on, so his Mute and Send off are on screen while
+    // watching him (the old page left the card shut: the teacher had to know to tap the row's words instead)
+    {
+      const Pw = fakePage(), sw = live(Pw);
+      const row = Pw.all().find(e => e.visible && e.className && /\brow\b/.test(e.className) && e._n === 'sam');
+      const b = row && row.children.find(c => c.tagName === 'BUTTON' && c.textContent === 'Watch');
+      Pw.click(b);
+      const card = sw.ui.card.visible && sw.S.selected === 'Sam' && !!Pw.all().find(e => e.visible && e.tagName === 'BUTTON' && e.textContent === 'Mute 10 min' && sw.ui.card.contains(e));
+      check(P0 + 'Watch on a Who row (wide) also opens his Knight card, with Mute 10 min and Send off for today on screen; w_view is sent', card && Pw.sent('w_view').length === 1 && !!Pw.find('Send off for today', 'BUTTON'), { card, sel: sw.S.selected, sent: Pw.sent('w_view').length });
+    }
+    // narrow (an iPad upright): watching a kid gives his screen 70% of the panes (the map's own 55% comes back after), and
+    // Closer, Wider and Fit sit on the same row as Back to the map
+    {
+      const Pn = fakePage({ width: 768, height: 1024 }), sn = live(Pn);
+      const h0 = parseFloat(sn.ui.mid.style.height);
+      sn.watch('Sam'); Pn.ws().recv({ t: 'w_vstart', v: 3, n: 'Sam', map: 'over', place: 'Thistledown', keeper: { t: 'keeper', map: 'over', n: 'Sam' }, me: null, others: [], parties: [], old: false, monsters: 'live', limit: null });
+      const h1 = parseFloat(sn.ui.mid.style.height);
+      const row1 = sn.ui.back.parentNode, same = [sn.ui.closer, sn.ui.wider, sn.ui.fit].every(b => b.parentNode === row1);
+      sn.back(); const h2 = parseFloat(sn.ui.mid.style.height);
+      check(P0 + 'narrow: watching gives his screen 70% of the panes (' + h1 + ' px, the map ' + h0 + ' px), Closer, Wider and Fit share Back to the map\'s row, and the map\'s split comes back', sn.S.narrow && h0 === Math.round(0.55 * (1024 - 120)) && h1 === Math.round(0.7 * (1024 - 120)) && same && h2 === h0, { h0, h1, h2, same });
+    }
     // grep gate: no innerHTML here or in 79-view (everything is textContent)
     {
       const src = typeof window.__gameSource === 'string' ? window.__gameSource : (typeof document !== 'undefined' && document.scripts ? Array.from(document.scripts).map(x => x.textContent).join('\n') : '');
@@ -1451,9 +1578,9 @@ html.tv-on,html.tv-on body{background:${PAL.bg}}
       const P6 = fakePage(); live(P6); for (const f of P6.winL.pagehide || []) f({});
       const hide = P6.beacons.length === 1 && P6.beacons[0].url === '/api/teacher/logout' && JSON.parse(P6.beacons[0].body).token === tok;
       const P7 = fakePage(); const s7 = live(P7); P7.ws().recv({ t: 'w_bye', code: 4012, text: 'Ethan turned this sign-in off.' });
-      const bye = P7.ss[BYE_KEY] === '4012' && P7.replaced[0] === '/' && s7.S.token === null;
+      const bye = P7.ss[BYE_KEY] === '4012' && P7.replaced[0] === '/' && !s7.signedIn();
       const P8 = fakePage(); const s8 = live(P8); P8.click(s8.ui.signout);
-      const out = P8.ss[BYE_KEY] === '4010' && P8.replaced[0] === '/' && P8.beacons.length === 1 && s8.S.token === null;
+      const out = P8.ss[BYE_KEY] === '4010' && P8.replaced[0] === '/' && P8.beacons.length === 1 && !s8.signedIn();
       const P9 = fakePage(); const s9 = live(P9, T0 + 30 * 60000); P9.advance(30 * 60000 + 1500);
       const midnight = P9.ss[BYE_KEY] === '4011' && P9.replaced[0] === '/';
       check(P0 + 'idle: "Still watching? ... Signing out in 1:59." after an hour, signed out (idle) two minutes later; pagehide sends the logout beacon; w_bye, Sign out and the end of the session go back to the card with their reason (a code in sessionStorage, never the token)', banner && idleOut && hide && bye && out && midnight, { banner, text: s5.ui.banners.textContent, idleOut, hide, bye, out, midnight, ss: P5.ss });
@@ -1461,9 +1588,13 @@ html.tv-on,html.tv-on body{background:${PAL.bg}}
     // the hint beside Sign out for the first 10 s
     {
       const P10 = fakePage(); const s10 = live(P10);
-      const shown = !s10.ui.hint.hidden && s10.ui.hint.textContent === "On a shared computer, press Sign out when you're done.";
-      P10.advance(HINT_MS + 100);
-      check(P0 + '"On a shared computer, press Sign out when you\'re done." beside Sign out for the first 10 s', shown && s10.ui.hint.hidden, { shown, after: s10.ui.hint.hidden });
+      const HINT = "On a shared computer, press Sign out when you're done.";
+      const shown = s10.ui.toast.visible && s10.ui.toast.textContent === HINT;
+      // never in the bar (the bar's height never changes when it goes: the old one stacked the bar's words for 10 s)
+      const bar = P10.byId('tv-bar'), inBar = !!(bar && P10.all().some(e => bar.contains(e) && e._text === HINT));
+      P10.advance(HINT_MS - 500); const still = s10.ui.toast.visible;
+      P10.advance(700);
+      check(P0 + '"On a shared computer, press Sign out when you\'re done." shows as the toast for the first 10 s, then goes; it is never in the bar', shown && still && !inBar && !s10.ui.toast.visible && !P10.find(HINT), { shown, still, inBar, after: s10.ui.toast.visible });
     }
     // the layout's sizes
     {
