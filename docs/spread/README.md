@@ -282,7 +282,7 @@ counts; 93-ashedge's charred trees (x2.5); 39's coast sand rim (x1.6); 61-marker
 32-beast rams along the side with open ground; 29-quests fishes in peace; 16-instances hears the place names and no
 person (people are markers).
 
-**Fingerprint.** `docs/spread/baseline-fingerprint.json` is regenerated from this build (4b changes the map on purpose).
+**Fingerprint.** `docs/spread/baseline-fingerprint.json` is regenerated from this build (4b changes the map on purpose): fingerprint 35efbd8a5f6807fc, `--diff` identical; later stages diff against it.
 
 ## Proving "nothing visible changed" (spec §9.4)
 
