@@ -546,42 +546,6 @@ test('boss_call is capped at 0.5 a second with a burst of 2', () => {
   assert.equal(b.of('error').length, 0);
 });
 
-// ---------- named bosses: hand (the old keeper's last word on each named boss it ran) ----------
-test('hand: a keeper who went quiet loses the map to the knight who plays; its hand reaches him alone, shaped, with its name on it', () => {
-  assert.equal(CAPS.hand.rate, 1); assert.equal(CAPS.hand.burst, 3);
-  const w = world();
-  const a = w.knight('Cohen', 'over'); w.t += 10;
-  const b = w.knight('Jack', 'over'); w.t += 10;
-  const c = w.knight('Zed', 'tinker_lab');
-  w.settle(a, b, c);
-  // Cohen keeps the overworld and opens the menu (nothing more from his game); Jack plays on and gets the map
-  w.run(KEEPER_STALE + 500, 250, () => w.say(b, { t: 'p', map: 'over', x: 5, y: 5, lv: 3 }));
-  assert.equal(w.room.keeperOf('over').name, 'Jack');
-  assert.equal(a.last('keeper').n, 'Jack');
-  a.clear(); b.clear(); c.clear();
-  // every field checked: at most 8 bosses, a nid string, an hp in range; a count of at most 8 knights, each [1..10000 hits,
-  // 0..60 s ago], a prototype name never kept
-  const credit = JSON.parse('{"Cohen": [4, 2.5], "Jack": [3, 1], "__proto__": [9, 1], "Bo": [0, 1], "Cy": [3, 61], "Di": ["3", 1], "Ed": [2.5, 1]}');
-  w.say(a, { t: 'hand', list: [['s95', 226, credit], ['', 5, {}], [42, 5, {}], ['s1', -1, {}], ['s2', 'x', {}], 'junk', ['s3', 40, 'no count']] });
-  assert.deepEqual(b.of('hand'), [{ t: 'hand', n: 'Cohen', list: [['s95', 226, { Cohen: [4, 2.5], Jack: [3, 1] }], ['s3', 40, {}]] }]);
-  assert.equal(Object.getPrototypeOf(b.last('hand').list[0][2]), Object.prototype);
-  assert.equal(a.of('hand').length + c.of('hand').length, 0);
-  // the keeper's own hand goes nowhere; a knight on another map hands nothing to this one; nothing but a list is read
-  b.clear();
-  w.t += 2000; w.say(b, { t: 'hand', list: [['s95', 1, {}]] });
-  w.t += 2000; w.say(c, { t: 'hand', list: [['s95', 1, {}]] });
-  w.t += 2000; w.say(a, { t: 'hand', list: 'all of it' });
-  w.t += 2000; w.say(a, { t: 'hand', list: [] });
-  assert.equal(a.of('hand').length + b.of('hand').length + c.of('hand').length, 0);
-  // and at most 8 bosses go on
-  w.t += 2000; w.say(a, { t: 'hand', list: Array.from({ length: 12 }, (_, i) => ['s' + i, 10, {}]) });
-  assert.equal(b.last('hand').list.length, 8);
-  // a monster that died on the old keeper's game after its last row goes on as hp 0 with no count (the new keeper lays it down)
-  b.clear();
-  w.t += 2000; w.say(a, { t: 'hand', list: [['s95', 0, {}], ['g4', 0, {}]] });
-  assert.deepEqual(b.of('hand'), [{ t: 'hand', n: 'Cohen', list: [['s95', 0, {}], ['g4', 0, {}]] }]);
-});
-
 test('a keeper on another map does not receive boss_call', () => {
   const w = world();
   const a = w.knight('Cohen', 'tinker_lab'); w.t += 10;

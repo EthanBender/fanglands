@@ -99,7 +99,6 @@ export const CAPS = {
   trade_ack: { rate: 10, burst: 50 },
   boss_call: { rate: 0.5, burst: 2 },
   boss_wait: { rate: 1, burst: 3 },
-  hand: { rate: 1, burst: 3 },
 };
 for (const c of Object.values(CAPS)) if (!c.burst) c.burst = Math.max(2, Math.round(c.rate * 2));
 
@@ -111,8 +110,9 @@ export const atlasOf = a => typeof a === 'string' && /^[0-9a-z]{1,32}$/.test(a) 
 // a knight's own island is his alone: the Room keys it by his name, and every message out names it 'house' again
 export const mapKey = (k, map) => isHouse(map) ? 'house:' + k.lc : map;
 export const ROSTER_EVERY = 2000;      // a changed roster goes out at most this often (join/leave go at once)
-// A keeper whose game has sent neither monsters nor presence for this long while others share its map (paused, on the
-// title screen, a sleeping tab) hands the map to the next knight that is playing; it is eligible again once that knight
+// A keeper whose game has sent neither monsters nor presence for this long while others share its map (a locked phone, a
+// sleeping tab; a paused game or one on the title screen with nobody near it: with a knight near, a paused keeper streams its
+// frozen monsters and keeps the map) hands the map to the next knight that is playing; it is eligible again once that knight
 // leaves. Nothing watches the clock for it while nobody plays (an alarm is a billed request, and two idle knights on one map
 // cost about 1,200 an hour when one watched every keeper): the hand-over happens when a knight who is playing there says where
 // he is (onPresence, keeperCheck), and a map where nobody is playing has nobody to hand it to. So that it comes as soon as it
@@ -130,7 +130,6 @@ export const ATTACH_MAX = 1800;        // bytes of JSON a socket's attachment ma
 // How long each mute lasts; 'always' means until an admin (or the parent page) turns chat back on.
 export const MUTE_SPANS = { '5m': 5 * 60 * 1000, '1h': 3600 * 1000, '1d': 24 * 3600 * 1000, always: ALWAYS };
 export const SPAWN_MAX = 20;           // monsters in one spawn message
-export const HAND_MAX = 8, HAND_HITTERS = 8;   // named bosses in one hand, and knights in each one's count
 export const KICK_TEXT = 'An admin sent you out of the world. You can come back in.';
 // Word strikes: what the knight is told (the game says the lockout with the real time it ends, from `until`)
 export const WORD_WARN_1 = "That word isn't allowed here. This is your warning.";
@@ -412,7 +411,6 @@ export class Room {
       case 'trade_ack': return this.onTradeAck(k, m);
       case 'boss_call': return this.onBossCall(k, m);
       case 'boss_wait': return this.onToKnight(k, m, 'boss_wait', ['id', 'left']);
-      case 'hand': return this.onHand(k, m);
       case 'ping': return this.send(sock, { t: 'pong' });   // the real server answers this without waking; the sim lands here
       default: return;                                       // unknown t: ignored, as the contract says
     }
@@ -515,7 +513,7 @@ export class Room {
   onMon(k, m) {
     if (!k.hello || !Array.isArray(m.list)) return;
     const g = this.maps.get(k.map);
-    k.monAt = this.now();   // his game is running (a paused game streams nothing): alive, whoever keeps the map
+    k.monAt = this.now();   // his game is running: alive, whoever keeps the map
     // a game that thinks it keeps a map a wake gave to a knight still silent takes it (keeperCheck); one a wake gave to a knight
     // who has spoken since hears who keeps it (retell)
     if (g && g.keeper !== k) { this.keeperCheck(k); this.retell(k); }
@@ -558,30 +556,6 @@ export class Room {
     const out = { t: 'boss_call', n: k.name, id: m.id };
     if (m.first === true) out.first = true;
     this.send(g.keeper.sock, out);
-  }
-
-  // hand: the game that kept this map until a moment ago (the map went to a knight who plays) hands the new keeper what it
-  // knew of each named boss it ran, for the hits that landed on it after its last snapshot (docs/ONLINE.md, "Named bosses":
-  // [nid, hp, {name: [hits, seconds ago]}]). The world only checks the shape and passes it to the keeper of the sender's map,
-  // stamped with the sender's name; the keeper's game believes it only from the knight it took the map from, once, at once.
-  onHand(k, m) {
-    if (!k.hello || !Array.isArray(m.list)) return;
-    const g = this.maps.get(k.map);
-    if (!g || !g.keeper || g.keeper === k || g.keeper.virtual) return;
-    const list = [];
-    for (const e of m.list.slice(0, HAND_MAX)) {
-      if (!Array.isArray(e) || typeof e[0] !== 'string' || !e[0] || e[0].length > 64 || !inRange(e[1], 0, 1e7)) continue;
-      const hs = {}, from = e[2] && typeof e[2] === 'object' && !Array.isArray(e[2]) ? e[2] : {};
-      let n = 0;
-      for (const name of Object.keys(from)) {
-        if (n >= HAND_HITTERS) break;
-        const v = from[name];
-        if (!name || name.length > 24 || name in Object.prototype || !Array.isArray(v) || !Number.isInteger(v[0]) || v[0] < 1 || v[0] > 10000 || !inRange(v[1], 0, 60)) continue;
-        hs[name] = [v[0], v[1]]; n++;
-      }
-      list.push([e[0], e[1], hs]);
-    }
-    if (list.length) this.send(g.keeper.sock, { t: 'hand', n: k.name, list });
   }
 
   onGift(k, m) {
@@ -1100,7 +1074,7 @@ export class Room {
     let best = null;
     for (const o of g.members) if (!best || before(o, best)) best = o;
     // The keeper keeps the map while he is playing, and while nobody else there is either: a hand-over is the costly part, and
-    // handing a map from one silent knight to another only turns the monsters on a paused page into puppets nobody streams. He
+    // handing a map from one silent knight to another only turns the monsters on a silent page into puppets nobody streams. He
     // gets no new grace for it (nothing watches his quiet moment: due() reads only g.watch), so the first knight there who
     // plays takes the map at once.
     if (g.keeper && g.members.has(g.keeper) && (g.keeper === best || !back(g.keeper) || back(best))) return;

@@ -52,7 +52,7 @@ const CAPS = {
   mute: [1, 3], unmute: [1, 3], kick: [1, 3], ban: [1, 3], unban: [1, 3], modlist: [1, 2], spawn: [1, 3], spawn_clear: [1, 2],
   party: [0.2, 2], party_end: [1, 2], light: [4, 8], claim: [10, 50],
   trade_ask: [0.5, 3], trade_answer: [2, 4], trade_offer: [5, 10], trade_accept: [4, 8], trade_confirm: [4, 8], trade_full: [2, 4], trade_close: [2, 4], trade_ack: [10, 50],
-  boss_call: [0.5, 2], boss_wait: [1, 3], hand: [1, 3],
+  boss_call: [0.5, 2], boss_wait: [1, 3],
 };
 // Trading (docs/ONLINE.md, "Trading"): the ranges in px, the ask's life, an offer's limits, how long a finished trade is re-sent
 const TRADE_NEAR = 5 * TILE_PX, TRADE_LEAVE = 8 * TILE_PX, TRADE_ASK_LIFE = 30000, TRADE_ITEMS = 12, TRADE_QTY_MAX = 1000000000, TRADE_KEEP = PRIZE_KEEP;
@@ -267,7 +267,6 @@ class FakeWorld {
     if (t === 'hit') return this.hit(k, m);
     if (t === 'boss_call') return this.bossCall(k, m);
     if (t === 'boss_wait') return this.toKnight(k, m, ['id', 'left']);
-    if (t === 'hand') return this.hand(k, m);
     if (t === 'kill') return this.toKnight(k, m, ['nid', 'type', 'x', 'y']);
     if (t === 'hurt') return this.toKnight(k, m, ['dmg', 'x', 'y']);
     if (t === 'gift') return this.gift(k, m);
@@ -339,19 +338,6 @@ class FakeWorld {
     if (!kp || kp === k || typeof m.id !== 'string' || !/^[a-z_]{1,24}$/.test(m.id)) return;
     const out = { t: 'boss_call', n: k.name, id: m.id }; if (m.first === true) out.first = true;
     this.send(kp, out);
-  }
-  // the game that kept the map until a moment ago hands the keeper what it knew of each named boss: [nid, hp, {name: [n, age]}]
-  hand(k, m) {
-    const kp = this.keepers.get(k.map);
-    if (!kp || kp === k || !Array.isArray(m.list)) return;
-    const list = [];
-    for (const e of m.list.slice(0, 8)) {
-      if (!Array.isArray(e) || typeof e[0] !== 'string' || !e[0] || e[0].length > 64 || !inRange(e[1], 0, 1e7)) continue;
-      const hs = {}, from = e[2] && typeof e[2] === 'object' && !Array.isArray(e[2]) ? e[2] : {};
-      for (const name of Object.keys(from).slice(0, 8)) { const v = from[name]; if (name && name.length <= 24 && !(name in Object.prototype) && Array.isArray(v) && isInt(v[0], 1, 10000) && inRange(v[1], 0, 60)) hs[name] = [v[0], v[1]]; }
-      list.push([e[0], e[1], hs]);
-    }
-    if (list.length) this.send(kp, { t: 'hand', n: k.name, list });
   }
   toKnight(k, m, fields) {
     if (this.keepers.get(k.map) !== k) return;
@@ -1288,44 +1274,6 @@ async function main() {
     ev(B, "(() => { const m = monsters.find(o => o.type === 'the_fang'); if (m) { m.dead = true; m.awake = false; m.respawnT = Infinity; } })()");
     A.NET.connect(); wire.flush(); tick(40);
   }
-  // ---- H2. the keeper opens the menu mid-Echo (the real Room only: the world hands a quiet keeper's map to a knight who plays) ----
-  // Ann keeps the lair and lands her hits; she opens the menu for 5 s while Ben swings on, and one more blow lands on her game that
-  // Ben's screen never showed (a third knight's, sent as a bare hit); the world gives Ben the map; Ann comes back and never swings
-  // again; Ben fells it. Ann's count came over with the map (her row's column 20, and her game's 'hand'), so she is credited, and
-  // the Echo on Ben's game has lost every blow that landed on Ann's (it never heals at the hand-over).
-  if (useRoom) {
-    calm(); const kept = keepOver();
-    ev(A, "quest.fang.restUntil = 0; quest.fang.echoUp = false; if (!countItem('dragon_horn')) addItem('dragon_horn', 1);");
-    A.FANGLANDS.tp(18, 116); B.FANGLANDS.tp(21, 118); tick(20);
-    A.FANGLANDS.face(18, 117); A.FANGLANDS.press('KeyE'); tick(30);
-    const nid = ev(A, "(() => { const m = monsters.find(o => o.type === 'the_fang' && !o.dead && !o.remote); if (!m) return null; m.hp = 300; m.element = 'fire'; m.elemT = 0; return m.nid; })()");
-    tick(10);
-    for (let i = 0; i < 3; i++) { hitBoss(A, 'the_fang', 10); tick(3); hitBoss(B, 'the_fang', 10); tick(6); }
-    tick(10);
-    const k0 = ev(A, 'player.kills'), e0 = ev(A, 'quest.fang.echoes || 0');
-    // Ben's Echo the moment Ann's hand lands (after that it is Ben's to run: a boss walking home heals as ever)
-    let atHand = null; const onHandB = B.NET.on('hand', () => { atHand = ev(B, `(() => { const m = COOP.find(${JSON.stringify(nid)}); return m && !m.remote ? m.hp : null; })()`); });
-    ev(A, 'paused = true');
-    let unseen = false, benKeeps = null;
-    for (let f = 0; f < 300; f++) {
-      tick(1);
-      if (f === 30) hitBoss(B, 'the_fang', 10);
-      if (f === 60) { B.NET.send({ t: 'hit', nid, dmg: 7, knock: 0, bomb: false }); wire.flush(); unseen = true; }
-      if (benKeeps === null && B.COOP.isKeeper()) benKeeps = f;
-    }
-    const annFang = ev(A, `(() => { const m = (COOP.parked || []).find(o => o.nid === ${JSON.stringify(nid)}); return m ? m.hp : null; })()`);
-    const benFang = ev(B, `(() => { const m = COOP.find(${JSON.stringify(nid)}); return m && !m.remote ? { annHits: m.hitters && m.hitters.Ann ? m.hitters.Ann.n : 0 } : null; })()`);
-    B.NET.off('hand', onHandB);
-    ev(A, 'paused = false'); tick(20);
-    hitBoss(B, 'the_fang', 500); tick(30);
-    const ann = { kills: ev(A, 'player.kills') - k0, echoes: ev(A, 'quest.fang.echoes || 0') - e0 };
-    const down = ev(B, `(() => { const m = COOP.find(${JSON.stringify(nid)}); return !!m && m.dead; })()`);
-    line('H2. Ann keeps the lair, raises the Echo and lands 3 hits; she opens the menu for 5 s while Ben swings on: the world gives Ben the map, his Echo has her count (3) and every blow that landed on her game (one his screen never showed); Ann never swings again and Ben fells it: Ann is credited (one kill, one Echo)',
-      kept && !!nid && unseen && benKeeps !== null && !!benFang && annFang !== null && atHand !== null && Math.abs(atHand - annFang) < 0.02 && benFang.annHits >= 3 && down && ann.kills === 1 && ann.echoes === 1,
-      { kept, nid, benKeeps, annFang, atHand, benFang, down, ann });
-    ev(B, `(() => { const m = monsters.find(o => o.type === 'the_fang'); if (m) { m.dead = true; m.awake = false; m.respawnT = Infinity; } })()`);
-    tick(10);
-  }
   // ---- M2. Tinkerton's lab: Ben (not the keeper) pulls the lever; both see exactly one Gnasher ----
   {
     calm();
@@ -1486,48 +1434,6 @@ async function main() {
       kept && seenB && adopted.keeper && adopted.alive && adopted.awake && after.dead && after.awake === false && after.respawnT === Infinity && later.dead && later.respawnT === Infinity,
       { kept, seenB, adopted, after, later });
     A.NET.connect(); wire.flush(); tick(40);
-  }
-
-  // ---- H3. a boss that died on a paused keeper's game is not fought (or paid) again (the real Room only) ----
-  // A third knight, Cal, joins for this one. Ann keeps the spider den; Ann and Cal land 3 hits each on the Brood Mother, Ben 1.
-  // Ann opens the menu (a paused game sends no rows) and Cal's blow fells the boss on her game: Ann and Cal are paid, Ben (1
-  // hit) hears nothing and still has it standing. Cal walks out; the world gives Ben the map. Before 6 Oct 2026 Ben's boss
-  // stood up real at its last hp with Ann's count, Ben finished the 'ghost', and Ann was paid a second Brood Mother. Now Ann's
-  // game hands the death over with the map and Ben's boss goes down, paying nobody.
-  if (useRoom) {
-    calm();
-    room.store.addAccount('Cal');
-    const C = makeContext(wire); C.FANGLANDS.newGame(); C.__peace = true;
-    both.push(C);
-    await login(C, 'Cal'); tick(10);
-    for (const g of both) ev(g, "if (INSTANCES.active()) INSTANCES.leave()"); tick(20);
-    ev(A, "INSTANCES.enter('spider_den')"); tick(20); ev(B, "INSTANCES.enter('spider_den')"); ev(C, "INSTANCES.enter('spider_den')"); tick(30);
-    both.forEach((g, i) => { g.FANGLANDS.tp(14 + i, 22); ev(g, 'player.maxHp = Math.max(player.maxHp, 999); player.hp = player.maxHp'); });
-    tick(30);
-    const denKept = A.COOP.isKeeper() && A.COOP.map() === 'spider_den' && B.COOP.keeper() === 'Ann' && C.COOP.keeper() === 'Ann';
-    for (const g of both) ev(g, "window.__h3 = 0; window.__h3f = m => { if (m && m.type === 'brood_mother') window.__h3++; }; HOOKS.kill.push(window.__h3f);");
-    const k0 = both.map(g => ev(g, 'player.kills'));
-    const bm = g => ev(g, "(() => { const m = monsters.find(o => o.type === 'brood_mother'); return m ? { dead: !!m.dead, remote: !!m.remote, hp: m.hp } : null; })()");
-    ev(A, "(() => { const m = monsters.find(o => o.type === 'brood_mother'); if (m) { m.hp = 40; m.stunT = 0; } })()"); tick(10);
-    for (let i = 0; i < 3; i++) { hitBoss(A, 'brood_mother', 1); tick(3); hitBoss(C, 'brood_mother', 1); tick(6); }
-    hitBoss(B, 'brood_mother', 1); tick(30);
-    ev(A, 'paused = true');
-    hitBoss(C, 'brood_mother', 60); tick(3);
-    const felled = { ann: bm(A), ben: bm(B), cal: bm(C) };
-    ev(C, "INSTANCES.leave()");
-    let benKeeps = null;
-    for (let f = 0; f < 600 && benKeeps === null; f++) { tick(1); if (B.COOP.isKeeper()) benKeeps = f; }
-    let swings = 0;
-    for (; swings < 40; swings++) { const m = bm(B); if (!m || m.dead) break; hitBoss(B, 'brood_mother', 5); tick(9); }
-    tick(30); ev(A, 'paused = false'); tick(30);
-    const paid = both.map(g => ev(g, 'window.__h3')), kills = both.map((g, i) => ev(g, 'player.kills') - k0[i]), onBen = bm(B);
-    line('H3. Ann keeps the den and opens the menu; Cal\'s blow fells the Brood Mother on her game (Ann and Cal paid; Ben, 1 hit, still sees it); Cal walks out and the world gives Ben the map: Ann\'s game hands over the death, Ben\'s boss goes down without a swing paying anyone, and nobody is paid twice (Ann 1, Ben 0, Cal 1)',
-      denKept && !!felled.ann && felled.ann.dead && !!felled.ben && !felled.ben.dead && benKeeps !== null && swings === 0 && !!onBen && onBen.dead && !onBen.remote
-        && paid.join() === '1,0,1' && kills.join() === '1,0,1',
-      { denKept, felled, benKeeps, swings, onBen, paid, kills });
-    for (const g of both) ev(g, "HOOKS.kill.splice(HOOKS.kill.indexOf(window.__h3f), 1); paused = false; if (INSTANCES.active()) INSTANCES.leave()");
-    tick(20);
-    C.NET.disconnect(); wire.flush(); both.pop(); tick(20);
   }
 
   // ---- --sim: Deepholm switched to 'world' (docs/ONLINE.md, "The shared world", Stage 2) ----
