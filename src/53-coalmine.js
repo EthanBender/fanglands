@@ -130,9 +130,10 @@
   }
 
   // ---------- opening and closing faces ----------
-  function openFace() {
+  // (notX, notY): the face just closed, never the one that opens (a swing closes a face and opens another somewhere else)
+  function openFace(notX, notY) {
     if (!run) return;
-    const free = FACE_SPOTS.filter(([x, y]) => tileAt(x, y) !== T_SEAM && !(Math.floor(player.x / TILE) === x && Math.floor(player.y / TILE) === y));
+    const free = FACE_SPOTS.filter(([x, y]) => tileAt(x, y) !== T_SEAM && !(x === notX && y === notY) && !(Math.floor(player.x / TILE) === x && Math.floor(player.y / TILE) === y));
     if (!free.length) return;
     const [x, y] = free[Math.floor(Math.random() * free.length)];
     changeTile(x, y, T_SEAM); run.faces.push([x, y]);
@@ -232,7 +233,7 @@
     gainXp('mining', 18);
     burst(tc(a.tx), tc(a.ty), '#2b2b33', 12, 70); sfx('mine');
     floatText(tc(a.tx), tc(a.ty) - 20, `+${n}`, '#c9d1d9', 13);
-    closeFace(a.tx, a.ty); openFace();
+    closeFace(a.tx, a.ty); openFace(a.tx, a.ty);
   });
 
   // ---------- the shift clock on screen ----------
@@ -403,7 +404,13 @@
         for (const hk of HOOKS.use) if (hk(COALMINE.tiles.seam, fx, fy)) break;
         const started = !!player.action && player.action.type === 'coalface';
         player.action.t = player.action.need; const c0 = r.coal, mx0 = player.skills.mining.xp;
-        for (const u of HOOKS.update) u(0.016);
+        // the dice pinned to the closed face's place among every spot a face could open in once it is closed (it failed about 1
+        // run in 331 when the dice picked it: review round 2, 6 Oct 2026); the face that opens must be another one
+        const ptx = Math.floor(player.x / TILE), pty = Math.floor(player.y / TILE);
+        const could = COALMINE.FACE_SPOTS.filter(([x, y]) => (x === fx && y === fy) || (tileAt(x, y) !== COALMINE.tiles.seam && !(ptx === x && pty === y)));
+        const k = could.findIndex(([x, y]) => x === fx && y === fy), r0 = Math.random;
+        if (k >= 0) Math.random = () => (k + 0.5) / could.length;
+        try { for (const u of HOOKS.update) u(0.016); } finally { Math.random = r0; }
         const mined = r.coal - c0, gone = tileAt(fx, fy) !== COALMINE.tiles.seam, refilled = r.faces.length === COALMINE.SEAM_LIVE, xp = player.skills.mining.xp - mx0;
         check(P + 'a swing at a face pays 2-4 coal into the cart, closes that face and opens another', started && mined >= 2 && mined <= 4 && gone && refilled && xp === 18, { started, mined, gone, refilled, xp, faces: r.faces.length });
       } else check(P + 'a swing at a face pays 2-4 coal into the cart, closes that face and opens another', false, { noFaces: true });

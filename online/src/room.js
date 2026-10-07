@@ -48,8 +48,9 @@
 // Trades (docs/ONLINE.md, "Trading"): the Room holds both offers and is the only truth about them. It opens a trade
 // only between two knights on one map within a few tiles, un-accepts both on any change, and moves nothing until both
 // knights accepted and then confirmed the very same offers. A finished trade is a row in the store, re-sent after every
-// welcome until each side's game says it is in its save, so nothing is lost or doubled. An open trade lives in memory
-// only: a disconnect, a map change, a walk away, a fall or a nap ends it, and then nothing moves.
+// welcome until each side's game says it is in its save, so nothing is lost or doubled. An open trade lives in memory and
+// rides both knights' attachments (when it fits, ATTACH_MAX): a disconnect, a map change, a walk away or a fall ends it, and
+// then nothing moves; a nap does not (restore puts it back once both knights are back, exactly as it stood).
 // ============================================================================
 
 import { checkChat } from './filter.js';
@@ -114,15 +115,23 @@ export const atlasOf = a => typeof a === 'string' && /^[0-9a-z]{1,32}$/.test(a) 
 export const STALE = '@stale';
 export const mapKey = (k, map) => isHouse(map) ? 'house:' + k.lc : (k.stale ? map + STALE : map);
 export const ROSTER_EVERY = 2000;      // a changed roster goes out at most this often (join/leave go at once)
-// A keeper that streams no monsters for this long while others share its map (paused, on the title screen, a
-// sleeping tab) hands the map to the next knight; it is eligible again once that knight leaves.
+// A keeper whose game has sent neither monsters nor presence for this long while others share its map (a locked phone, a
+// sleeping tab; a paused game or one on the title screen with nobody near it: with a knight near, a paused keeper streams its
+// frozen monsters and keeps the map) hands the map to the next knight that is playing; it is eligible again once that knight
+// leaves. Nothing watches the clock for it while nobody plays (an alarm is a billed request, and two idle knights on one map
+// cost about 1,200 an hour when one watched every keeper): the hand-over happens when a knight who is playing there says where
+// he is (onPresence, keeperCheck), and a map where nobody is playing has nobody to hand it to. So that it comes as soon as it
+// always did (3.05 s after the keeper's last word) even when the one playing stands still (one presence a second), a presence
+// that finds the keeper quiet for more than KEEPER_STALE - KEEPER_WATCH asks for one alarm at that moment, for that map only.
 export const KEEPER_STALE = 3000;
+export const KEEPER_WATCH = 1000;      // ms before KEEPER_STALE that a playing knight's presence books the hand-over's alarm
 // A knight whose game sends no presence for this long (a locked phone, a tab in the background: a playing game sends at
 // least one a second) is never chosen to keep a map while someone who is playing is there.
 export const PRESENCE_STALE = 3500;
 // The soonest the Room asks for its next alarm after a tick, when something it could not move on is still due (arm)
 export const REARM_MIN = 1000;
 export const GIFT_WAIT = 10000;        // no answer to a gift within this: it comes back to the sender
+export const ATTACH_MAX = 1800;        // bytes of JSON a socket's attachment may take with an open trade in it (workerd's cap is 2,048)
 // How long each mute lasts; 'always' means until an admin (or the parent page) turns chat back on.
 export const MUTE_SPANS = { '5m': 5 * 60 * 1000, '1h': 3600 * 1000, '1d': 24 * 3600 * 1000, always: ALWAYS };
 export const SPAWN_MAX = 20;           // monsters in one spawn message
@@ -183,6 +192,7 @@ export class Room {
     this.trades = new Map();    // id -> an open trade (see openTrade)
     this.nextGid = 1;
     this.nextTradeId = 1;
+    this.halfTrades = new Map(); // id -> { k, s }: one side of an open trade restored after a nap, waiting for the other
     this.spawnSeq = 0;
     this.rosterAt = -Infinity;
     this.rosterDirty = false;
@@ -268,6 +278,7 @@ export class Room {
     const old = this.byName.get(lc);
     if (old) { if (old.since <= state.since) { try { sock.close(4000, 'logged in elsewhere'); } catch (e) { } return; } this.drop(old, 4000, 'logged in elsewhere'); }
     const k = this.makeKnight(sock, state);
+    k.restored = true;   // rebuilt by a wake: he has said nothing in this Room yet (retell)
     // keyed again by this world's Atlas: the map name the attachment carried, without any older keying
     k.stale = this.staleAtlas(k.atlas);
     if (k.map && !isHouse(k.map)) k.map = mapKey(k, k.map.endsWith(STALE) ? k.map.slice(0, -STALE.length) : k.map);
@@ -281,7 +292,35 @@ export class Room {
       k.gifts.add(g.gid);
       if (typeof g.gid === 'number' && g.gid >= this.nextGid) this.nextGid = g.gid + 1;
     }
+    if (state.trade) this.restoreTrade(k, state.trade);
     this.arm();
+  }
+
+  // An open trade from a knight's attachment (tradeAttach): the first side back waits, the second puts it back as it stood,
+  // when both sides carried the very same trade and neither is in another. Anything else stays ended (each game's window
+  // hears trade_end gone on its next step, as before).
+  restoreTrade(k, s) {
+    if (!s || !Number.isInteger(s.id) || s.id < 1 || (s.a !== k.lc && s.b !== k.lc) || s.a === s.b) return;
+    if (s.id >= this.nextTradeId) this.nextTradeId = s.id + 1;
+    const half = this.halfTrades.get(s.id);
+    if (!half) { this.halfTrades.set(s.id, { k, s }); return; }
+    this.halfTrades.delete(s.id);
+    const o = half.k;
+    if (o === k || o.lc !== (s.a === k.lc ? s.b : s.a) || this.knights.get(o.sock) !== o || o.trade || k.trade) return;
+    if (JSON.stringify(half.s) !== JSON.stringify(s)) return;
+    const offer = { a: Room.cleanOffer(s.offer && s.offer.a), b: Room.cleanOffer(s.offer && s.offer.b) };
+    if (!offer.a || !offer.b || (s.stage !== 'offer' && s.stage !== 'confirm') || !Number.isInteger(s.ver)) return;
+    const flag = (f, side) => !!(f && f[side] === true);
+    const a = s.a === k.lc ? k : o, b = a === k ? o : k;
+    const t = { id: s.id, a, b, offer, acc: { a: flag(s.acc, 'a'), b: flag(s.acc, 'b') }, conf: { a: flag(s.conf, 'a'), b: flag(s.conf, 'b') }, stage: s.stage, ver: s.ver };
+    this.trades.set(t.id, t);
+    a.trade = t; b.trade = t;
+  }
+  // the open trade as an attachment carries it (both sides carry the same)
+  tradeAttach(k) {
+    const t = k.trade;
+    if (!t || this.trades.get(t.id) !== t) return null;
+    return { id: t.id, a: t.a.lc, b: t.b.lc, offer: { a: t.offer.a, b: t.offer.b }, acc: { a: t.acc.a, b: t.acc.b }, conf: { a: t.conf.a, b: t.conf.b }, stage: t.stage, ver: t.ver };
   }
 
   makeKnight(sock, s) {
@@ -417,6 +456,7 @@ export class Room {
 
   onPresence(k, m, str) {
     if (!k.hello) return;
+    const was = Math.max(k.pAt || 0, k.monAt || 0);   // his last word before this one (keeperCheck)
     k.pAt = this.now();
     if (str.length > MAX_P) return this.strike(k, CAPS.p);
     const map = (typeof m.map === 'string' && m.map) ? mapKey(k, m.map.slice(0, 64)) : k.map;
@@ -433,6 +473,8 @@ export class Room {
     // an open trade ends when either knight falls or walks away
     if (k.trade) { const o = this.otherOf(k.trade, k); if (k.dead) this.cancelTrade(k.trade, 'dead', k); else if (!this.within(k, o, TRADE_LEAVE, true)) this.cancelTrade(k.trade, 'far', k); }
     if (changed) { this.attach(k); this.rosterLater(); }
+    this.keeperCheck(k, was);   // a quiet keeper on his map hands it to this knight, who is playing (KEEPER_STALE)
+    this.retell(k);        // a map a wake rebuilt: everyone on it hears who keeps it, once
     // the role on a relayed p is always the server's word: whatever the sender put there is overwritten
     const out = JSON.stringify(Object.assign({}, m, { t: 'p', n: k.name, map: wireMap(k.map), role: k.role }));
     k.last = out;
@@ -484,10 +526,14 @@ export class Room {
   onMon(k, m) {
     if (!k.hello || !Array.isArray(m.list)) return;
     const g = this.maps.get(k.map);
+    const was = Math.max(k.pAt || 0, k.monAt || 0);
+    k.monAt = this.now();   // his game is running: alive, whoever keeps the map
+    // a game that thinks it keeps a map a wake gave to a knight still silent takes it (keeperCheck); one a wake gave to a knight
+    // who has spoken since hears who keeps it (retell)
+    if (g && g.keeper !== k) { this.keeperCheck(k, was); this.retell(k); }
     if (!g || g.keeper !== k) return;   // only the keeper's monsters are real; a late snapshot after handoff is dropped
     this.worlds.keeperMon(k, m);        // a copy taking this map over reads the keeper's stream first
     if (g.keeper !== k) return;
-    k.monAt = this.now();
     const out = JSON.stringify({ t: 'mon', n: k.name, list: m.list });
     for (const o of g.members) if (o !== k) this.raw(o.sock, out);
   }
@@ -902,6 +948,7 @@ export class Room {
   }
   sendTrade(t, only) {
     for (const k of only ? [only] : [t.a, t.b]) this.send(k.sock, this.tradeStateFor(t, k));
+    if (!only) { this.attach(t.a); this.attach(t.b); }   // a nap keeps it as it now stands
   }
   // Every trade message names its trade; one this knight is not in (a trade that ended, or one lost in a nap) is
   // answered trade_end gone, so its window closes and nothing moves.
@@ -972,7 +1019,7 @@ export class Room {
     if (t.a.trade === t) t.a.trade = null;
     if (t.b.trade === t) t.b.trade = null;
     const out = { t: 'trade_end', id: t.id, code, n: who ? who.name : '' };
-    for (const k of [t.a, t.b]) if (this.knights.get(k.sock) === k) this.send(k.sock, out);
+    for (const k of [t.a, t.b]) if (this.knights.get(k.sock) === k) { this.send(k.sock, out); this.attach(k); }
   }
 
   // Both confirmed the same offers. Checked once more (one map, in reach, neither fallen), written to the store, and
@@ -984,6 +1031,7 @@ export class Room {
     if (!this.within(a, b, TRADE_LEAVE, true)) return this.cancelTrade(t, 'far', b);
     this.trades.delete(t.id);
     a.trade = null; b.trade = null;
+    this.attach(a); this.attach(b);
     const tid = this.store.addTrade({ at: this.now(), a: a.name, b: b.name, aGave: t.offer.a, bGave: t.offer.b });
     this.send(a.sock, { t: 'trade_done', tid, id: t.id, with: b.name, gave: t.offer.a, got: t.offer.b });
     this.send(b.sock, { t: 'trade_done', tid, id: t.id, with: a.name, gave: t.offer.b, got: t.offer.a });
@@ -1039,27 +1087,72 @@ export class Room {
     if (g.members.size === 0) { this.maps.delete(map); return; }
     if (this.worlds.holds(map, g)) return;   // a world-run map: the virtual knight is its keeper (sim/worlds.js)
     const now = this.now();
-    if (g.keeper && g.keeper.keeperAt == null) g.keeper.keeperAt = now;   // a restored keeper starts its grace now
+    if (g.keeper && g.keeper.keeperAt == null) g.keeper.keeperAt = now;   // a keeper with no moment yet starts its grace now
+    const first = (a, b) => a.mapAt !== b.mapAt ? a.mapAt < b.mapAt : (a.since !== b.since ? a.since < b.since : a.lc < b.lc);
+    // A wake (restore, silent) names the knight longest on the map, whatever order the sockets come back in. His grace starts
+    // now and holds 3 s against everyone, as on master (a paused keeper's page may still answer). Who the pages were told is not
+    // in the sockets; his first word, or elect when his grace runs out, settles it (retell). One restored before him and named
+    // for a moment keeps no grace: it would read as a sign of life (silentKnight).
+    if (silent) { let best = null; for (const o of g.members) if (!best || first(o, best)) best = o; if (g.keeper && g.keeper !== best) g.keeper.keeperAt = undefined; g.keeper = best; best.keeperAt = now; return; }
     // a keeper that has gone quiet while others are here goes to the back of the line (see KEEPER_STALE)
-    const stale = o => o === g.keeper && g.members.size > 1 && now - Math.max(o.monAt || 0, o.keeperAt || 0) > KEEPER_STALE;
+    const stale = o => o === g.keeper && g.members.size > 1 && now - Math.max(o.monAt || 0, o.pAt || 0, o.keeperAt || 0) > KEEPER_STALE;
     // and a knight whose game has gone silent (see PRESENCE_STALE) is never picked over one who is playing
     // (alive = its presence, its monster stream, or its arrival on the map is recent)
     const silentKnight = o => g.members.size > 1 && now - Math.max(o.pAt || 0, o.monAt || 0, o.keeperAt || 0, o.mapAt || 0) > PRESENCE_STALE;
     const back = o => stale(o) || silentKnight(o);
-    const before = (a, b) => { const sa = back(a), sb = back(b); if (sa !== sb) return !sa; return a.mapAt !== b.mapAt ? a.mapAt < b.mapAt : (a.since !== b.since ? a.since < b.since : a.lc < b.lc); };
+    const before = (a, b) => { const sa = back(a), sb = back(b); if (sa !== sb) return !sa; return first(a, b); };
     let best = null;
     for (const o of g.members) if (!best || before(o, best)) best = o;
-    // a stale keeper still the best (everyone else there is silent too) keeps the map and starts a new grace: otherwise its
-    // stale moment stays in the past and due() asks for an alarm at that same moment again and again
-    if (g.keeper === best) { if (stale(best)) best.keeperAt = now; return; }
+    // The keeper keeps the map while he is playing, and while nobody else there is either: a hand-over is the costly part, and
+    // handing a map from one silent knight to another only turns the monsters on a silent page into puppets nobody streams.
+    // Nothing watches his quiet moment (due() reads only g.watch); a knight who comes back to his game gives him one
+    // KEEPER_STALE to answer (keeperCheck).
+    if (g.keeper && g.members.has(g.keeper) && (g.keeper === best || !back(g.keeper) || back(best))) return;
     // a quiet keeper goes to the back of the line for good, not just this once: otherwise it would win the very
     // next election (it is still the longest on the map) and the map would thrash between the two
     const old = g.keeper;
     if (old && stale(old)) old.mapAt = now;
     g.keeper = best; best.keeperAt = now;
-    if (silent) return;
+    g.told = best;
     const out = JSON.stringify(this.worlds.keeperMsg(map, best));
     for (const o of g.members) if (o !== except) this.raw(o.sock, out);
+  }
+
+  // g.told is the keeper everyone on the map was last told of (elect). A wake rebuilds each map from its sockets and names its
+  // keeper without a word (restore is silent): the knight longest on the map, and that need not be the knight the pages were
+  // told before the nap (the pages kept their own idea through it). Nobody hears anything while he has not spoken since the
+  // wake; when his grace runs out unanswered, elect hands the map on and everyone hears it. When
+  // he speaks, everyone there hears, once, that he keeps it: his game takes the map (75-coop
+  // setKeeper hands its puppets over), the other's turns its monsters to puppets. A name a page already holds changes nothing on
+  // it. A world-run map's virtual keeper is told by the world (sim/worlds.js).
+  retell(k) {
+    const g = k.map && this.maps.get(k.map);
+    if (!g || !g.keeper || g.keeper.virtual || g.told === g.keeper) return;
+    // a restored keeper who has said nothing since the wake is not named to anyone (as on master, where a wake told nobody): his
+    // grace runs out and elect tells everyone who keeps it, or he speaks first and this tells them
+    if (g.keeper.restored && !g.keeper.pAt && !g.keeper.monAt) return;
+    g.told = g.keeper;
+    const out = JSON.stringify(this.worlds.keeperMsg(k.map, g.keeper));
+    for (const o of g.members) if (o.hello && !o.virtual) this.raw(o.sock, out);
+  }
+
+  // A knight who is playing (his presence or his snapshot just came in) on a map whose keeper has gone quiet: elect again, so the
+  // map comes to him. Cheap: one subtraction unless the keeper really is quiet.
+  // A keeper quiet for nearly that long books one alarm for the moment it will be (KEEPER_WATCH), so a knight playing but
+  // standing still (one presence a second) gets the map as soon as the old alarm gave it; only while someone plays there.
+  // `was` is this knight's last word before this one. When he had gone quiet too (a knight coming back to his game, or one a wake
+  // restored), a keeper already quiet gets one KEEPER_STALE to answer before the map is his: master's alarm gave a quiet keeper a
+  // new grace every 3 s while nobody there played, so a paused keeper's page heard the knight come back, streamed again and kept
+  // the map, with every hit on the boss still counted on it. No alarm watches that quiet keeper now; this is the same grace,
+  // given when it is needed, with one alarm booked for its end.
+  keeperCheck(k, was) {
+    const g = k.map && this.maps.get(k.map);
+    if (!g || !g.keeper || g.keeper === k || g.keeper.virtual || g.members.size < 2) return;
+    const o = g.keeper, now = this.now();
+    const heard = Math.max(o.monAt || 0, o.pAt || 0, o.keeperAt || 0);
+    if (now - heard > KEEPER_STALE && now - (was || 0) > PRESENCE_STALE) { o.keeperAt = now; g.watch = now + KEEPER_STALE + 50; this.arm(); return; }
+    if (now - heard > KEEPER_STALE) { g.watch = null; this.elect(k.map, null); return; }
+    if (now - heard > KEEPER_STALE - KEEPER_WATCH && !(g.watch > now)) { g.watch = heard + KEEPER_STALE + 50; this.arm(); }
   }
 
   // ---------- logins (the store keeps them; a store without them, as an older simulation's, is simply not asked) ----------
@@ -1138,8 +1231,8 @@ export class Room {
   due() {
     let d = this.rosterDirty ? this.rosterAt + ROSTER_EVERY : null;
     for (const g of this.gifts.values()) if (d == null || g.due < d) d = g.due;
-    // (a resting world-run place is not watched: sim/worlds.js resting)
-    for (const [map, g] of this.maps) if (g.keeper && !g.keeper.virtual && g.members.size > 1 && !this.worlds.resting(map)) { const t = Math.max(g.keeper.monAt || 0, g.keeper.keeperAt || 0) + KEEPER_STALE + 50; if (d == null || t < d) d = t; }
+    // (a quiet keeper is an alarm only once a knight playing there has found him nearly stale: keeperCheck, KEEPER_WATCH)
+    for (const g of this.maps.values()) if (g.watch != null && (d == null || g.watch < d)) d = g.watch;
     { const w = this.worlds.due(); if (w != null && (d == null || w < d)) d = w; }
     for (const p of this.parties.values()) if (d == null || p.expires < d) d = p.expires;
     for (const k of this.knights.values()) if (k.ask && (d == null || k.ask.due < d)) d = k.ask.due;
@@ -1163,6 +1256,7 @@ export class Room {
     for (const g of Array.from(this.gifts.values())) if (g.due <= now) this.settleGift(g, 'gift_back');
     for (const k of Array.from(this.knights.values())) if (k.ask && k.ask.due <= now) this.dropAsk(k, 'timeout');
     if (this.rosterDirty && now - this.rosterAt >= ROSTER_EVERY) this.sendRoster(now);
+    for (const g of this.maps.values()) if (g.watch != null && g.watch <= now) g.watch = null;   // a booked hand-over: one alarm
     for (const map of Array.from(this.maps.keys())) this.elect(map, null);   // a quiet keeper steps down
     this.worlds.tick();   // world-run maps: copies to build, take-overs to finish, a copy gone silent
     this.arm(now);
@@ -1175,6 +1269,11 @@ export class Room {
     if (!k.sock.attach) return;
     const gifts = [];
     for (const gid of k.gifts) { const g = this.gifts.get(gid); if (g) gifts.push({ gid: g.gid, to: g.to, id: g.id, qty: g.qty, due: g.due }); }
-    try { k.sock.attach({ name: k.name, since: k.since, hello: k.hello, map: k.map, mapAt: k.mapAt, region: k.region, lv: k.lv, gifts, loginId: k.loginId, ip: k.ip || '', caps: k.caps, atlas: k.atlas }); } catch (e) { }
+    const state = { name: k.name, since: k.since, hello: k.hello, map: k.map, mapAt: k.mapAt, region: k.region, lv: k.lv, gifts, loginId: k.loginId, ip: k.ip || '', caps: k.caps, atlas: k.atlas };
+    // an open trade goes with it when it fits (a socket's attachment is at most 2,048 bytes; one that does not fit is ended by a
+    // nap, as every open trade was before)
+    const trade = this.tradeAttach(k);
+    if (trade) { state.trade = trade; if (JSON.stringify(state).length > ATTACH_MAX) delete state.trade; }
+    try { k.sock.attach(state); } catch (e) { }
   }
 }

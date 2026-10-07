@@ -28,7 +28,7 @@ The game is a client-side simulation (2 MB of it, 626 tests). It is not being re
 world. Online Fanglands is a **listen server per map**:
 
 1. Everyone on the same map sees each other, chats, and can hand items over.
-2. On each map (the overworld, or one instance), the server names the knight who has been on that map longest the **keeper** (ties: game join time, then name), so a keeper only changes when it leaves — or when it goes quiet: a keeper that streams no monsters for 4 s while someone shares its map (paused, on the title screen, a sleeping tab) hands the map to the next knight and goes to the back of the line until that knight leaves. The
+2. On each map (the overworld, or one instance), the server names the knight who has been on that map longest the **keeper** (ties: game join time, then name), so a keeper only changes when it leaves — or when it goes quiet: a keeper whose game has sent neither monsters nor presence for 3 s (`KEEPER_STALE`) while someone who is playing shares its map (a locked phone, a sleeping tab; a paused game or one on the title screen with nobody near it: with a knight near, a paused keeper streams its frozen monsters, as it always did, and keeps the map) hands the map to that knight the moment his next presence arrives, and goes to the back of the line until that knight leaves. When the knight who speaks had gone quiet too (he comes back to his game, or a wake restored him), a keeper already quiet first gets 3 s to answer, as master's alarm gave a quiet keeper a new grace every 3 s while nobody there played: a paused keeper's page hears the knight come back, streams its frozen monsters again and keeps the map, with every hit on a boss still counted on it, so every knight who hurt the boss is paid when he falls; one booked alarm hands the map over at the end of the grace when the keeper has not answered (`room.test.mjs`: "a quiet keeper gets a grace to answer when a knight comes back to his game ...", simplification review of 7 Oct 2026: handing the map over at the first word paid only the knight who came back). No alarm watches for it while nobody plays (each alarm is a billed request: on 3b6d6b4 two idle knights on one map cost 1,198 alarms an hour, measured under wrangler dev on 4 Oct 2026); a map where nobody is playing has nobody to hand it to, so nothing happens there. So that the hand-over still comes 3.05 s after the keeper's last word, as it did, when the one playing stands still (one presence a second), a presence that finds the keeper quiet for more than 2 s (`KEEPER_STALE - KEEPER_WATCH`) books one alarm for that moment, on that map only; a keeper who leaves or closes the tab hands over at once, with no alarm (`online/test/room.test.mjs`: "a hand-over is as fast as before"). A wake (a nap, a deploy, an eviction) rebuilds the Room from the sockets and names each map's keeper without a word: the knight longest on the map, whatever order the sockets come back in, and that need not be the knight the pages were told before the nap. His grace starts at the wake and holds 3 s, against a knight who arrives on the map after the wake and against one who was there through the nap and plays (as on master: a paused keeper's page may still answer). Nobody is told anything while that restored keeper has said nothing since the wake (as on master, where a wake told nobody): when he speaks, everyone there hears, once, that he keeps it (`Room.retell`; a page that already holds that name changes nothing); when his grace runs out unanswered, the map goes to the one playing and everyone hears it. Nor is a map ever handed from one silent knight to another (that would only turn a silent page's monsters into puppets nobody streams). So the knight who plays first after a nap beside a silent keeper has the map 3.05 s after the wake, as master's alarm gave it, and his page is never told the silent one keeps it, whichever socket the wake took first (`room.test.mjs`: "after a nap the knight who plays first keeps the map once the silent keeper's grace is out ..." and "after a nap the world and both pages agree on the keeper ..."). A keeper's game sends no empty `mon` heartbeat any more: its presence (at least once a second while it plays) says it is alive. The
    keeper's client runs the monsters exactly as it always has and streams their state; everyone else on that
    map stops simulating monsters and shows the keeper's. Hits from the others are routed to the keeper; the
    keeper's monsters target the nearest knight, whoever it is.
@@ -557,9 +557,39 @@ The World is on the Workers free plan: **100,000 rows written a day** (a miss st
 - **Rows written by hand-overs: none, ever.** The worst case, every account at its hourly cap all day long, is
   accounts × 30 × 24 = 720 offers per account a day, and 720 × 0 rows = **0 rows written**, against 100,000. That stays
   0 however many accounts there are (each account has its own cap; signups are limited per place). A test makes 35
-  offers, claims, refusals and an expired claim, and finds no write but the request meter's own (`meter.js`, at most
-  360 rows an hour while knights play, whatever they do); another fills an account's hour and proves the 31st is
+  offers, claims, refusals and an expired claim, and finds no write but the request meter's own (`meter.js`, below);
+  another fills an account's hour and proves the 31st is
   refused before its body is read and before anything is kept or written.
+- **Rows written by a knight playing** (6 Oct 2026, local `wrangler dev`, every statement's `rowsWritten` logged, 300 s
+  each): the rows limit, not the requests limit, is the one a playing game reaches first. Before this change (review round
+  2 of the idle work, 7e908b0) a knight playing alone wrote about **1,680 rows an hour** against 419 billed requests: his
+  saves about 650 (a changed save every 15 to 20 s is about 3.8 rows: the new version and its index entry, and the oldest
+  of the 3 kept deleted), `accounts.last_seen` on every call about 230, the meter about 370 and the movement check's day
+  counts about 360. Now `last_seen` is written at most once per 5 minutes per knight (`SEEN_EVERY`; /admin's "last on"
+  reads the socket and the logins first), the meter's socket-message write waits 30 s instead of 10 s and the movement
+  check's a minute: a synthetic knight playing alone wrote **1,056 rows an hour** (saves 648, the meter 288, the logins 60,
+  the movement check 60) against 419 billed requests, and a real game page playing alone 1,138 against 407
+  (`tools/idle-pages.cjs solo-over-playing`, 2 /admin reads inside). The meter's own count of rows written matched the
+  logged sum exactly (178 of 178 over a fresh World's first 300 s). So **100,000 rows a day is about 95 knight-hours of
+  play** (100,000 / 1,056; it was about 60), while 100,000 requests are about 245 (100,000 / 407): rows run out about 2.5
+  times sooner, and the cost gate reads whichever share is larger (`/admin` shows both). Saves are now most of a playing
+  knight's rows (about 61%), and they grow with every knight; twenty kids playing at once write about 21,000 rows an hour,
+  the whole day's rows in under 5 hours.
+- **Rows written by the request meter** (`meter.js`, "The meter" under the shared world): at most one write per 5 s for
+  requests and alarms, 720 an hour, plus one per 2,000 counts, one per 30 s while socket messages keep coming and one per
+  socket close, each an upsert of up to 4 rows (`req_meter`, and `req_meter_admin`, `req_meter_alarm` and, once a minute,
+  `req_meter_rows` when admin calls, alarms or rows written are waiting), and the day's two marks. `/admin` left open and
+  in view all day (34,560 calls, its 4-call refresh every 10 s): one write a refresh, 2 rows, plus the rows-written line
+  once a minute: about 785 rows an hour, **18,840 rows a day, 18.8%** of 100,000 (master 3b6d6b4 wrote 17,280; the first
+  version of the alarm column wrote 2 rows per call, about 69,000). The busiest day measured, 3 Oct 2026 (3,301 calls, 83,499 messages): at most 3,301 writes for the
+  calls, 42 at 2,000 messages waiting and 2,880 for messages arriving all day (one per 30 s), so under 6,223 writes and
+  about 7,700 rows at the very most (a write is 1 row unless admin calls or alarms wait in it, plus the rows-written line
+  once a minute: 1,440; at the old 10 s and 200 it was 12,359 writes and 37,077 rows). The ceiling, a request or an alarm at least every 5 s all day
+  with admin calls and alarms in every write: 17,280 × 3 = 51,840 rows, plus 1,440 for the rows-written line, 1 a socket
+  close and 1 per 2,000 counts.
+  `online/test/meter.test.mjs` "rows written ..." counts them as SQLite does, an hour of each case. On the real runtime
+  (local `wrangler dev`, each meter write's `rowsWritten` logged, `/admin` open and in view for 120 s, 48 calls): master 20
+  rows, this change 26 (6 Oct 2026); the per-call version wrote 116 in the review's run of the same script.
 - **Rows read**: per offer, the login (two primary-key lookups, `sessions` by token and `accounts` by name, about 2
   rows) and, for an offer that was kept, the account's latest save (one row by its primary key, `ORDER BY ver DESC
   LIMIT 1`): about 3 rows. A refused offer reads only the login. The same worst case with today's ~30 accounts:
@@ -1032,8 +1062,14 @@ file `src/78-trade.js` (with one edit in `src/73-players.js`: the Friends panel'
    it."); the world sends it again after the reload.
 
 A trade ends with nothing moved (`trade_end`) when either knight closes the window or presses Decline (`trade_close`),
-disconnects (or logs in elsewhere), changes map, walks more than eight tiles away, or falls. An open trade lives in the
-Room's memory only: a nap of the world ends it too, and the next trade message is answered `trade_end gone`.
+disconnects (or logs in elsewhere), changes map, walks more than eight tiles away, or falls. A nap of the world does not end
+it: an open trade (both offers, who accepted and confirmed, its stage and version) rides both knights' socket attachments,
+written at every change, and the Room the wake builds puts it back as it stood once both sockets are restored (both must
+carry the very same trade; one side alone, or one in another trade, leaves it over). Two knights at "Are you sure?" who both
+put the game down for a while confirm when they come back and it is done (5 Oct 2026: the world naps when nobody plays, and
+the trade was lost). A trade that does not fit beside the rest of an attachment (a socket's is at most 2,048 bytes: twelve
+long item names on each side beside gifts on their way) is left out of it, and a nap ends it as before; its next message is
+answered `trade_end gone`.
 
 ### Client → server
 
@@ -1099,7 +1135,8 @@ Ann gave 5 bread; Ben gave 20 coins."), from `GET /api/admin/trades`; `GET /api/
 - **Server** (`node --test online/test/`, `trade.test.mjs`): the ask and its answers, every refusal code, asks that run out
   or are withdrawn, two asks to each other, the whole state machine (any change un-accepts both, accepting an old version,
   empty offers, confirming early), every bad offer, messages for a trade you are not in, a full pack, every way a trade
-  ends with nothing moved (closed, disconnected, a new map, walking away, falling, another device, a nap), `trade_done`
+  ends with nothing moved (closed, disconnected, a new map, walking away, falling, another device, a nap whose attachments
+  carry no trade, one side back alone), a nap that keeps it (restored in either order, then done once), `trade_done`
   re-sent after welcome until acked and only by the two knights, the caps. `store.test.mjs` runs the trade calls against
   both stores.
 - **Game** (78's self-test, a fake wire): the card opens on a knight and not on the ground, without a swing or a walk; the
@@ -1447,11 +1484,13 @@ works, and the keeper code in `src/75-coop.js` stays as the fallback through all
 Players see nothing. The only server change that reaches the live world is the **meter**: it counts what the free plan
 counts, so the cost gates before later stages read real numbers instead of guesses.
 
-**The meter.** One row per UTC day in two new tables (each created only if missing, nothing else in the schema changes):
+**The meter.** One row per UTC day in four new tables (each created only if missing, nothing else in the schema changes):
 
 ```
 req_meter       (day TEXT PRIMARY KEY, ws_in INTEGER NOT NULL DEFAULT 0, http INTEGER NOT NULL DEFAULT 0, est_requests INTEGER NOT NULL DEFAULT 0)
 req_meter_admin (day TEXT PRIMARY KEY, http INTEGER NOT NULL DEFAULT 0)
+req_meter_alarm (day TEXT PRIMARY KEY, http INTEGER NOT NULL DEFAULT 0, since INTEGER NOT NULL DEFAULT 0)
+req_meter_rows  (day TEXT PRIMARY KEY, rows INTEGER NOT NULL DEFAULT 0, since INTEGER NOT NULL DEFAULT 0)
 ```
 
 - `day` is the UTC date, `'2026-10-03'`. The free plan's day also starts at 00:00 UTC (8 pm in Ontario in summer, 7 pm in winter).
@@ -1465,26 +1504,126 @@ req_meter_admin (day TEXT PRIMARY KEY, http INTEGER NOT NULL DEFAULT 0)
   too): the parent page and the backups. The game's share is `http - admin` and `ceil(ws_in / 20) + http - admin`, and
   that is what the cost gate reads. A second table rather than a new column, because phase 1 only ever adds
   `CREATE TABLE IF NOT EXISTS`.
-- The counts are kept in memory and written with one upsert per day touched: when 200 are waiting, when the last write was
-  10 s or more ago (checked on every message and request), on every socket close and on every alarm. A nap can lose at most the
-  last 10 s of counts. That is at most 360 rows written an hour while knights play (the free plan allows 100,000 rows written a day).
+- `req_meter_alarm.http` counts, of the game's calls, the World's own alarms (since 4 Oct 2026; the third table, the same
+  way). The night of 3-4 Oct read 17,266 game calls and nothing could say how many were alarms; measured afterwards under
+  wrangler dev, two idle knights on one map cost 1,198 alarms an hour on 3b6d6b4.
+- `req_meter_rows.rows` counts the rows the World writes to its database, every statement's `rowsWritten` (the World wraps
+  its `sql.exec` with `countRows`; a `RETURNING` statement is read first, so its count is there), the meter's own included.
+  Rows written are the free plan's other daily limit, 100,000, and the one a playing game reaches first ("The free plan, with
+  arithmetic"). They wait in memory like the other counts and ride a meter write at most once a minute (`ROWS_EVERY`).
+- Each wake marks the days it counts: today's `req_meter_alarm` and `req_meter_rows` rows are made if missing (at most two
+  rows a day), and so is a new day's at its first write. `since` is the start of that day when nothing of it had been counted
+  before (this code counted all of it), else the moment of the mark: older code counted the day's start (the deploy day, or a
+  rollback, or a peer's deploy from a tree without these tables, and back), so the day is partial from `since` and its
+  alarms before then are inside the pages' calls. A day with no mark was counted only by older code: its alarms and rows are
+  `null` ("not counted"), never a false 0 (`meter.test.mjs`: "a day counted only by older code reads not counted ...").
+- Counts are kept in memory and written with one upsert per table and day touched: `req_meter`, plus `req_meter_admin`
+  when admin calls are waiting, `req_meter_alarm` when alarms are and `req_meter_rows` once a minute, so a write is up to 4
+  rows. The first count after a
+  wake is written at once. A World that naps between sparse requests is a new object for each one: before 4 Oct 2026 a
+  count left waiting there was lost with the nap, and a paused page's saves (one every 15 s) and any status poll never
+  reached the table at all (measured under wrangler dev: 7 saves in 2 minutes, 0 counted), so the meter read lower than the
+  bill whenever the World napped. After that first count, a request (each `/api` call, each `/ws` upgrade) or an alarm is
+  written at once unless the meter wrote in the last 5 s (`WRITE_SOON`), socket messages when 2,000 are waiting or when the
+  last write was 30 s or more ago (`WRITE_EVERY`, checked on every count; it was 10 s, 360 writes an hour for every hour
+  anyone played), and everything on every socket close. So the meter writes at most 720 times an hour (one per 5 s), plus
+  once per 2,000 counts and once per socket close: at most 4 rows each. A nap can lose the requests and alarms of its last
+  5 s, the socket messages of its last 30 s and the rows written of its last minute; the next count writes them if the
+  World is still awake. The movement check's day counts (`move_day`) are written the same way at most once a minute
+  (2,000 waiting at most; it was every 10 s). (A write per request, as this change first had it, cost the admin page's 4-call refresh 8 rows every
+  10 s and an alarm 2 rows; arithmetic under "The free plan, with arithmetic".)
 - Rows older than 400 days are deleted on the first write of each day after a wake.
-- The admin export (`GET /api/admin/export`) includes `req_meter` and `req_meter_admin`.
+- The admin export (`GET /api/admin/export`) includes `req_meter`, `req_meter_admin`, `req_meter_alarm` and `req_meter_rows`.
 
 `GET /api/admin/sim` (Bearer ADMIN_KEY) answers, for now, only the meter:
 
 ```
-{ meter: { today: {day, wsIn, http, admin, gameHttp, est, gameEst}, days: [same, ... newest first, 14 days], freeLimit: 100000, waiting: n } }
+{ meter: { today: {day, wsIn, http, admin, gameHttp, alarms, pageHttp, alarmsSince, est, gameEst, rows, rowsSince},
+           days: [same, ... newest first, 14 days], freeLimit: 100000, freeRows: 100000, waiting: n } }
 ```
+
+`gameHttp` = `http - admin` (alarms included, as before); of it, `alarms` are the World's own and `pageHttp` = `gameHttp -
+alarms` the calls the game's pages made (saves, logins, status, the socket's opening). `rows` is the rows written that day.
+`alarms`, `pageHttp` and `rows` are `null` on a day with no mark; `alarmsSince` and `rowsSince` are `null` on a day counted
+whole, else the moment the day began to be counted (its mark). **The cost gate reads the larger of the game's two shares:**
+`gameEst` of `freeLimit`, and `rows` of `freeRows`.
 
 `today` includes the counts not yet written (`waiting` says how many). Later stages add `modes`, `tick`, `boot`, `heap`,
 `copies`, `fallbacks`, `move`, `combat` beside `meter`, and `POST /api/admin/sim` for the switches; nothing reads them yet.
 
 The parent page (`/admin`) has a **Shared world** section with one line for today and the last 7 days under it:
-"Today (UTC), read at 7:42:10 PM: the game sent 12,345 socket messages and made 678 calls, about 1,296 of the 100,000
-requests a day the free plan allows (1.3%). This page and the backups made 40 calls on top, so about 1,336 in all (1.3%)."
-The table's columns: day, messages, game calls, the game's requests, its share of the free plan, this page's calls, and
-everything's share.
+"Today (UTC), read at 7:42:10 PM: the game's pages made 210 calls and sent 12,345 socket messages, and the world woke itself
+6 times on its own timers (alarms). Together that is about 834 of the 100,000 requests a day the free plan allows (0.83%).
+This page and the backups made 40 calls on top, so about 874 in all (0.87%)." On the day alarms began to be counted apart
+it adds when ("only since 14:05 UTC today; any before that are inside the pages' calls"), and that day's row in the table
+says so on every later day too ("1,005 (alarms before 15:00 UTC inside)", "10 (since 15:00 UTC)"), each day from its own
+mark, so a deploy day's (or a rollback's) alarms from before this code are never shown as the pages' calls beside an
+exact-looking alarm count; a day this code did not count reads as it did, with "(The world's alarms are not counted apart on
+this day: they are inside the calls.)". The line ends with the rows written: "The world wrote 4,100 rows to its database,
+4.1% of the 100,000 rows a day the free plan allows (a day over it stops every save until midnight UTC). The nearer limit
+today is rows written: that share is what the cost gate reads." The note above it says in plain words what alarms are, that
+two knights left on one map used to cost about 1,200 of them an hour, and that a knight playing writes about 1,100 rows an
+hour but makes only about 410 requests. The table's columns: day, messages, the pages' calls, alarms ("not counted apart"
+before the column), the game's requests, its share of the free plan, this page's calls, everything's share, rows written
+("not counted" before the column) and their share of the free plan's rows.
+
+**What an idle page costs** (4 Oct 2026). The game saves every 15 s whatever the knight is doing (`src/99-boot.js`), and
+72-cloudsave used to push every one of those saves: 210 to 240 calls an hour from each page in the game, paused or in the
+background (measured with real pages under wrangler dev). It now pushes a save only when it differs from what the cloud
+holds: the same string never again (a page in the background: nothing moves), a save that differs only in the world clock
+`time` (a paused page) at most every 10 minutes, and anything else as before (the 12 s hold). Leaving the page (hidden,
+`pagehide`) still pushes whatever differs, the clock included. A keeper's game no longer sends an empty `mon` once a second
+when nobody is near it (its presence says it is alive), which halves a lone open page's socket messages (`75-coop`). A
+paused keeper (or one on the title screen) with a knight near is as it always was: it streams its frozen monsters to him 8
+times a second and keeps the map, so a named boss's fight, its count and its death stay on one game. (Round 1 of this work
+made a paused keeper go quiet and hand its map to a friend who played; that lost boss credit at the hand-over, and the repairs
+for it, a count on the row and a 'hand' message, then paid twice and stood dead bosses up again, so it was taken out on
+7 Oct 2026. The shared world's later stages move monsters onto the server, which ends keeper hand-overs for good.)
+
+Measured 7 Oct 2026 with real headless pages against two local `wrangler dev` worlds side by side, master d523504 and this
+change (`tools/idle-pages.cjs`, 120 s a situation; each World's alarms and socket messages counted by a `console.log` in
+`alarm()` and `webSocketMessage()`, since master's meter has no alarm column; billed = the pages' calls counted at the page,
+each `/api` call and each socket opening (`/ws`, billed as a request too; only the iPad row opens sockets inside the window) +
+alarms + socket messages / 20, per hour; "hidden" is an emulated background tab whose timers are not throttled):
+
+| Situation (per hour) | before: alarms, page calls, messages, billed | after: alarms, page calls, messages, billed |
+|---|---|---|
+| two knights on one map, both paused | 1,197, 449, 0, **1,646** | 0, 0, 0, **0** (the World napped) |
+| the same in an instance | 1,198, 449, 0, **1,647** | 0, 0, 0, **0** (napped) |
+| one paused, one in the background | 1,198, 479, 0, **1,677** | 0, 30, 0, **30** (1 save in the window; napped) |
+| both playing, standing still | 1,228, 449, 35,251, **3,440** | 0, 449, 35,221, **2,210** |
+| keeper paused, the other playing | 1,198, 449, 30,938, **3,194** | 0, 210, 30,998, **1,760** (the paused keeper streams and keeps the map, on both) |
+| one knight paused | 0, 210, 0, **210** | 0, 0, 0, **0** |
+| one knight in the background | 0, 239, 0, **239** | 0, 30, 0, **30** |
+| one knight playing, standing still | 0, 210, 7,158, **568** | 0, 210, 3,594, **389** |
+| an iPad put down and picked up, 5 times in 120 s | 150, 450, 4,856, **842** | 150, 450, 2,548, **727** |
+
+Two paused knights cost nothing: the keeper streams to a friend only while the friend is near and heard (a paused page sends
+no presence; on the fake clock the paused keeper's last snapshot to a paused friend goes 14 s after both paused, on master as
+here), no alarm watches a quiet keeper, and the World naps 10 s after that. The keeper-paused row is the one the taken-out round-1 rule had brought to 389: a paused keeper
+beside a friend who plays still streams 8 snapshots a second, as on master, and that is now the largest idle cost left.
+
+Rows written (the free plan's other daily limit, 100,000), from the simplification review's run of the same harness (7 Oct
+2026, `cost-master.txt` / `cost-head.txt`, per hour, billed / rows): both playing, standing still, master 3,468 / 4,522,
+this change 2,209 / 2,037; keeper paused beside a friend who plays, master 3,229 / 4,463, this change 1,760 / 1,168. "Near
+zero overnight" holds only for paused or hidden pages: two pages left open, visible and unpaused all night are the large idle
+cost left, about 2.2K requests and 2K rows an hour, so a 10-hour night is about 22K requests and 20K rows (about 22% and 20%
+of the free plan's day).
+
+The iPad row was first written as 449 alarms an hour before (963 billed) and 150 after (577): the "before" alarms were the
+World's game calls minus the pages' own, and that subtraction counted the 5 socket openings and the harness's own 5
+`/api/status` calls as alarms, while "billed" left every socket opening out on both sides. Re-measured 6 Oct 2026 side by
+side with the corrected harness, and each World's alarms counted by a `console.log` in `alarm()` (the master copy has no
+alarm column): 5 alarms in 120.5 s on each, one a cycle, so this change saves no alarms there; the page calls are 10 saves
+and 5 socket openings on each. The whole difference is the keeper's empty `mon` heartbeat, gone (77 of master's 162
+messages in the window).
+
+The fake clock agrees (`node tools/idle-alarms.mjs`, and `--src <master>/online/src --beat` for before): two or three idle
+knights on one map 1,180 to 1,200 alarms an hour before, 0 after (only the roster's one after the first presence); a silent
+keeper (a locked phone, a hidden tab) beside a knight who plays, one alarm for the hand-over, and after a restart one alarm
+for the end of the restored keeper's grace (master's alarm ran every 3 s there). Not changed: a page left unpaused saves (and so pushes) every
+15 s, because its play time moves (210 an hour), and a keeper with a knight near and heard, paused or not, still streams 8
+snapshots a second.
 
 **The parent page's own traffic.** Its 10 s refresh reads who is online, the chat, the moderation log and the trades:
 24 calls a minute while the page is in view. It reads the meter only when it opens and when Refresh is pressed, never
@@ -1754,8 +1893,9 @@ move_log (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, n TEXT NOT 
           x INTEGER, y INTEGER, px INTEGER, py INTEGER, ms INTEGER, spd INTEGER, detail TEXT NOT NULL DEFAULT '')
 ```
 
-  `move_day` counts wait in memory and go out like the meter's (one upsert per day touched, when 200 are waiting, 10 s after
-  the last write, and on every socket close and alarm); `old` is how many of the skipped came from a page with another
+  `move_day` counts wait in memory and go out like the meter's (one upsert per day touched, when 2,000 are waiting, a
+  minute after the last write, and on every socket close and alarm; until 6 Oct 2026 200 and 10 s, 360 rows written an hour
+  while anyone played); `old` is how many of the skipped came from a page with another
   Atlas or none. Each violation is
   one `move_log` row at once (where he was, `px, py`, and where he said he went, `x, y`, the stamped gap `ms`, his `spd`),
   at most 200 a day; past that only the count grows. Rows older than 60 days go on the first write of a day. The admin
@@ -2011,13 +2151,14 @@ socket's `ping` without waking the object.
   called, as no timer runs for it).
 - **A resting place costs no alarm** (`Worlds.resting`: a place switched to the world, with no copy and nobody there
   playing). The Room keeps that place's keeper as it is (`Worlds.holds`: the first knight the wake restored there) and
-  watches nothing on it (`Room.due`): with two knights resting there the keeper-stale rule of a knight's map would hand it
+  watches nothing on it: with two knights resting there the keeper-stale rule of a knight's map would hand it
   between them every 3 s for ever, so the object never napped again (about 1,180 alarms an hour), or, restored in the
   other order, asked for an alarm at the same past moment again and again until workerd dropped one and no alarm was ever
   set again on that wake (no copy built when a knight then played, gifts never returned). The Room itself is also guarded,
   on every map: a stale keeper that is still the best one (everyone else there silent too) starts a new grace, and a tick's
-  own re-arm is never at or before the moment it handled (`REARM_MIN`, 1 s). Two knights paused on a knight's map are
-  handed back and forth every 3 s exactly as on master (`online/test/room.test.mjs`: "two silent knights restored after a
+  own re-arm is never at or before the moment it handled (`REARM_MIN`, 1 s). Since 4 Oct 2026 no map is watched by an alarm while nobody plays there (the keeper rule, above:
+  only a playing knight's presence that finds the keeper nearly stale books one): two knights
+  paused on a knight's map keep the keeper they have and ask for no alarm (`online/test/room.test.mjs`: "two silent knights restored after a
   nap ...", `sim-host.test.mjs`: "two knights resting in a world-run place ...").
 - **The copy takes the place over from a knight who is playing.** The wake names whoever its restore elected, and that can
   be a friend whose iPad is still locked. When the copy is built (or the copy's code loads, `announce`) and the keeper's
