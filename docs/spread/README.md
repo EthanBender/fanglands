@@ -38,8 +38,8 @@ for its peer branch.
 The server and its tests are Stage 4d's (spec §11: the contract written into docs/ONLINE.md, atlas.test and move.test
 there); the builder of 4d converts them, or brings them under the gate, before the spread ships. A new tool belongs at
 the top of `tools/`, where the gate reads it. A peer branch that adds a tool standing a knight on the overworld must
-wrap its spots before it merges after the spread (feat/teacher-view's `tools/teacher-browser.mjs` holds 14 bare spots
-at line 117 on 6 Oct: wrap them in frames, or list the file in `held.json` until it is converted).
+wrap its spots before it merges after the spread (feat/teacher-view's `tools/teacher-browser.mjs` held 14 bare spots
+on 6 Oct; feat/teacher-live reads every one through the game's own Atlas (`spotsFromGame`) and is in `converted.json`).
 
 **The tools** (ADDENDUM A.2) are read like the game: a tool file is named `tools/<file>` in `converted.json` and the
 allow list. In a tool the counter also reads game code handed to a game as text (`R(A, \`FANGLANDS.tp(24, 37)\`)`,

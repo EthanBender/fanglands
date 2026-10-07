@@ -74,6 +74,27 @@ function bare(k, p) {
     K.chat = text => { if (ws.readyState === 1) ws.send(JSON.stringify({ t: 'chat', text })); };
   });
 }
+// Where the kids stand, read through the Atlas inside the game this world serves (docs/spread/README.md: a tool reads the
+// Atlas inside the game it drives), so every spot follows its place when the map is spread. Tiles: [x, y].
+async function spotsFromGame(browser) {
+  const ctx = await browser.newContext();
+  const p = await ctx.newPage();
+  await p.goto(BASE + '/?online');
+  await p.waitForFunction(() => window.ATLAS && typeof ATLAS.frame === 'function', null, { timeout: 20000 });
+  // inn: Hollowford's square (seven kids on one tile); crowd: by the place names, two out in the stretched land; sam and ava:
+  // side by side in Thistledown
+  const at = await p.evaluate(`(() => {
+    const F = id => ATLAS.frame(id), W = ATLAS.world;
+    return {
+      inn: F('hollowford').p(125, 77),
+      crowd: [F('thistledown').p(101, 28), F('signpost').p(68, 29), F('quarry').p(54, 7), F('cave').p(10, 7), W.p(180, 78), F('far_shore').p(225, 64),
+        F('thistledown').p(112, 48), F('far_shore').p(247, 85), F('far_shore').p(232, 33), F('sylvaris').p(146, 124), W.p(174, 155)],
+      sam: F('thistledown').p(100, 30), ava: F('thistledown').p(102, 31),
+    };
+  })()`);
+  await ctx.close();
+  return at;
+}
 // a real kid: the game itself, logged in on its card
 async function realKid(browser, name, opts = {}) {
   await knight(name);   // the knight exists (and is unmuted)
@@ -200,18 +221,18 @@ async function main() {
     await shot(owner, '01-admin-teacher-added');
 
     // ---- 2. kids: a crowd of bare sockets (nine on one tile, some by the place names, two inside places) and two real games ----
-    const spots = [[101, 28], [68, 29], [54, 7], [10, 7], [180, 78], [225, 64], [112, 48], [247, 85], [232, 33], [146, 124], [174, 155]];
+    const where = await spotsFromGame(browser), spots = where.crowd, TS = 48;
     for (let i = 0; i < 20; i++) {
       const k = await knight('Kid ' + String.fromCharCode(65 + Math.floor(i / 26)) + String.fromCharCode(65 + i % 26));
       // (inside: the Tinker Lab and an island, never the Spider Den: a bare socket there would keep it and stream nothing)
-      const p = i < 7 ? { x: 125 * 48 + 20, y: 77 * 48 + 20 } : i === 18 ? { map: 'tinker_lab', x: 300, y: 200 } : i === 19 ? { map: 'house', x: 300, y: 300 } : { x: spots[i - 7][0] * 48, y: spots[i - 7][1] * 48 };
+      const p = i < 7 ? { x: Math.round(where.inn[0] * TS) + 20, y: Math.round(where.inn[1] * TS) + 20 } : i === 18 ? { map: 'tinker_lab', x: 300, y: 200 } : i === 19 ? { map: 'house', x: 300, y: 300 } : { x: Math.round(spots[i - 7][0] * TS), y: Math.round(spots[i - 7][1] * TS) };
       crowd.push(await bare(k, p));
     }
     alive = setInterval(() => { for (const k of crowd) k.say(); }, 1000);
     crowd[1].chat('anyone want to fight goblins'); await wait(1600); crowd[2].chat('meet me at the dock'); await wait(1600);
     // (Sam on a 1366 x 768 laptop: wider than the teacher's middle pane, so Fit must show his whole screen, letterboxed)
-    const sam = await realKid(browser, 'Sam', { at: [100 * 48, 30 * 48], viewport: { width: 1366, height: 768 } });
-    const ava = await realKid(browser, 'Ava', { at: [102 * 48, 31 * 48] });
+    const sam = await realKid(browser, 'Sam', { at: [Math.round(where.sam[0] * TS), Math.round(where.sam[1] * TS)], viewport: { width: 1366, height: 768 } });
+    const ava = await realKid(browser, 'Ava', { at: [Math.round(where.ava[0] * TS), Math.round(where.ava[1] * TS)] });
     await wait(1500);
 
     // ---- 3. the teacher signs in on the game's own card: the teacher screen, never the game ----
