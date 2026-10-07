@@ -55,6 +55,8 @@ export const STRIP_FILES = [
   '83-townsart', '83-townsfolk',
   // the mounts' look (the knight's machines in the monster refit's art, a friend's mount online): pictures only, no rules
   '84-mountlook',
+  // the teacher view's screen and its drawing of a kid's point of view (round 2): a page's, never the world's
+  '79-teacherscreen', '79-view',
 ];
 // What a stripped name reads before anything is written to it (the rest reads as the no-op stand-in).
 const STUB_SEED = { title: { active: false, bootActive: false } };
@@ -259,8 +261,8 @@ export const STRIP_READS = {
     why: 'the HUD kit (59-hudkit): fonts, colours, text widths, panel rows, plaques, seats and safe insets, read by panel, plaque, chat-wrap and tap code (79-boygirl: its "Boy or girl?" card on the title, drawn only while the title is up); the two update-time reads are a held BLOCK seat, used only for the copy\'s own knight on a machine (55-riding returns first: the parked stand-in has no machine) and a pointer release (05-input, a copy has no pointer)',
   },
   title: {
-    files: ['17-tap', '54-graves', '71-login', '72-cloudsave', '72-deviceknights', '72-savelock', '76-admin', '77-dropparty', '78-trade', '79-boygirl', '82-knightgear', '91-royalmine', '96-rests', '99-boot'],
-    why: 'title.active reads false in a copy (STUB_SEED and the stand-in\'s start(), as for a knight past the title); 96-rests reads title.slotKey and title.slot behind a typeof guard to name its time-away stamp (no slot in a copy, so no stamp is written or read); 79-boygirl wraps the title\'s door, slot start, open and knight sprite at load and reads a slot\'s save before it is loaded, none of which a copy ever calls (it starts with newGame(), never from the title); 82-knightgear gives the title\'s knight figure (title.KNIGHT) its gear at load, which only the title\'s drawing reads; the rest are the title\'s save slots (slotKey, slot) for login, cloud saves, device knights (72-deviceknights names and offers them on the login card) and admin, which a copy never uses (save() does nothing, NET.call throws), 72-savelock\'s look at the slot on disk inside save() and its slot-start wrapper (the lock is cleared when a slot starts), neither of which a copy ever reaches, the title frame for drawing, and 99-boot\'s frame(), which a copy never runs',
+    files: ['17-tap', '54-graves', '71-login', '72-cloudsave', '72-deviceknights', '72-savelock', '75-coop', '76-admin', '77-dropparty', '78-trade', '79-boygirl', '82-knightgear', '91-royalmine', '96-rests', '99-boot'],
+    why: 'title.active reads false in a copy (STUB_SEED and the stand-in\'s start(), as for a knight past the title); 75-coop\'s alone stream (the teacher view\'s Watch: a watched kid alone on his map) stops on the title, and a copy is never watched (no world says view on to it); 96-rests reads title.slotKey and title.slot behind a typeof guard to name its time-away stamp (no slot in a copy, so no stamp is written or read); 79-boygirl wraps the title\'s door, slot start, open and knight sprite at load and reads a slot\'s save before it is loaded, none of which a copy ever calls (it starts with newGame(), never from the title); 82-knightgear gives the title\'s knight figure (title.KNIGHT) its gear at load, which only the title\'s drawing reads; the rest are the title\'s save slots (slotKey, slot) for login, cloud saves, device knights (72-deviceknights names and offers them on the login card) and admin, which a copy never uses (save() does nothing, NET.call throws), 72-savelock\'s look at the slot on disk inside save() and its slot-start wrapper (the lock is cleared when a slot starts), neither of which a copy ever reaches, the title frame for drawing, and 99-boot\'s frame(), which a copy never runs',
   },
   cam: {
     files: ['17-tap', '24-dwarves', '78-trade', '88-aerie', '91-cloudkingdom', '91-royalmine', '95-thistledown', '79-deaths'],
@@ -285,7 +287,7 @@ export const STRIP_READS = {
   drawFireProp: { files: ['95-thistledown'], why: 'a wrapper that keeps the fire drawing to call it' },
   drawTower: { files: ['95-thistledown'], why: 'a wrapper that keeps the tower drawing to call it' },
   drawBuilding: { files: ['91-cloudkingdom', '95-thistledown'], why: 'wrappers that keep the building drawing to call it, and 91-cloudkingdom\'s own drawing pass' },
-  panelBox: { files: ['24-dwarves', '38-agility'], why: 'the panel frame: where a panel\'s text goes (24) and a wrapper that keeps it (38)' },
+  panelBox: { files: ['24-dwarves', '38-agility', '79-teacher'], why: 'the panel frame: where a panel\'s text goes (24) and wrappers that keep it (38; 79 puts "A teacher is watching." in the Friends header, which only runs when something draws)' },
   PANEL_KIT: { files: ['60-bank', '69-retaliate'], why: 'panel sizes and button widths' },
   itemBlurb: { files: ['26-boats', '90-canyon'], why: 'wrappers that keep the pack\'s item sentence to call it, for their own items\' sentences' },
   darkLayer: { files: ['88-aerie'], why: 'the night canvas, cleared and borrowed by the Aerie\'s lighting' },
@@ -302,6 +304,7 @@ export const STRIP_READS = {
   'window.LIGHTS': { files: ['88-aerie', '91-royalmine'], why: 'the lighting: lights registered at load, and whether a lit scene owns the night canvas' },
   MONSTER_LOOK: { files: ['79-deaths'], why: '79-deaths asks the monsters\' new looks (78-monsterlook, stripped) how far a falling body reaches and how tall it stands, for the clips that split or crumble it, and for a person\'s own weapon to throw clear; all of it drawing, which a copy never does' },
   'window.MONSTER_LOOK': { files: ['79-deaths'], why: 'the same reads as MONSTER_LOOK, guarded by whether the look is loaded' },
+  'window.TEACHERSCREEN': { files: ['71-login'], why: 'the login card hands a teacher\'s answer to the teacher screen (79-teacherscreen, stripped); a copy never signs anyone in' },
   TOWNSFOLK: {
     files: ['91-cloudkingdom', '95-thistledown'],
     why: 'the townsfolk\'s new look (83-townsfolk, stripped): whether it draws a person, where the name goes over the new head and how big a statue stands, inside the two cities\' own drawing passes (people, Lark, the fliers, the fountain children, the statues\' sprites), which a copy never runs',

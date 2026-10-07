@@ -98,5 +98,6 @@
 "tools/sim-load.mjs",
 "15-music.js",
 "tools/jiggle.mjs",
-"tools/spread-old-end.mjs"
+"tools/spread-old-end.mjs",
+"tools/teacher-browser.mjs"
 ]

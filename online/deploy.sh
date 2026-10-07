@@ -17,6 +17,14 @@ node --test online/test/
 [ -f tools/dom-keys.js ] && node tools/dom-keys.js index.html
 [ -f tools/mmo-sim-admin.js ] && node tools/mmo-sim-admin.js
 [ -f tools/mmo-sim-party.js ] && node tools/mmo-sim-party.js
+# the teacher view (docs/ONLINE.md, "The teacher view"): two games and a teacher's screen against the real World (Watch
+# included), and the screen in a real browser when a local world answers on 127.0.0.1:8787 (the tool's header says how to start
+# one; it never runs against a real world)
+[ -f tools/mmo-sim-teacher.js ] && node tools/mmo-sim-teacher.js
+if [ -f tools/teacher-browser.mjs ]; then
+  if curl -sf --max-time 3 http://127.0.0.1:8787/api/status > /dev/null; then node tools/teacher-browser.mjs
+  else echo "teacher-browser: no local world on 127.0.0.1:8787, so the real-browser checks were not run (see tools/teacher-browser.mjs)"; fi
+fi
 # the shared world (docs/ONLINE.md, "The shared world"): each gate runs once its stage has built it; a red one never deploys
 [ -f tools/sim-suite.mjs ] && node tools/sim-suite.mjs
 grep -q -- "'--sim'" tools/mmo-sim.js && node tools/mmo-sim.js --sim

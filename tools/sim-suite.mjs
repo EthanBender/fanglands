@@ -150,6 +150,7 @@ export const UI_ONLY = [
   { file: '91-cloudkingdom', re: /^kingdom: K13b the gold stones are explained the same way everywhere a child reads about them/, why: 'one of the places is the book (44-wiki), a stand-in' },
   { file: '91-cloudkingdom', re: /^kingdom: K20 the wiki/, why: 'the book (44-wiki) is a stand-in' },
   { file: '91-royalmine', re: /^royalmine: audits: every new XP source is declared; progression has no dead gate; the book has pages/, why: 'the book\'s pages (44-wiki) and the item icons (80-icons) are stand-ins' },
+  { file: '71-login', re: /^login \(teacher\): a knight loaded on the page \(title\.startSlot\) makes it no longer pristine/, why: 'the page\'s pristine flag is kept by the teacher screen (79-teacherscreen), a stand-in in a copy, which never signs anyone in' },
 ];
 if (want('selftest') || want('strippedtests')) {
   const fullRun = typeof f1 !== 'undefined' && f1 ? f1 : (() => { const r = runSuite('factory'); return r; })();

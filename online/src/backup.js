@@ -36,6 +36,8 @@ export async function backupCall(world, req, url, call, method) {
       move_log: rows('SELECT * FROM move_log ORDER BY id'),
       sim_log: rows('SELECT * FROM sim_log ORDER BY id'),
       realm_state: rows('SELECT * FROM realm_state ORDER BY key'),
+      teachers: rows('SELECT * FROM teachers ORDER BY id'),            // the teacher view: salts and hashes, like accounts
+      teacher_acts: rows('SELECT * FROM teacher_acts ORDER BY id'),    // (teacher_sessions are left out, like sessions)
     });
   }
   if (call === 'bookmark' && method === 'GET') {
