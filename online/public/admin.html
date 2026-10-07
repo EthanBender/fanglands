@@ -28,6 +28,8 @@
   button.gold { border-color: #7a6320; }
   input, select { background: #0f1114; color: #e7eaf0; border: 1px solid #3c4356; border-radius: 4px; padding: 6px 8px; font: inherit; }
   select { padding: 5px 6px; margin: 0 4px 4px 0; }
+  a { color: #9bc1ff; }
+  #tjump { margin-left: auto; }
   code { background: #0f1114; padding: 2px 6px; border-radius: 3px; }
   #chat, #modlog, #trades { background: #0f1114; border: 1px solid #23262d; border-radius: 4px; padding: 8px 10px; overflow: auto; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; }
   #chat { height: 420px; }
@@ -75,7 +77,7 @@
   </section>
 
   <div id="app" class="hidden">
-    <div class="row"><span id="status2" class="note"></span><button id="refresh">Refresh now</button><button id="forget">Forget the key</button></div>
+    <div class="row"><span id="status2" class="note"></span><button id="refresh">Refresh now</button><button id="forget">Forget the key</button><a id="tjump" href="#tsec">Teachers (add a teacher) &darr;</a></div>
 
     <h2>On line now</h2>
     <div class="scroll"><table id="online"><thead><tr><th>Knight</th><th>Role</th><th>Map</th><th>Region</th><th>Level</th><th>On for</th></tr></thead><tbody></tbody></table></div>
@@ -101,11 +103,12 @@
     <p class="note">Newest at the top. Every mute, kick, ban, new admin, new secret word, drop party and party hat, from the game and from this page. Refreshes with the chat log.</p>
     <div id="modlog"></div>
 
-    <h2>Teachers</h2>
-    <p class="note">Each teacher gets their own name and password for the teacher view. They sign in on the game's own card at fanglands.com: their name in Knight's name, their password in Secret word, then Play; the teacher view opens instead of the game. A teacher sees who is on, where each knight is, what they are doing and the chat, can watch one kid's screen at a time (only watching: nothing they do reaches the kid's game), and can mute a kid's chat, pause chat for everyone, and send a kid off until midnight. Nothing else: no accounts, no secret words, no saves, no invite code. Everything a teacher does is in "What admins did" with their name, and you can undo it here. A big number under Wrong tries today means someone is guessing that teacher's password: New password stops it. When wrong tries make the sign-in wait (a kid typing the teacher's name at school), Lift the wait lets the teacher in again with the same password. Loaded when this page opens and when you press Refresh.</p>
+    <h2 id="tsec">Teachers</h2>
+    <p class="note"><b id="tworld">Teachers belong to this world only.</b></p>
+    <p class="note">Each teacher gets their own name and password for the teacher view. They sign in on the game's own card at <span id="tsite">fanglands.com</span>: their name in Knight's name, their password in Secret word, then Play; the teacher view opens instead of the game. A teacher sees who is on, where each knight is, what they are doing and the chat, can watch one kid's screen at a time (only watching: nothing they do reaches the kid's game), and can mute a kid's chat, pause chat for everyone, and send a kid off until midnight. Nothing else: no accounts, no secret words, no saves, no invite code. Everything a teacher does is in "What admins did" with their name, and you can undo it here. A big number under Wrong tries today means someone is guessing that teacher's password: New password stops it. When wrong tries make the sign-in wait (a kid typing the teacher's name at school), Lift the wait lets the teacher in again with the same password. Loaded when this page opens and when you press Refresh.</p>
     <div class="row">
-      <input id="tname" placeholder="Name, like Mrs Smith" size="22" maxlength="40" autocomplete="off">
-      <input id="tpass" placeholder="Password (10 or more letters)" size="28" maxlength="200" autocomplete="off">
+      <input id="tname" placeholder="Name, like Mrs Smith" size="22" maxlength="40" autocomplete="off" autocapitalize="words" autocorrect="off" spellcheck="false" enterkeyhint="next">
+      <input id="tpass" placeholder="Password (10 or more letters)" size="28" maxlength="200" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done">
       <button id="tmake">Make one up</button>
       <button id="tadd" class="gold">Add teacher</button>
     </div>
@@ -154,7 +157,7 @@
   const api = async (method, path, body) => {
     const r = await fetch(path, { method, headers: { 'authorization': 'Bearer ' + key, 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
     let data = null; try { data = await r.json(); } catch (e) { }
-    if (!r.ok) throw new Error((data && data.error) || ('HTTP ' + r.status));
+    if (!r.ok) { const e = new Error((data && data.error) || ('HTTP ' + r.status)); e.code = data && data.code; e.status = r.status; throw e; }
     return data;
   };
   const when = ms => ms ? new Date(ms).toLocaleString() : '—';
@@ -364,7 +367,20 @@
     const w = i => WORDS[r[i] % WORDS.length];
     return w(0) + '-' + w(1) + '-' + w(2) + '-' + String(10 + r[3] % 90);
   }
-  const tsay = (text, bad) => { const p = $('tsaid'); p.textContent = text; p.classList.remove('hidden'); p.style.color = bad ? '#ff9a9a' : '#ffe2b8'; };
+  // what the last tap did, under the boxes: a refusal in red, bold, and brought into view (the section sits far down the page)
+  const tsay = (text, bad) => {
+    const p = $('tsaid'); p.textContent = text; p.classList.remove('hidden'); p.style.color = bad ? '#ff9a9a' : '#ffe2b8'; p.style.fontWeight = bad ? '600' : '';
+    try { p.scrollIntoView({ block: 'nearest' }); } catch (e) { }
+  };
+  // the address a teacher made HERE signs in at: this world's game (the main world at fanglands.com, the test world at
+  // test.fanglands.com, a local world at its own address). A teacher made on one world is not on the other.
+  const SITES = { 'fanglands.com': 'fanglands.com', 'www.fanglands.com': 'fanglands.com', 'gorkscape.ca': 'fanglands.com', 'www.gorkscape.ca': 'fanglands.com', 'test.fanglands.com': 'test.fanglands.com', 'test.gorkscape.ca': 'test.fanglands.com' };
+  const host = String((typeof location !== 'undefined' && location.host) || '').toLowerCase();
+  const tsite = SITES[host] || host || 'fanglands.com';
+  $('tsite').textContent = tsite;
+  $('tworld').textContent = tsite === 'fanglands.com' ? 'Teachers belong to one world. These are the MAIN world\'s (fanglands.com). A teacher added on the test world (test.fanglands.com) cannot sign in here: add them here as well.'
+    : tsite === 'test.fanglands.com' ? 'Teachers belong to one world. These are the TEST world\'s (test.fanglands.com): they sign in at test.fanglands.com only, never at fanglands.com. For school, add the teacher on fanglands.com/admin.'
+    : 'Teachers belong to one world. These are this world\'s (' + tsite + '): they sign in at ' + tsite + ' only.';
   let noticeOn = true;
   // a world without the teacher view (an older deploy) answers nothing useful here: the rest of the page goes on loading
   async function loadTeachers() { try { await loadTeachersNow(); } catch (e) { $('tforce').textContent = 'The teachers could not be read: ' + e.message; } }
@@ -420,16 +436,29 @@
     const nb = $('tnoticebtn'); nb.textContent = noticeOn ? 'Turn off' : 'Turn on'; nb.classList.remove('hidden');
   }
   $('tmake').onclick = () => { $('tpass').value = makePassword(); };
+  const TPASS_MIN = 10;   // online/src/teachers.js TEACHER_PASS_MIN (the world checks it too)
+  let tadding = false;
   $('tadd').onclick = async () => {
-    const name = $('tname').value.replace(/\s+/g, ' ').trim(), pass = $('tpass').value;
-    if (!name || !pass) { tsay('Type a name and a password (or press Make one up).', true); return; }
+    if (tadding) return;
+    const name0 = $('tname').value.replace(/\s+/g, ' ').trim(), pass = $('tpass').value;
+    if (!name0) { tsay("Not added. Type the teacher's name first, like Mrs Smith.", true); $('tname').focus(); return; }
+    if (!pass) { tsay('Not added. Type a password of at least ' + TPASS_MIN + ' letters, or press Make one up.', true); $('tpass').focus(); return; }
+    if (pass.length < TPASS_MIN) { tsay('Not added. The password needs at least ' + TPASS_MIN + ' letters (spaces count); this one has ' + pass.length + '. Type a longer one, or press Make one up.', true); $('tpass').focus(); return; }
+    tadding = true; tsay('Adding ' + name0 + '...');
     try {
-      await api('POST', '/api/admin/teachers', { name, pass });
+      // the world answers the name as it keeps it (a curly apostrophe made plain): that is the name the teacher types
+      const r = await api('POST', '/api/admin/teachers', { name: name0, pass });
+      const name = (r && typeof r.name === 'string' && r.name) || name0;
       $('tname').value = ''; $('tpass').value = '';
-      tsay('Added ' + name + '. The password is ' + pass + ' (it is not shown again). Tell ' + name + ': go to fanglands.com, type ' + name + " in Knight's name and this password in Secret word, and press Play.");
+      tsay('Added ' + name + '. The password is ' + pass + ' (it is not shown again). Tell ' + name + ': go to ' + tsite + ', type ' + name + " in Knight's name and this password in Secret word, and press Play.");
       await loadTeachers(); await loadModlog();
-    } catch (e) { tsay(e.message, true); }
+    } catch (e) {
+      tsay('Not added. ' + (e.status ? e.message : 'The world did not answer (' + e.message + '). Check the internet and press Add teacher again.'), true);
+      if (e.code === 'pass') $('tpass').focus(); else if (e.code === 'name' || e.code === 'taken') $('tname').focus();
+    } finally { tadding = false; }
   };
+  // Enter in either box adds, as a person expects (before: Enter did nothing at all, and nothing said so)
+  for (const id of ['tname', 'tpass']) $(id).addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $('tadd').click(); } });
   $('tnoticebtn').onclick = async () => { try { await api('POST', '/api/admin/teachers/notice', { on: !noticeOn }); await loadTeachers(); await loadModlog(); } catch (e) { tsay(e.message, true); } };
 
   // the meter (docs/ONLINE.md, "The shared world"): today in one sentence, the last 7 days under it

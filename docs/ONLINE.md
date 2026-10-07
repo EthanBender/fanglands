@@ -2585,7 +2585,12 @@ in `online/src/room.js` (the taps, `hooks.mon`, the `view` capability) and `onli
 - The card (`71-login`, login mode only, never New knight) accepts a knight's name `^[A-Za-z0-9 ]{2,16}$` or a teacher's
   `^[A-Za-z][A-Za-z .'-]{1,39}$` (over 16 letters only with a space, dot, apostrophe or hyphen in it: "Cohenthegreatknight" is
   a kid's mistake and the card says "A knight's name is 2 to 16 letters or numbers." as before); the name box takes 40 letters
-  for a login, 16 while New knight is ticked. Its words do not change and it has no teacher link. A login's body is
+  for a login, 16 while New knight is ticked. It has no teacher link. A login's name is made plain first (`plainName`: an iPad's
+  curly apostrophe and long dash are ' and -, as the world's own `plainName` does on the add and on `book.find`), so "Mrs
+  O’Brien" typed on an iPad signs in as the "Mrs O'Brien" the owner made. One sentence is new (2026-10-07): a name only a teacher
+  could have (a dot, apostrophe or hyphen, or over 16 letters with a space) that the world answers 404 `unknown` says "No teacher
+  by that name on this world. Ask Ethan to add you on this world's admin page, then sign in here." (never "Tap New knight": no
+  knight could have it). A knight-shaped name the world does not know still says "No knight by that name yet. Tap New knight." A login's body is
   `{name, pass, teacherOk: 1, tab}`: `tab` is 16 random hex digits the card makes once per page (never stored, not a secret), so
   the teacher waits are per tab at a school's one address.
 - A teacher's answer `{teacher: true, token, name, expires}` never calls `NET.setToken`, never writes `fanglands.lastname` or
@@ -2672,7 +2677,7 @@ A teacher row is never deleted (Turn off keeps it, so the log's names always mat
 | Call | Body | Answer | Notes |
 |---|---|---|---|
 | `GET /api/admin/teachers` | — | `{teachers: [{id, name, created, lastLogin, off, watching, actsToday, wrongToday, waiting}], acts, notice}` | the whole Teachers section in one call (/admin opens with +1 request): `watching` that teacher's open screens; `wrongToday` wrong passwords typed for that name today, from anywhere (a big number: someone is guessing; New password ends it); `waiting` how many places (a tab at an address, or a whole address at the ceiling) wait on that name now (then /admin shows *Lift the wait*); `acts` as `teacher-acts?today=1`; `notice` the switch |
-| `POST /api/admin/teachers` | `{name, pass}` | `{ok, id, name}` | name `^[A-Za-z][A-Za-z .'-]{1,39}$` (2 to 40): 400 `name`; 409 `taken` when it matches another teacher's or a knight's name with case, spaces, dots, apostrophes and hyphens left out ("Mrs. Smith" = "mrs smith" = "MrsSmith"), or a knight's name from before a rename; pass 10 to 200 characters: 400 `pass` |
+| `POST /api/admin/teachers` | `{name, pass}` | `{ok, id, name}` (the name as kept: `plainName`, a curly apostrophe made plain) | name `^[A-Za-z][A-Za-z .'-]{1,39}$` (2 to 40), and over 16 letters only with a space, dot, apostrophe or hyphen (the card's own rule, so no teacher is made that the card refuses): 400 `name`; 409 `taken` when it matches another teacher's or a knight's name with case, spaces, dots, apostrophes and hyphens left out ("Mrs. Smith" = "mrs smith" = "MrsSmith"), or a knight's name from before a rename; pass 10 to 200 characters: 400 `pass` |
 | `POST /api/admin/teachers/pass` | `{id, pass}` | `{ok}` | a new salt and hash; every session of that teacher deleted; open screens get `w_bye` and close 4013; every sign-in wait on that name lifted; 404 `nope` |
 | `POST /api/admin/teachers/lift` | `{id}` | `{ok}` | *Lift the wait*: every sign-in wait on that name ends now (a kid kept the teacher out at school); the password stays; 404 `nope` |
 | `POST /api/admin/teachers/off` | `{id}` | `{ok}` | `off = 1`; sessions deleted; screens closed 4012 |
@@ -2685,6 +2690,16 @@ Each owner call writes one `mod_log` row `by: 'parent page'`, act `teacher_add` 
 `teacher_lift` / `teacher_notice`, target "<name> (teacher)" (`teacher_notice`: target `everyone`, detail `on` / `off`). The password is never
 logged, exported or kept as text: *Make one up* makes it in the browser (`crypto.getRandomValues`, three words from 200 plain
 words and two digits, like `maple-river-lantern-42`) and the page shows it once.
+
+Every refusal of the add (`nameRefusal`, the password's two, `taken`) is a sentence in the owner's words that says what to type
+instead ("The password needs at least 10 letters (spaces count). Type a longer one, or press Make one up."), and /admin shows it
+as it is, after "Not added.", in bold red, brought into view (the owner, 2026-10-07: "i cant seem to create the log in and use
+it"). On /admin, Enter in the name or the password box adds (before, Enter did nothing and nothing said so); a password under
+10 letters is refused on the page without a call; the boxes take no autocapital or autocorrect (an iPad would make "maple
+river" "Maple river"); a link at the top ("Teachers (add a teacher)") jumps to the section, far down the page under the
+accounts and the chat log. **Teachers belong to one world.** The section says which world the page is (the MAIN world at
+fanglands.com, also gorkscape.ca; the TEST world at test.fanglands.com), and the "Added" line tells the teacher THIS world's
+game address: the test world's page no longer sends a teacher to fanglands.com, where no such teacher exists.
 
 ### Signing in, the ticket, the socket
 

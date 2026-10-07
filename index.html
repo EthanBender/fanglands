@@ -36544,6 +36544,12 @@ window.RETALIATE = RETALIATE;
   // a name only a teacher could have: teacher-shaped, and over 16 letters only with a space, dot, apostrophe or hyphen in it
   // (a knight's name is 2 to 16 letters or numbers: "Cohenthegreatknight" is a kid's mistake, said on the card as before)
   const teacherName = n => TEACHER_NAME_RE.test(n) && (n.length <= 16 || /[ .'-]/.test(n));
+  // a name as an iPad or a Mac types it: the curly apostrophe (\u2019) and the long dash are the plain ' and - the owner's
+  // /admin keeps ("Mrs O\u2019Brien" is "Mrs O'Brien"; online/src/teachers.js plainName does the same on the world)
+  const plainName = n => String(n || '').replace(/[\u2018\u2019\u201A\u201B\u02BC\u02B9\u0060\u00B4\u2032]/g, "'").replace(/[\u2010-\u2015\u2212]/g, '-').replace(/\s+/g, ' ').trim();
+  // a name the world did not know that only a teacher could have (a dot, an apostrophe, a hyphen, or over 16 letters with a
+  // space): the card says what a teacher does, never "Tap New knight" (a knight's name could never be that)
+  const TEACHER_UNKNOWN = 'No teacher by that name on this world. Ask Ethan to add you on this world\'s admin page, then sign in here.';
   const BYE_KEY = 'fanglands.teacher.bye';
   // this page's tab id: random, made once per page, sent only with a sign-in that can be a teacher's (teacherOk), so the
   // world's teacher waits are per tab at a school's one address (online/src/teachers.js). Not a secret; never stored.
@@ -36695,6 +36701,7 @@ window.RETALIATE = RETALIATE;
   // here, nothing is written, the card says so
   const NO_ROOM = 'This device has no room left to keep its saved knights safe, so the game did not start. They are all still here. Ask Ethan for help.';
   LOGIN.NO_ROOM = NO_ROOM;
+  LOGIN.TEACHER_UNKNOWN = TEACHER_UNKNOWN; LOGIN.plainName = plainName;
   const noRoom = () => { LOGIN.busy = false; LOGIN.offer = null; LOGIN.mode = NET.token ? 'me' : 'form'; LOGIN.error = NO_ROOM; refresh(); return false; };
 
   // ---------- the bridge: the knight saved on the old address ----------
@@ -36749,8 +36756,9 @@ window.RETALIATE = RETALIATE;
   };
   LOGIN.byeOnce = () => { const r = ssGet(BYE_KEY); if (r == null) return ''; ssDel(BYE_KEY); return LOGIN.BYE[r] || ''; };
   LOGIN.submit = (name, pass, invite, isNew) => {
-    name = String(name || '').trim(); pass = String(pass || ''); invite = String(invite || '').trim();
+    name = isNew ? String(name || '').trim() : plainName(name); pass = String(pass || ''); invite = String(invite || '').trim();
     if (LOGIN.busy) return false;
+    const teacherOnly = !isNew && !NAME_RE.test(name) && teacherName(name);
     if (!NAME_RE.test(name) && (isNew || !teacherName(name))) return oops("A knight's name is 2 to 16 letters or numbers.");
     if (pass.length < 4) return oops('The secret word needs at least 4 letters.');
     if (isNew && LOGIN.keptOutUntil()) { LOGIN.newKnight = false; return oops(LOGIN.newKnightOff(LOGIN.keptOutUntil())); }
@@ -36768,7 +36776,7 @@ window.RETALIATE = RETALIATE;
         lsDel(KEPT_KEY);
         afterLogin();
       },
-      e => { LOGIN.busy = false; LOGIN.mode = 'form'; LOGIN.error = LOGIN.sentence(e, kind); refresh(); });
+      e => { LOGIN.busy = false; LOGIN.mode = 'form'; LOGIN.error = teacherOnly && e && (e.code === 'unknown' || (!e.code && e.status === 404)) ? TEACHER_UNKNOWN : LOGIN.sentence(e, kind); refresh(); });
     return true;
   };
   // The world said this is a teacher. Nothing of a knight's is touched: no NET.setToken, no fanglands.lastname or
@@ -37286,6 +37294,14 @@ window.RETALIATE = RETALIATE;
       const wantBye = ['You signed out.', 'You were signed out because nothing was pressed for an hour.', 'Your sign-in ran out for today. Sign in again to keep watching.', 'Ethan turned this sign-in off.', 'Your password was changed. Sign in with the new one.', 'Too many teacher screens are open. Close one and try again.', 'That was too many taps at once. Sign in again.', 'Sign in once more to open the teacher view.'];
       const store = typeof sessionStorage !== 'undefined';
       check(P + 'the exact sentences: nomatch, off and the 15-minute wait; an unknown knight-shaped name on the new card says "No knight by that name yet. Tap New knight."; each reason a teacher screen ended, read once from sessionStorage and then gone', said.join('|') === want.join('|') && (!store || (byes.join('|') === wantBye.join('|') && once)), { said, byes, once, store });
+      // an iPad types the curly apostrophe: the card sends the plain name the owner made on /admin ("Mrs O'Brien"), never the
+      // knight's refusal; a teacher-only name the world does not know says what a teacher does (never "Tap New knight")
+      const c2 = calls.length; LOGIN.submit('Mrs O\u2019Brien', 'abcdefghijk', '', false);
+      const curly = calls.length === c2 + 1 && calls[calls.length - 1][2].name === "Mrs O'Brien" && calls[calls.length - 1][2].teacherOk === 1;
+      const curlySaid = LOGIN.error;
+      LOGIN.submit('Mrs. Nobody', 'abcdefghijk', '', false); const tUnknown = LOGIN.error;
+      LOGIN.submit('Newkid', 'abcdefghijk', '', false); const kUnknown = LOGIN.error;
+      check(P + 'a curly apostrophe (an iPad\'s) is sent as the plain one; an unknown teacher-only name says "' + LOGIN.TEACHER_UNKNOWN + '"; an unknown knight-shaped name still says "Tap New knight"', curly && curlySaid === LOGIN.TEACHER_UNKNOWN && tUnknown === LOGIN.TEACHER_UNKNOWN && kUnknown === 'No knight by that name yet. Tap New knight.', { curly, curlySaid, tUnknown, kUnknown, last: calls[calls.length - 1] });
       // NEGATIVE (J1): a page that already held a kid's world: the answer ends the session, notes 'fresh' and reloads; no screen opens
       if (window.TEACHERSCREEN) TEACHERSCREEN.pristine = false;
       opened.length = 0;

@@ -49,6 +49,23 @@ export const CHAT_BACK_MS = 3600000, CHAT_BACK_LINES = 100;   // the chat a scre
 export const SCREENS_MAX = 6, SCREENS_PER_TEACHER = 2;
 export const ACTS_KEPT = 2000;
 export const NAME_RE = /^[A-Za-z][A-Za-z .'-]{1,39}$/;
+// A name as the owner (or the teacher) typed it, made plain: an iPad's or a Mac's curly apostrophe (’) and long dash are
+// the plain ' and -, and runs of spaces are one. Used on the add and on every sign-in, so "Mrs O’Brien" typed on an iPad
+// is the "Mrs O'Brien" the owner made (the card does the same, src/71-login.js).
+export const plainName = s => String(s || '').replace(/[\u2018\u2019\u201A\u201B\u02BC\u02B9\u0060\u00B4\u2032]/g, "'").replace(/[\u2010-\u2015\u2212]/g, '-').replace(/\s+/g, ' ').trim();
+// The game's card takes a name over 16 letters only with a space, dot, apostrophe or hyphen in it (a knight's name is 2 to
+// 16 letters or numbers: src/71-login.js teacherName), so the owner can never make a teacher the card would refuse.
+export const teacherNameOk = n => NAME_RE.test(n) && (n.length <= 16 || /[ .'-]/.test(n));
+// Why a name will not do, in the owner's words, with what to type instead (null: it will do). Shown on /admin as it is.
+export function nameRefusal(n) {
+  if (teacherNameOk(n)) return null;
+  if (n.length < 2) return "Type the teacher's name, at least 2 letters, like Mrs Smith.";
+  if (n.length > 40) return "That name is too long: 40 letters at most. Type a shorter one, like Mrs Smith.";
+  if (/[0-9]/.test(n)) return "A teacher's name cannot have numbers in it. Use letters only, like Mrs Smith or Room Twelve.";
+  if (!/^[A-Za-z]/.test(n)) return "A teacher's name has to start with a letter, like Mrs Smith.";
+  if (/[^A-Za-z .'-]/.test(n)) return "A teacher's name can only have letters, spaces, dots, hyphens and apostrophes, like Mrs. O'Brien.";
+  return 'A name over 16 letters needs a space in it, or the game\'s sign-in card will not take it. Type it with a space, like Mrs Thompson.';
+}
 const PARENT = 'parent page';
 
 export const TEACHER_SCHEMA = `
@@ -152,6 +169,7 @@ export class TeacherBook {
   // the teacher a name on the card means: exactly, else the one whose name reads the same without case, spaces, dots,
   // apostrophes and hyphens ("mrs smith" for "Mrs. Smith"; nameClash keeps that unique). null: no teacher (a knight's typo)
   find(name) {
+    name = plainName(name);
     const t = this.byName(name); if (t) return t;
     const sq = squash(name);
     return sq ? this.row("SELECT * FROM teachers WHERE replace(replace(replace(replace(name_lc, ' ', ''), '.', ''), '''', ''), '-', '') = ? LIMIT 1", sq) : null;
@@ -372,7 +390,13 @@ export async function teacherLogin(world, { teacher, name, pass, addr, tab }) {
 export async function teacherAdminCall(world, req, url, call, method) {
   if (call !== 'teachers' && !call.startsWith('teachers/') && call !== 'teacher-acts') return null;
   const book = world.teachers, now = world.now(), post = method === 'POST';
-  const passOf = b => { const p = typeof b.pass === 'string' ? b.pass : ''; if (p.length < TEACHER_PASS_MIN || p.length > TEACHER_PASS_MAX) throw oops(400, 'the password needs 10 to 200 characters', 'pass'); return p; };
+  // the refusals are shown on /admin as they are: plain words that say what to do (the owner is not a developer)
+  const passOf = b => {
+    const p = typeof b.pass === 'string' ? b.pass : '';
+    if (p.length < TEACHER_PASS_MIN) throw oops(400, 'The password needs at least ' + TEACHER_PASS_MIN + ' letters (spaces count). Type a longer one, or press Make one up.', 'pass');
+    if (p.length > TEACHER_PASS_MAX) throw oops(400, 'The password is too long: ' + TEACHER_PASS_MAX + ' letters at most. Press Make one up for a good one.', 'pass');
+    return p;
+  };
   const teacherOf = b => { const t = book.byId(b.id); if (!t) throw oops(404, 'no teacher with that id', 'nope'); return t; };
   const log = (act, target, detail) => world.store.log({ at: now, by: PARENT, act, target, detail: detail || '' });
   // one call for the whole Teachers section (the list, today's actions, the notice switch): /admin opens with +1 request
@@ -383,14 +407,16 @@ export async function teacherAdminCall(world, req, url, call, method) {
   }
   if (call === 'teachers' && post) {
     const b = await readJson(req);
-    const name = typeof b.name === 'string' ? b.name.replace(/\s+/g, ' ').trim() : '';
-    if (!NAME_RE.test(name)) throw oops(400, "a teacher's name is 2 to 40 letters, spaces, dots, hyphens or apostrophes, starting with a letter", 'name');
+    const name = typeof b.name === 'string' ? plainName(b.name) : '';
+    const why = nameRefusal(name);
+    if (why) throw oops(400, why, 'name');
     const pass = passOf(b);
-    if (book.byName(name) || book.nameClash(name)) throw oops(409, 'there is already a teacher with that name', 'taken');
+    const same = book.byName(name) || book.find(name);
+    if (same) throw oops(409, 'There is already a teacher called ' + same.name + '. Pick another name, or press New password on ' + same.name + "'s row below to give them a new password.", 'taken');
     // a knight already called that would read as the teacher in chat: the owner picks another name ("Mrs J Smith")
-    if (book.knightClash(name)) throw oops(409, 'a knight already has that name: add a first letter or a first name', 'taken');
+    if (book.knightClash(name)) throw oops(409, 'A knight in the game is already called ' + name + ', so a teacher cannot be. Add a first name or a first letter, like Mrs J Smith.', 'taken');
     // a knight's name from before a rename logs in as that knight (world.login), so a teacher can never have it either
-    if (typeof world.store.renamedFrom === 'function' && world.store.renamedFrom(nameLc(name))) throw oops(409, 'a knight had that name: add a first letter or a first name', 'taken');
+    if (typeof world.store.renamedFrom === 'function' && world.store.renamedFrom(nameLc(name))) throw oops(409, 'A knight in the game used to be called ' + name + ', so a teacher cannot be. Add a first name or a first letter, like Mrs J Smith.', 'taken');
     const { salt, hash } = await makeHash(pass);
     const id = book.add(name, salt, hash, now);
     log('teacher_add', teacherTag(name));
