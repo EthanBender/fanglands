@@ -2469,10 +2469,11 @@ is never printed. `move_log` (a log only) and in-memory presence need nothing.
 **Limits.** `SAVE_MAX` 512 KB, `MAX_TILE` 1023 and `MAX_FRAME` 64 KB are not binding at 400 x 280 (atlas.json is about 47 KB).
 
 **Boot in workerd.** Measured on the 4d build with `tools/sim-bench.mjs` (a local `wrangler dev --local`, never a live
-Worker) and checked by `node tools/boot-budget.mjs --workerd <bench.json>`: the overworld copy boots in 2,865, 2,895 and
-3,017 ms inside workerd (budget 3,500 ms) and the isolate holds 24.5 MB with the overworld (budget 45 MB); node's
-generateWorld 1,498 ms (budget 2,000). Inside the budget, so no `world-<hash>.bin` snapshot is written (spec §7: only if
-over). The margin is about 0.5 s: a later stage that adds world-building passes measures again.
+Worker) and checked by `node tools/boot-budget.mjs --workerd <bench.json>`: on the final 4d build (both master merges in)
+the overworld copy boots in 2,385, 2,607 and 2,408 ms inside workerd (budget 3,500 ms) and the isolate holds 28.3 MB with
+the overworld (budget 45 MB); node's generateWorld 1,447 ms (budget 2,000). (The first 4d build measured 2,865, 2,895 and
+3,017 ms and 24.5 MB on a busier machine.) Inside the budget, so no `world-<hash>.bin` snapshot is written (spec §7: only if
+over). The margin is about 0.9 s: a later stage that adds world-building passes measures again.
 
 **The two-browser proof (`tools/spread-two-pages.cjs`, a LOCAL `wrangler dev` only).** Real headless pages: the OLD page is
 the build live today (`git show master:index.html`, world 1), the NEW page this tree's; the harness serves each browser its
@@ -2481,7 +2482,7 @@ Ann and Ben never hear each other, Dot hears Ann and Eve hears Ben, each side ke
 `old` and `same`, and the old page shows the NEW WORLD plaque. Ann's old page saves (200, world 1); Ann opens the new page
 elsewhere and her knight is moved and pushed (world 2); the old page's next push gets 409 `stale_world` and the world keeps
 the world-2 save; the old page reloads into the new build with her moved knight (moved once, not twice), and Ben hears her.
-All 15 checks pass on the 4d build (7 Oct 2026; `node tools/spread-two-pages.cjs --shots <dir>` with the local world on
+All 15 checks pass on the final 4d build (7 Oct 2026, the old page being master 8ff3459; `node tools/spread-two-pages.cjs --shots <dir>` with the local world on
 port 8812; the old page's Atlas ea36148040c3f60c, the new one's bd8d810602a3fcac). The deploy step was proved on the same
 local world: a party on the overworld with one cracker lit and one in the Spider Den; the dry run listed it (4 unlit, 1
 lit), `--yes` ended it, one `mod_log` row, a second run found nothing, the Spider Den party was kept, the lit cracker's

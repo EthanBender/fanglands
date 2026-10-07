@@ -432,13 +432,14 @@ so. FOR THE OWNER: if the teacher should always see Thistledown named at the who
 whole view would have to change (a later decision; the teacher view's own branch).
 
 **The workerd boot.** `node tools/sim-bench.mjs` (a local `wrangler dev --local`, never a live Worker), then
-`node tools/boot-budget.mjs --workerd <bench.json>`: the overworld copy boots in 2,865, 2,895 and 3,017 ms inside workerd
-(budget 3,500), the isolate holds 24.5 MB with the overworld (budget 45), node's generateWorld 1,498 ms (budget 2,000). All
-inside, so no `online/src/world-<hash>.bin` snapshot (spec §7 writes one only when over). The margin is about 0.5 s.
+`node tools/boot-budget.mjs --workerd <bench.json>`: on the final 4d build the overworld copy boots in 2,385, 2,607 and
+2,408 ms inside workerd (budget 3,500), the isolate holds 28.3 MB with the overworld (budget 45), node's generateWorld
+1,447 ms (budget 2,000); the first 4d build measured 2,865, 2,895 and 3,017 ms and 24.5 MB. All inside, so no
+`online/src/world-<hash>.bin` snapshot (spec §7 writes one only when over). The margin is about 0.9 s.
 
 **The proofs** (logs in `~/.fanglands/work/spread/s4d/`).
 - The two-browser proof (`two-pages-final.txt`, screenshots in `shots/`): on a local `wrangler dev` (port 8812, `--var`
-  keys, its own persist folder), the OLD page is the build live today (`git show master:index.html`, world 1, Atlas
+  keys, its own persist folder), the OLD page is master's build (`git show master:index.html`, 8ff3459, world 1, Atlas
   ea36148040c3f60c) and the NEW page this tree's (Atlas bd8d810602a3fcac). All 15 checks pass: Ann (old) and Ben (new) never
   hear each other while Dot (old) hears Ann and Eve (new) hears Ben; each side keeps its own monsters; the parent page sees
   `old` and `same`; the old page shows the NEW WORLD plaque; Ann's old page saves (200, world 1); the new page moves her
@@ -454,12 +455,14 @@ inside, so no `online/src/world-<hash>.bin` snapshot (spec §7 writes one only w
 - The real saves again on the merged build: `node tools/spread-migrate-check.mjs --export
   ~/.fanglands/work/spread/saves-export.json` (local only): 94 of 94 pass, 0 stage changes, 0 lost machines, items or coins.
 
-**Gates on the 4d build** (`gates/summary.txt`): `./build.sh` (literals gate 148 files, 0 bare; changetile 211 in 40 files);
-`node tools/headless.js` ALL 1372 PASS; `--play` ALL 1373 PASS (chapters 1-14, the Fang dead); `node --test online/test/`
-317 pass; mmo-sim ALL 43, `--room` ALL 43, `--sim` ALL 47; dom-keys ALL 16; mmo-sim-admin ALL 8; mmo-sim-party ALL 18;
-sim-suite ALL 28; mmo-sim-world ALL 16; build-sim `--strip --reads` 0 not on the list; atlas-drift matches (bd8d810602a3fcac,
-unchanged); fingerprint identical to the 4c baseline (0219e531c2f1d5f6: master's merge and 4d change no table);
-spread-migrate-check 25 of 25.
+**Gates on the final 4d build** (both master merges in; `gates/`): `./build.sh` (literals gate 153 files, 0 bare;
+changetile 211 in 40 files); `node tools/headless.js` ALL 1402 PASS; `--play` ALL 1403 PASS (chapters 1-14, the Fang dead,
+nothing forced; the run before it had two one-off fails, cinderwight's scald roll and the admin chip at phone sizes, both
+green on the re-run and untouched by 4d); `node --test online/test/` 429 pass; mmo-sim ALL 43, `--room` ALL 43, `--sim` ALL
+47; dom-keys ALL 16; mmo-sim-admin ALL 8; mmo-sim-party ALL 18; sim-suite ALL 28; mmo-sim-world ALL 16; mmo-sim-teacher 9 of
+9; teacher-browser 103 of 103 (a local world); build-sim `--strip --reads` 0 not on the list; atlas-drift matches
+(bd8d810602a3fcac, unchanged); fingerprint identical to the regenerated baseline (59392fdc15bea8f2; the merges moved only
+the exports table); spread-migrate-check 25 of 25; the real saves 94 of 94; the two-browser proof 15 of 15.
 
 ### The owner's test on the test world (when the hold is lifted and he says go)
 
