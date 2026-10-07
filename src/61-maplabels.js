@@ -88,8 +88,11 @@
       const tries = [[0, 0]];
       for (let d = stepPx; d <= lim + 0.01; d += stepPx) for (const [ux, uy] of [[0, -1], [0, 1], [1, 0], [-1, 0], [1, -1], [-1, -1], [1, 1], [-1, 1]]) tries.push([ux * d * (ux && uy ? 0.75 : 1), uy * d * (ux && uy ? 0.75 : 1)]);
       let put = null;
-      for (const [dx, dy] of tries) {
-        const cx = sx + dx, cy = sy + dy, box = { x: cx - w / 2, y: cy - h / 2, w, h };
+      // (a name by the map's edge slides in to fit before anything else is tried: the Cave at the top-left corner,
+      // Castle Brightwater by the east sea)
+      const slide = Math.max(0, B.x - (sx - w / 2)) - Math.max(0, (sx + w / 2) - (B.x + B.w)), lift = Math.max(0, B.y - (sy - h / 2)) - Math.max(0, (sy + h / 2) - (B.y + B.h));
+      for (const [tx, ty] of tries) {
+        const dx = tx + slide, dy = ty + lift, cx = sx + dx, cy = sy + dy, box = { x: cx - w / 2, y: cy - h / 2, w, h };
         if (!free(box)) continue;
         if (it.tier === 1 && (dx || dy) && it.owns && !it.owns(Math.floor((cx - o.ox) / o.sc), Math.floor((cy - o.oy) / o.sc))) continue;
         put = { cx, cy, box, moved: Math.round(Math.hypot(dx, dy)) }; break;
