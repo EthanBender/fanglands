@@ -40,7 +40,8 @@ export const CROSS_MAX = 40 * 48;    // px: a longer line is never walked (the s
 export const JUMP_WINDOW = 10000, JUMPS_MAX = 6;
 export const LOG_PER_DAY = 200;      // violation rows kept a day; past that only the counts grow
 export const KEEP_DAYS = 60;         // rows older than this go on the first write of a day
-export const WRITE_AT = 200, WRITE_EVERY = 10000;   // as the meter: counts waiting that force a write, and the longest they wait
+export const WRITE_AT = 2000, WRITE_EVERY = 60000;   // counts waiting that force a write, and the longest they wait (each write is
+// a row written, a free-plan limit of its own: at 10 s this was 360 rows an hour while anyone played; a nap can lose the last minute)
 const COUNTS = ['checked', 'speed', 'wall', 'jumps', 'waived', 'skipped', 'old'];
 
 export const dayOf = ms => new Date(ms).toISOString().slice(0, 10);

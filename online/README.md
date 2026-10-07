@@ -184,7 +184,7 @@ GET  /api/admin/export                every table but sessions: accounts, saves,
                                       save_pins, parties, crackers, logins, trades, req_meter, req_meter_admin (online/src/backup.js)
 GET  /api/admin/bookmark              a point-in-time restore bookmark, also kept in settings
 POST /api/admin/restore {bookmark}    rewinds the whole world to that bookmark; everyone reconnects
-GET  /api/admin/sim                   the shared world: for now only the request meter, {meter: {today, days, freeLimit, waiting}} (each day: wsIn, http, admin, gameHttp, est, gameEst)
+GET  /api/admin/sim                   the shared world: for now only the request meter, {meter: {today, days, freeLimit, waiting, alarmsFrom}} (each day: wsIn, http, admin, gameHttp, alarms, pageHttp, est, gameEst; alarms and pageHttp null before alarmsFrom)
 ```
 
 An admin's own game uses `GET /api/save/pin`, `POST /api/save/pin` (`?replace=1`) and `POST /api/save/restore`

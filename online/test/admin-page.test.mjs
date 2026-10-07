@@ -83,6 +83,50 @@ test('the admin page: the meter is read on opening and on Refresh, never by the 
   assert.match(line, /This page and the backups made 10 calls on top, so about 14 in all/);
 });
 
+// The night of 3-4 Oct 2026 read 17,266 game calls with no way to tell the World's alarms from the pages' saves: the line and
+// the table now name the pages' calls, the alarms and this page's calls apart, and a day from before the alarm column says so.
+// Rows written (the other daily limit, and the nearer one while anyone plays) are on the line and in the table too.
+test('the admin page: the pages\' calls, the world\'s alarms, this page\'s calls and the rows written apart, in plain words', async () => {
+  const from = Date.parse('2026-10-05T14:05:00Z');
+  const today = { day: '2026-10-05', wsIn: 7186, http: 600, admin: 30, gameHttp: 570, alarms: 360, pageHttp: 210, alarmsSince: from, est: 960, gameEst: 930, rows: 4100, rowsSince: from };
+  const meter = { today, days: [today, { day: '2026-10-04', wsIn: 29118, http: 17270, admin: 4, gameHttp: 17266, alarms: null, pageHttp: null, alarmsSince: null, est: 18726, gameEst: 18722, rows: null, rowsSince: null }],
+    freeLimit: 100000, freeRows: 100000, waiting: 0 };
+  const P = page({ sim: { meter } });
+  await P.settle();
+  const line = String(P.els.get('meter').textContent);
+  assert.match(line, /the game's pages made 210 calls and sent 7,186 socket messages, and the world woke itself 360 times on its own timers \(alarms\)\. Together that is about 930 of the 100,000 requests/);
+  assert.match(line, /This page and the backups made 30 calls on top, so about 960 in all/);
+  assert.match(line, /Alarms are counted on their own only since 14:05 UTC today; any before that are inside the pages' calls\./);
+  assert.match(line, /The world wrote 4,100 rows to its database since 14:05 UTC, 4\.1% of the 100,000 rows a day the free plan allows \(a day over it stops every save until midnight UTC\)\. The nearer limit today is rows written: that share is what the cost gate reads\./);
+  const rows = P.els.get('meterdays').children.map(tr => tr.children.map(td => String(td.textContent)));
+  assert.deepEqual(rows, [['2026-10-05', '7,186', '210 (alarms before 14:05 UTC inside)', '360 (since 14:05 UTC)', '930', '0.93%', '30', '0.96%', '4,100 (since 14:05 UTC)', '4.1%'],
+    ['2026-10-04', '29,118', '17,266 (alarms inside)', 'not counted apart', '18,722', '18.7%', '4', '18.7%', 'not counted', '']]);
+  // a day counted whole: no "only since", and requests the nearer limit when they are
+  const whole = Object.assign({}, today, { alarmsSince: null, rows: 500, rowsSince: null });
+  const P2 = page({ sim: { meter: Object.assign({}, meter, { today: whole, days: [whole] }) } });
+  await P2.settle();
+  assert.doesNotMatch(String(P2.els.get('meter').textContent), /only since|since 14:05/);
+  assert.match(String(P2.els.get('meter').textContent), /The world wrote 500 rows to its database, 0\.5% of .* The nearer limit today is requests/);
+  // a rollback and back (review round 2, 6 Oct 2026): 9 Oct partial from 12:00, 8 Oct counted only by older code (not a false
+  // 0), 7 Oct partial from 15:00, each from its own mark
+  const later = { today: { day: '2026-10-10', wsIn: 10, http: 6, admin: 0, gameHttp: 6, alarms: 1, pageHttp: 5, alarmsSince: null, est: 7, gameEst: 7, rows: 30, rowsSince: null },
+    days: [{ day: '2026-10-10', wsIn: 10, http: 6, admin: 0, gameHttp: 6, alarms: 1, pageHttp: 5, alarmsSince: null, est: 7, gameEst: 7, rows: 30, rowsSince: null },
+      { day: '2026-10-09', wsIn: 0, http: 406, admin: 0, gameHttp: 406, alarms: 4, pageHttp: 402, alarmsSince: Date.parse('2026-10-09T12:00:00Z'), est: 406, gameEst: 406, rows: 50, rowsSince: Date.parse('2026-10-09T12:00:00Z') },
+      { day: '2026-10-08', wsIn: 0, http: 1050, admin: 0, gameHttp: 1050, alarms: null, pageHttp: null, alarmsSince: null, est: 1050, gameEst: 1050, rows: null, rowsSince: null },
+      { day: '2026-10-07', wsIn: 0, http: 15, admin: 0, gameHttp: 15, alarms: 10, pageHttp: 5, alarmsSince: Date.parse('2026-10-07T15:00:00Z'), est: 15, gameEst: 15, rows: 12, rowsSince: Date.parse('2026-10-07T15:00:00Z') }],
+    freeLimit: 100000, freeRows: 100000, waiting: 0 };
+  const P4 = page({ sim: { meter: later } });
+  await P4.settle();
+  assert.doesNotMatch(String(P4.els.get('meter').textContent), /only since/);
+  assert.deepEqual(P4.els.get('meterdays').children.map(tr => tr.children.slice(2, 4).concat(tr.children.slice(8, 9)).map(td => String(td.textContent))),
+    [['5', '1', '30'], ['402 (alarms before 12:00 UTC inside)', '4 (since 12:00 UTC)', '50 (since 12:00 UTC)'], ['1,050 (alarms inside)', 'not counted apart', 'not counted'],
+      ['5 (alarms before 15:00 UTC inside)', '10 (since 15:00 UTC)', '12 (since 15:00 UTC)']]);
+  // a world from before the alarm column: the old sentence, and it says the alarms are inside (and that rows are not counted)
+  const P3 = page({ sim: { meter: { today: meter.days[1], days: [meter.days[1]], freeLimit: 100000, waiting: 0 } } });
+  await P3.settle();
+  assert.match(String(P3.els.get('meter').textContent), /made 17,266 calls, about 18,722 .* alarms are not counted apart on this day.* \(Rows written are not counted on this day\.\)/);
+});
+
 test('the admin page: hidden, it makes no calls at all; shown again, it refreshes once and the timer resumes', async () => {
   const P = page();
   await P.settle(); P.take();
