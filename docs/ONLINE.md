@@ -2317,17 +2317,25 @@ in `online/src/room.js` (the taps, `hooks.mon`, the `view` capability) and `onli
 ### One sign-in (no teacher address, no door)
 
 - `POST /api/login` reads the body once. The knight's path runs first, unchanged (the name, a name from before a rename,
-  banned, the waits, the secret word, kept out, sent off). Only when **no knight** has that name **and** the body says
-  `teacherOk: 1` does it call `teachers.teacherLogin(world, {name, pass, addr})`. Without `teacherOk` the answer is the knight's
-  own 404 `unknown`, so an older cached card is never handed a teacher token it might store.
+  banned, the waits, the secret word, kept out, sent off). Only when **no knight** has that name, **a teacher does**
+  (`book.find`: exactly, else with case, spaces, dots, apostrophes and hyphens left out, so "mrs smith" signs in as "Mrs. Smith")
+  **and** the body says `teacherOk: 1` does it call `teachers.teacherLogin(world, {teacher, pass, addr, tab})`. Every other name
+  is the knight's own 404 `unknown`, with no PBKDF2 and nothing counted: a kid's mistyped name, or a new kid who forgot New
+  knight, hears "No knight by that name yet. Tap New knight." exactly as before, and a classroom of typos never touches a
+  teacher's waits. Without `teacherOk` the answer is the knight's 404 too, so an older cached card is never handed a teacher
+  token it might store.
 - Knight and teacher names never clash (case, spaces, dots, apostrophes and hyphens left out: `nameClash` at signup and rename,
   `knightClash` and a name from before a rename when the owner adds a teacher), so the order cannot be fooled.
 - The card (`71-login`, login mode only, never New knight) accepts a knight's name `^[A-Za-z0-9 ]{2,16}$` or a teacher's
-  `^[A-Za-z][A-Za-z .'-]{1,39}$`; the name box takes 40 letters for a login, 16 while New knight is ticked. Its words do not
-  change and it has no teacher link.
+  `^[A-Za-z][A-Za-z .'-]{1,39}$` (over 16 letters only with a space, dot, apostrophe or hyphen in it: "Cohenthegreatknight" is
+  a kid's mistake and the card says "A knight's name is 2 to 16 letters or numbers." as before); the name box takes 40 letters
+  for a login, 16 while New knight is ticked. Its words do not change and it has no teacher link. A login's body is
+  `{name, pass, teacherOk: 1, tab}`: `tab` is 16 random hex digits the card makes once per page (never stored, not a secret), so
+  the teacher waits are per tab at a school's one address.
 - A teacher's answer `{teacher: true, token, name, expires}` never calls `NET.setToken`, never writes `fanglands.lastname` or
   `fanglands.session`, never calls `/api/save`, the bridge, `title.startSlot` or `NET.connect`; the card empties the password box,
-  hides and calls `TEACHERSCREEN.open({token, name, expires})`.
+  hides and calls `TEACHERSCREEN.open({token, name, expires})`. The token is passed as an argument and kept by nothing the card
+  owns: `LOGIN` has no hook a page script could set to catch it.
 - **The fresh-page rule (J1):** `79-teacherscreen` wraps `title.startSlot` to clear `TEACHERSCREEN.pristine`: a page is pristine
   until a knight is loaded in it. A teacher's answer on a page that is not pristine (its memory holds a kid's world: his chopped
   trees, his walls) sends the logout beacon, writes `sessionStorage['fanglands.teacher.bye'] = 'fresh'` and reloads the page; the
@@ -2407,9 +2415,10 @@ A teacher row is never deleted (Turn off keeps it, so the log's names always mat
 
 | Call | Body | Answer | Notes |
 |---|---|---|---|
-| `GET /api/admin/teachers` | — | `{teachers: [{id, name, created, lastLogin, off, watching, actsToday, wrongToday}], acts, notice}` | the whole Teachers section in one call (/admin opens with +1 request): `watching` that teacher's open screens; `wrongToday` wrong passwords typed for that name today, from anywhere (a big number: someone is guessing; New password ends it); `acts` as `teacher-acts?today=1`; `notice` the switch |
+| `GET /api/admin/teachers` | — | `{teachers: [{id, name, created, lastLogin, off, watching, actsToday, wrongToday, waiting}], acts, notice}` | the whole Teachers section in one call (/admin opens with +1 request): `watching` that teacher's open screens; `wrongToday` wrong passwords typed for that name today, from anywhere (a big number: someone is guessing; New password ends it); `waiting` how many places (a tab at an address, or a whole address at the ceiling) wait on that name now (then /admin shows *Lift the wait*); `acts` as `teacher-acts?today=1`; `notice` the switch |
 | `POST /api/admin/teachers` | `{name, pass}` | `{ok, id, name}` | name `^[A-Za-z][A-Za-z .'-]{1,39}$` (2 to 40): 400 `name`; 409 `taken` when it matches another teacher's or a knight's name with case, spaces, dots, apostrophes and hyphens left out ("Mrs. Smith" = "mrs smith" = "MrsSmith"), or a knight's name from before a rename; pass 10 to 200 characters: 400 `pass` |
 | `POST /api/admin/teachers/pass` | `{id, pass}` | `{ok}` | a new salt and hash; every session of that teacher deleted; open screens get `w_bye` and close 4013; every sign-in wait on that name lifted; 404 `nope` |
+| `POST /api/admin/teachers/lift` | `{id}` | `{ok}` | *Lift the wait*: every sign-in wait on that name ends now (a kid kept the teacher out at school); the password stays; 404 `nope` |
 | `POST /api/admin/teachers/off` | `{id}` | `{ok}` | `off = 1`; sessions deleted; screens closed 4012 |
 | `POST /api/admin/teachers/on` | `{id, pass}` | `{ok}` | turning a teacher back on always takes a new password (400 `pass`) |
 | `POST /api/admin/teachers/undo` | `{act}` | `{ok}` or 409 `changed` | the owner lifts any teacher action (404 `nope`; 409 `over` when it already ran out) |
@@ -2417,7 +2426,7 @@ A teacher row is never deleted (Turn off keeps it, so the log's names always mat
 | `GET /api/admin/teacher-acts?today=1` | — | `[{id, at, teacher, act, target, until, prev, undoneAt, undoneBy, inForce}]` | today's (Toronto) teacher actions, newest first |
 
 Each owner call writes one `mod_log` row `by: 'parent page'`, act `teacher_add` / `teacher_pass` / `teacher_off` / `teacher_on` /
-`teacher_notice`, target "<name> (teacher)" (`teacher_notice`: target `everyone`, detail `on` / `off`). The password is never
+`teacher_lift` / `teacher_notice`, target "<name> (teacher)" (`teacher_notice`: target `everyone`, detail `on` / `off`). The password is never
 logged, exported or kept as text: *Make one up* makes it in the browser (`crypto.getRandomValues`, three words from 200 plain
 words and two digits, like `maple-river-lantern-42`) and the page shows it once.
 
@@ -2425,28 +2434,33 @@ words and two digits, like `maple-river-lantern-42`) and the page shows it once.
 
 | Call | Body | Answer | Notes |
 |---|---|---|---|
-| `POST /api/login` | `{name, pass, teacherOk: 1}` | `{teacher: true, token, name, expires}` | the teacher half, below |
+| `POST /api/login` | `{name, pass, teacherOk: 1, tab}` | `{teacher: true, token, name, expires}` | the teacher half, below (only for a teacher's name) |
 | `POST /api/teacher/logout` | `{token}` | `{ok}` | the token in the body, so `navigator.sendBeacon` can send it on `pagehide`; closes that session's screens 4010 |
 | `POST /api/teacher/ticket` | — (`Authorization: Bearer <teacher token>`) | `{ticket}` | 24 random bytes as hex, single use, good for 30 s, kept in the World's memory only, tied to the session |
 | `GET /api/teacher/ws?ticket=` | — | 101 | a used, expired or unknown ticket, or one whose session is gone, is 401 `auth` before any upgrade |
 
-- An unknown name and a wrong password give the same answer, 401 `nomatch` (an unknown name still runs one PBKDF2 against a
-  fixed dummy salt), and every try after them too: the waits below count a name nobody has exactly like a real one.
-- The waits are kept per **address and name**, in the World's memory like signups (`addressOf`, an IPv6 address by its /48; a
-  nap forgets them, which only lets more through). Five wrong in a row from one address on one name: that address waits
-  900,000 ms on that name, 429 `wait` `{wait}` (seconds). Twenty failures from one address in an hour: that address waits
-  out the hour, but only on the names it got wrong in it. So a guess never refuses the right password from anywhere else (a
-  kid at home cannot keep a teacher out at school), and a school full of guessing kids never keeps a teacher out of her own
-  name. *New password* on /admin lifts every wait on that name. Each wrong password on a real teacher adds one to its
-  `tries` today (the owner's *Wrong tries today*).
-- The right password on a turned-off teacher: 403 `off` (checked only after the password is right). Success: that address's
-  count on that name starts again, `last_login = now`, one `mod_log` row (by "<name> (teacher)", act `teacher_in`). No
+- A name no teacher has never reaches the teacher half (above): it is the knight's 404 `unknown`. A teacher's name with a wrong
+  password is 401 `nomatch`. (So teacher names can be found out: an accepted risk. The password and the waits protect them.)
+- The waits exist only for a teacher's name and are kept in the World's memory like signups (`addressOf`, an IPv6 address by
+  its /48; a nap forgets them, which only lets more through). A whole school sits behind one address, so the short wait is per
+  **address, name and tab** (`tab` from the card; a body without one shares the bucket `-`): five wrong in a row from one tab
+  make that tab wait 900,000 ms on that name, 429 `wait` `{wait}` (seconds), while the teacher's own page at the next desk
+  signs in at once. A guesser can open new tabs, so the limit on guessing is a ceiling per **address and name**:
+  `NAME_FAILS` = 30 wrong in an hour, then that address waits on that name (the right password too) until the hour is up.
+  A guess never refuses the right password from another address (a kid at home cannot keep a teacher out at school).
+  *Lift the wait* and *New password* on /admin end every wait on that name at once. Each wrong password adds one to that
+  teacher's `tries` today (the owner's *Wrong tries today*).
+- The right password on a turned-off teacher: 403 `off` (checked only after the password is right). Success: that tab's
+  count on that name starts again (the address's hour of wrong tries stays), `last_login = now`, one `mod_log` row (by "<name> (teacher)", act `teacher_in`). No
   address is written anywhere.
 - `expires` = the earlier of now + 36,000,000 ms (10 hours) and 23:59:59.999 today in `America/Toronto` (`dayEnd`, with
   `Intl.DateTimeFormat`; the zone is the constant `TEACHER_TZ`).
-- **The token lives only in a closure in `src/79-teacherscreen.js`**: never `localStorage`, `sessionStorage`, a cookie or a URL.
+- **The token lives only in a closure in `src/79-teacherscreen.js`** (its own variable in `make()`, never on the screen's state):
+  never `localStorage`, `sessionStorage`, a cookie or a URL, and never reachable from `window.TEACHERSCREEN`, `LOGIN` or `VIEW`.
+  `TEACHERSCREEN.screen` is only `{peek(), idleFor(ms), expireNow()}`: `peek()` answers a copy of what the screen shows (who
+  is on, the layout, what the map drew), never its state object and never the token.
   The socket URL carries only the single-use ticket. What the page keeps on the device: `localStorage['fanglands.teacher.layout']
-  = {v: 1, wide: {l, r}, narrow: {split}, zoom}` (fractions only, every read and write in `try`) and
+  = {v: 1, wide: {l, r}, narrow: {split, wsplit}, zoom}` (fractions only, every read and write in `try`) and
   `sessionStorage['fanglands.teacher.bye']` (a reason code, never a secret). Closing the tab or reloading it shows the card.
 - The socket is accepted with the attachment `{w: teacherId, sh: sessionHash, since, view?}` (`view`: the lower-case name of the
   kid being watched; no `name` key: the wake loop can never take it for a knight). Caps: 6 teacher screens in the world, 2 per
@@ -2511,8 +2525,10 @@ area at least 44 x 44 px, 8 px apart. `html` font-size `clamp(15px, 0.35vw + 11p
 were cut ("Mute a knight's chat" half shown), and the side columns were a fixed 320 / 340 px, so the map was small. Round 2
 uses no grid rows, no `vh` and no fixed column widths:
 
-- `#tv`: `position: fixed; inset: 0`, a flex column. The bar (48 px at least; it wraps to a second 44 px row under 700 px), the
-  banners (0 px when empty), then `#tv-panes` (`flex: 1 1 0; min-height: 0`).
+- `#tv`: `position: fixed; inset: 0`, a flex column. The bar (one row of 48 px from 700 px wide up; under 900 px it is compact:
+  "Teacher view", "Chat on" / "Paused · 8:12", the teacher's name alone, and "2 to look at" moves into the Pause chat menu; it
+  may take a second row only under 700 px), the banners (0 px when empty), then `#tv-panes` (`flex: 1 1 0; min-height: 0`).
+  Nothing ever comes and goes inside the bar: the shared-computer hint is the toast.
 - Every pane is a flex column: its header (`flex: none`), a scroller (`flex: 1 1 0; min-height: 0; overflow: auto;
   overscroll-behavior: contain`) and a footer (`flex: none`).
 - **Wide (900 px and more):** Chat | divider | Map or Watch | divider | Who is on. Chat 24% (at least 260 px, at most 40%), Who is
@@ -2522,8 +2538,8 @@ uses no grid rows, no `vh` and no fixed column widths:
   drag. `role=separator`, `aria-orientation`, `tabindex 0`; arrows move 24 px, Home / End go to the least and the most; a double
   click or tap puts the default back. Pointer events with `setPointerCapture`, clamped to the minimums, saved 300 ms after letting
   go as fractions (wide and narrow apart). A resize or a turned iPad keeps the fractions.
-- **Narrow (under 900 px: an iPad upright, a Chromebook, a phone):** the bar, the map (or Watch) at 55% of the panes (at least
-  240 px, at most 75%), a horizontal divider, a 48 px switch "Chat (3 new)" / "Who is on (12)", then the chosen list (at least 220
+- **Narrow (under 900 px: an iPad upright, a Chromebook, a phone):** the bar, the map at 55% of the panes (at least 240 px, at
+  most 75%; while watching a kid his screen gets 70%, at most 82%, its own fraction `wsplit`, dragged and saved the same way), a horizontal divider, a 48 px switch "Chat (3 new)" / "Who is on (12)", then the chosen list (at least 220
   px; on a very short window the panes scroll). A picked knight's card slides up as a sheet with Close in place of the switch and
   the list; pausing chat is the bar's **Pause chat** menu; the bottom keeps the safe-area inset.
 - **Chat:** "Chat · the last hour", All lines / Only flagged; the list; the footer "Pause chat for everyone:" 5 minutes / 15 minutes
@@ -2534,10 +2550,16 @@ uses no grid rows, no `vh` and no fixed column widths:
   map fits until she zooms, on every resize; zoomed, the middle and the zoom over the fit are kept. +, − and Whole map at the
   bottom right; the key behind a Key chip at the top left; "Inside places" chips under the map. Dots 14 px: blue playing, grey
   away, an amber ring muted, a gold ring an admin, a red ring for 10 minutes after a word-filter event, a white ring picked.
+  Those controls are obstacles to the layout: no name, tag or dot is drawn under them; a knight standing under one is drawn
+  just beside it with a thin line to where he is (and is tapped there). The big places (2,000 tiles and more: Thistledown, The
+  Jungle, Goblin Fields, Wolfwood, The Redcut, The Ashfields, The Far Shore, The Grey Sea, The Wilds) are placed before any
+  knight's name tag, so a class on the map never hides the names a teacher finds her way by; a tag with no room is left out
+  (the dot stays). A place's name tries its anchor and the spots round it, then anywhere on its own ground nearest the anchor.
 - **Who is on:** rows at least 56 px: the name (an ADMIN pill for admins), tags ("Muted 8 min", "Muted today", "Words hidden 2",
   "Sent off today"), "Thistledown · Fighting · on for 42 min", and a Watch button at the right. Then "Left in the last 30
   minutes", "Done today" and "Sent off for today", as in round 1.
-- **The Knight card** (the one place for a kid's controls; from a row, a dot, a chat name or a knight in a watched screen; wide:
+- **The Knight card** (the one place for a kid's controls; from a row, a dot, a chat name, a knight in a watched screen, or a
+  row's Watch button on a wide screen, so his Mute and Send off are on screen while she watches him; wide:
   docked at the top of Who is on, scrolling on its own past half the pane; narrow: the sheet): the name, "Thistledown · Fighting ·
   on for 42 min", the tags; **Watch** (blue; "Back to the map" while watching him), Show on map, Mute 10 min / Mute 1 hour / Mute
   rest of today (or "Cohen is muted for 8 more minutes (Mrs Smith)." Undo), **Send off for today** (two taps: "Send Cohen off
@@ -2545,7 +2567,8 @@ uses no grid rows, no `vh` and no fixed column widths:
   sent off shows "Cohen is sent off for today." **Let Cohen back in**). For an admin: Watch, Show on map, "Cohen is an admin.
   Only Ethan can do that." (D2). The answer to every tap is a strip at the bottom of Who is on (narrow: above the sheet).
 - **The bar:** "Fanglands — Teacher view"; Live / Reconnecting… / Not connected (Try again); "12 on"; "Chat is on" or "Chat paused
-  · 8:12 left"; "2 to look at"; "Mrs Smith · signed in until 5:42 pm"; Sign out.
+  · 8:12 left"; "2 to look at"; "Mrs Smith · signed in until 5:42 pm"; Sign out (compact under 900 px, above). For the first
+  10 s after sign-in the toast says "On a shared computer, press Sign out when you're done."
 - **Reconnecting:** 1, 2, 4, 8 ... s, at most 300 s; nothing while `document.hidden`, one try on becoming visible; after 30
   failed tries "Not connected" Try again; never after `w_bye` or a close 4010 to 4014 or 4008. The page sends exactly
   `{"t":"ping"}` every 25 s, which the runtime answers without waking the World.
@@ -2588,11 +2611,14 @@ three lists, or in two. An `error` to the kid of `kicked`, `words`, `elsewhere`,
 **The kid's game:** `{t: 'view', on: true}` goes to him at his first viewer (only a game whose hello named the `view`
 capability, which `KNOWN_CAPS` now lists), and again after a welcome while he is still watched; `{on: false}` at his last
 viewer, and when a limit is reached. While told (`COOP.viewed()`): his presence carries `tod` = his time of day (`player.dayTime`
-mod 600 s) rounded to 0.1 (J3; other games ignore it; no extra message), and when he keeps his map with nobody near (`S.here`
+mod 600 s) rounded to 0.1 (J3) and `vw`, `vh` = his screen's size (`VW`, `VH`: exactly what his camera shows) (other games ignore
+them; no extra message), and when he keeps his map with nobody near (`S.here`
 empty) his game sends `snapshot([])` at most every 0.5 s, an unchanged list only once every 5 s, never while paused or on the
 title; it starts again on a map change and stops at view off or a welcome. With anyone near, the stream is the 8 a second it
 always was. Limits: **3** kids told at once (`VIEW_STREAMS_MAX`; the 4th is told when one stops), **40,000** alone messages a
-Toronto day (`VIEW_DAY_MSGS`, counted in memory; at the 40,000th every told kid is told off until the next day). The kid is told
+Toronto day (`VIEW_DAY_MSGS`, counted in memory; at the 40,000th every told kid is told off until the next day). Every snapshot
+from a told kid is counted while no other knight on his map has sent a presence in the last 15 s (`FRIEND_FRESH_MS`, his game's
+`REMOTE_STALE`): a friend whose game is paused, socket still open, does not make the alone stream free. The kid is told
 nothing new on screen: only D1's "A teacher is watching." (R2-2).
 
 **Stopping:** `w_unview`, Back to the map, Esc, Watch on someone else, Sign out, idle, the screen closing, the kid leaving. Each
@@ -2606,7 +2632,11 @@ wake has restored the knights, taps him again by name (a fresh `w_vstart`) or se
 watching it sizes the canvas to the pane, puts the page's own knight where his drawn knight is (his facing, his time of day; never
 dead, never on a machine) and draws as if paused (no verb tag, whose coach writes to storage); `drawHud` draws only his chat
 strip (`CHAT.drawStrip`); `drawCharacter` never draws the page's own knight (he is drawn by 73-players as a knight among the
-others, from his own presence); `resize` makes the logical width `clamp(paneW, 760, 1024) / zoom`, scaled into the pane. Frames
+others, from his own presence); `resize` makes the logical size exactly his screen (`vw` x `vh` from his presence) over the
+zoom, letterboxed into the pane, so at Fit the teacher sees the very rectangle of the world his camera shows (an older game
+without `vw`: the logical width `clamp(paneW, 760, 1024) / zoom`, the pane's proportion). His screen is usually drawn smaller
+than he sees it, so knights' names and levels are drawn at 14.5 and 13 CSS px at the least (`PLAYERS.tagScale`, 1 in every
+game). Frames
 go to `NET.listeners` as a socket's would (`NET.me` is null, so he is a remote knight). COOP's view mode: puppets only (on start
 the monsters are cleared; nothing is parked or kept), the keeper of each map from the forwarded `keeper` frames, the puppets
 gliding over the gap between snapshots (0.12 to 0.6 s), a fallen one tipping and fading. A new map: `INSTANCES.leave()` then
@@ -2617,7 +2647,8 @@ the page to update." A glass over the canvas takes every pointer (a tap on a kni
 listener keeps every key from the game (Esc = Back to the map).
 
 **The POV header (44 px):** Back to the map; "Watching Cohen · The Spider Den · Fighting" and a green Live dot; Closer / Wider / Fit
-(x1.25 / ÷1.25 between 0.6 and 2.0, remembered); "Only watching: taps here do nothing in Cohen's game." Then, as they apply:
+(x1.25 / ÷1.25 between 0.6 and 2.0, remembered; Fit is his whole screen); "Only watching: taps here do nothing in Cohen's game."
+(narrow: Closer, Wider and Fit on Back's row, "Watching Cohen ..." under it, "Only watching" the view's tooltip). Then, as they apply:
 "Waiting for Cohen's game…" (no frame in 3 s); "Cohen's game is paused or in the background. This is the last thing it showed.
 Last seen 10:42." (no presence in 5 s); "Cohen's game is an older version. What you see may be a little off."; "Monsters near
 Cohen show when a friend is near him or his game is reloaded." (`monsters: 'friends'`); "Monsters near Cohen show only when a
@@ -2719,8 +2750,8 @@ written a day.
 - **Watch:** starting and stopping, 2 messages (0.1 requests). The frames it forwards are outgoing: free. His presence and his
   friends' streams are already received: 0 extra. The alone stream (only while watched, only alone on a map he keeps): at most
   2 a second = 7,200 messages an hour = **360 requests an hour**, about 36 an hour when nothing near him moves. Measured on a local
-  world on 6 Oct 2026 (`tools/teacher-browser.mjs`, two runs): a kid alone in the Spider Den, spiders moving, watched for a
-  minute: 85 to 101 more incoming messages than the same minute unwatched, about 5,100 to 6,060 an hour = **255 to 303 requests
+  world on 6 Oct 2026 (`tools/teacher-browser.mjs`, three runs): a kid alone in the Spider Den, spiders moving, watched for a
+  minute: 81 to 101 more incoming messages than the same minute unwatched (81 in the fix round's run), about 4,860 to 6,060 an hour = **243 to 303 requests
   an hour**, and no more rows written than unwatched;
   `tools/mmo-sim-teacher.js`: 20 snapshots in 10 s alone (7,200 an hour, 360 requests), and 0 extra with a friend near. The
   daily ceiling: 40,000 messages = **2,000 requests (2% of the day)**, whatever happens. Rows: at most 1 per teacher per knight
@@ -2755,8 +2786,10 @@ written a day.
 - R2-5 The view draws the starting world, never the kid's save.
 
 **Accepted risks (round 2):** the token is in the page's memory (one origin with the game; every text is set with
-`textContent`); teacher names can be told from knight names (a teacher's name answers 401 `nomatch` with `teacherOk`, an unknown
-name 404 without it; the protection is the password and the per address and name waits); an old cached kid's game shows no
+`textContent`); teacher names can be told from knight names (a teacher's name answers 401 `nomatch` with `teacherOk`, any other
+unknown name 404; the protection is the password and the waits: 5 per tab, 30 an hour per address and name, Lift the wait on
+/admin); a kid at the teacher's own school address can still make that address wait on her name with 30 wrong tries in an
+hour (Lift the wait ends it); an old cached kid's game shows no
 monsters while he plays alone (the header says so); an old cached card says "No knight by that name yet" to a teacher (a reload
 fixes it); the view shows the starting ground, not his save's changes; the day's stream count is in memory, so a nap resets it
 (the worst case is still 3 streams at 2 a second).

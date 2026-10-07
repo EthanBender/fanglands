@@ -77,7 +77,7 @@ function bare(k, p) {
 // a real kid: the game itself, logged in on its card
 async function realKid(browser, name, opts = {}) {
   await knight(name);   // the knight exists (and is unmuted)
-  const ctx = await browser.newContext({ viewport: { width: 1000, height: 700 } });
+  const ctx = await browser.newContext({ viewport: opts.viewport || { width: 1000, height: 700 } });
   const p = await ctx.newPage();
   p.errors = []; p.on('pageerror', e => p.errors.push(String(e)));
   await p.goto(BASE + '/?online');
@@ -100,14 +100,19 @@ async function teacherRow(name, pass) {
   await admin('POST', t.off ? '/api/admin/teachers/on' : '/api/admin/teachers/pass', { id: t.id, pass });
   return t.id;
 }
-// the teacher on the game's own card: her name in Knight's name, her password in Secret word, Play
+// the teacher on the game's own card: her name in Knight's name, her password in Secret word, Play. Answers the session token
+// as the world sent it (read off the network: the page itself keeps it where no script can reach it)
 async function signInCard(page, name, pass, wantScreen = true) {
   if (!/\/\?online$/.test(page.url())) await page.goto(BASE + '/?online');
   await page.waitForSelector('#fl-name', { state: 'visible', timeout: 20000 });
   await page.fill('#fl-name', name); await page.fill('#fl-pass', pass);
+  const answer = page.waitForResponse(r => r.url().endsWith('/api/login') && r.request().method() === 'POST', { timeout: 20000 });
   await page.click('#fl-login button[type=submit]');
-  if (wantScreen) await page.waitForFunction(() => window.TEACHERSCREEN && TEACHERSCREEN.screen && TEACHERSCREEN.screen.S.status === 'live', null, { timeout: 20000 });
+  let token = null; try { const j = await (await answer).json(); token = j && j.teacher ? j.token : null; } catch (e) { }
+  if (wantScreen) await page.waitForFunction(() => window.TEACHERSCREEN && TEACHERSCREEN.screen && TEACHERSCREEN.screen.peek().status === 'live', null, { timeout: 20000 });
+  return token;
 }
+const peek = page => page.evaluate(() => TEACHERSCREEN.screen.peek());
 
 // ---------- the page, measured (in the browser) ----------
 const MEASURE = () => {
@@ -144,17 +149,27 @@ const MEASURE = () => {
   for (let n = walker.nextNode(); n; n = walker.nextNode()) { if (!n.textContent.trim() || !vis(n.parentElement)) continue; const fs = parseFloat(getComputedStyle(n.parentElement).fontSize); if (fs < 12.9) P.push('tiny text ' + fs + 'px: ' + n.textContent.trim().slice(0, 30)); }
   for (const e of Array.from(tv.querySelectorAll('#tv-bar span, #tv-bar .title, .pane > header h2, #tv-povhead .what')).filter(vis)) if (e.scrollWidth > e.clientWidth + 1 && getComputedStyle(e).overflow !== 'visible') P.push('words cut: ' + e.textContent.slice(0, 30));
   // the map: its canvas is its pane; no two names over each other
-  const S = window.TEACHERSCREEN && TEACHERSCREEN.screen ? TEACHERSCREEN.screen.S : null;
+  const S = window.TEACHERSCREEN && TEACHERSCREEN.screen ? TEACHERSCREEN.screen.peek() : null;
+  // the bar: one row of 48 px from 700 px wide up (two under 700)
+  const bar = document.getElementById('tv-bar'); out.bar = Math.round(R(bar).h);
+  if (innerWidth >= 700 && out.bar > 49.5) P.push('the bar takes two rows: ' + out.bar + ' px at ' + innerWidth);
   const mb = document.getElementById('tv-mapbox'), cv = document.getElementById('tv-map');
   if (vis(mb)) {
     const a = R(mb), c = R(cv), dpr = Math.min(devicePixelRatio || 1, 2);
     if (Math.abs(a.w - c.w) > 1 || Math.abs(a.h - c.h) > 1) P.push('the map canvas is not its pane');
     if (Math.abs(cv.width - Math.round(a.w * dpr)) > 1 || Math.abs(cv.height - Math.round(a.h * dpr)) > 1) P.push('the map canvas pixels are not the pane x dpr: ' + cv.width + 'x' + cv.height + ' for ' + Math.round(a.w) + 'x' + Math.round(a.h) + ' at ' + dpr);
     out.mapPane = [Math.round(a.w), Math.round(a.h)];
-    const L = S && S.drawn ? S.drawn.labels : [];
-    out.labels = L.map(l => l.name);
+    const D = S && S.drawn ? S.drawn : { labels: [], tags: [], dots: [], clusters: [], obstacles: [] };
+    const L = D.labels.concat(D.tags.map(t => Object.assign({ name: 'tag ' + t.n }, t)));
+    out.labels = D.labels.map(l => l.name); out.tags = D.tags.length;
     for (let i = 0; i < L.length; i++) for (let j = i + 1; j < L.length; j++) { const p = L[i], q = L[j]; if (p.x < q.x + q.w && q.x < p.x + p.w && p.y < q.y + q.h && q.y < p.y + p.h) P.push('names over each other: ' + p.name + ' / ' + q.name); }
     for (const l of L) if (l.x < 0 || l.y < 0 || l.x + l.w > a.w || l.y + l.h > a.h) P.push('a name out of the map: ' + l.name);
+    // nothing of the map under its own controls (+, −, Whole map, Key), measured from the page itself
+    const ctl = ['tv-zoom', 'tv-keybox'].map(id => document.getElementById(id)).filter(vis).map(e => { const r = R(e); return { x: r.l - a.l, y: r.t - a.t, w: r.w, h: r.h }; });
+    for (const o of ctl) {
+      for (const c of D.dots.concat(D.clusters)) { const nx = Math.max(o.x, Math.min(c.x, o.x + o.w)), ny = Math.max(o.y, Math.min(c.y, o.y + o.h)); if (Math.hypot(c.x - nx, c.y - ny) < c.r) P.push('a knight under a control: ' + (c.n || c.n)); }
+      for (const l of L) if (l.x < o.x + o.w && o.x < l.x + l.w && l.y < o.y + o.h && o.y < l.y + l.h) P.push('a name under a control: ' + l.name);
+    }
   }
   out.narrow = !!(S && S.narrow); out.sizes = S && S.sizes;
   return out;
@@ -194,7 +209,8 @@ async function main() {
     }
     alive = setInterval(() => { for (const k of crowd) k.say(); }, 1000);
     crowd[1].chat('anyone want to fight goblins'); await wait(1600); crowd[2].chat('meet me at the dock'); await wait(1600);
-    const sam = await realKid(browser, 'Sam', { at: [100 * 48, 30 * 48] });
+    // (Sam on a 1366 x 768 laptop: wider than the teacher's middle pane, so Fit must show his whole screen, letterboxed)
+    const sam = await realKid(browser, 'Sam', { at: [100 * 48, 30 * 48], viewport: { width: 1366, height: 768 } });
     const ava = await realKid(browser, 'Ava', { at: [102 * 48, 31 * 48] });
     await wait(1500);
 
@@ -205,8 +221,8 @@ async function main() {
     await tp.goto(BASE + '/?online');
     await tp.waitForSelector('#fl-name', { state: 'visible' });
     await shot(tp, '02-the-standard-card');
-    await signInCard(tp, tName, pass);
-    await tp.waitForFunction(n => TEACHERSCREEN.screen.S.knights.length >= n, 22, { timeout: 20000 }); await wait(800);
+    let tToken = await signInCard(tp, tName, pass);
+    await tp.waitForFunction(n => TEACHERSCREEN.screen.peek().knights.length >= n, 22, { timeout: 20000 }); await wait(800);
     const mode = await tp.evaluate(() => ({ title: title.active, lock: SAVE_LOCK, net: NET.enabled, token: NET.token, sock: !!NET.sock, canvas: getComputedStyle(canvas).display, card: !document.getElementById('fl-login') || document.getElementById('fl-login').hidden, ls: Object.keys(localStorage).filter(k => /session|lastname|slot/.test(k)), ss: Object.keys(sessionStorage), url: location.href }));
     line('the teacher signs in on the standard card (Knight\'s name, Secret word, Play) and gets the teacher screen: no knight, no socket of a knight\'s, nothing saved, the address unchanged', mode.title && mode.lock && !mode.net && mode.token === null && !mode.sock && mode.canvas === 'none' && mode.card && mode.ls.length === 0 && mode.ss.length === 0 && mode.url === BASE + '/?online', mode);
     await shot(tp, '03-teacher-screen-1280x800');
@@ -216,7 +232,7 @@ async function main() {
     for (const z of ZOOMS) {
       const ctx = z === 1 ? tctx : await browser.newContext({ viewport: { width: Math.round(1280 / z), height: Math.round(800 / z) }, deviceScaleFactor: z });
       const page = z === 1 ? tp : await ctx.newPage();
-      if (z !== 1) { await signInCard(page, tName, pass); await page.waitForFunction(() => TEACHERSCREEN.screen.S.knights.length >= 20, null, { timeout: 20000 }); }
+      if (z !== 1) { await signInCard(page, tName, pass); await page.waitForFunction(() => TEACHERSCREEN.screen.peek().knights.length >= 20, null, { timeout: 20000 }); }
       for (const [w, h] of SIZES) {
         await page.setViewportSize({ width: Math.round(w / z), height: Math.round(h / z) }); await wait(250);
         const m = await page.evaluate(MEASURE); runs++;
@@ -224,6 +240,13 @@ async function main() {
         if (!ok) bad++;
         line(w + 'x' + h + ' at ' + Math.round(z * 100) + '% (' + Math.round(w / z) + 'x' + Math.round(h / z) + ' CSS px): fills the window, every control in its pane, nothing clipped, 44 px targets, the canvas is its pane, no two names over each other (' + (m.labels || []).length + ' names)', ok, { problems: m.problems.slice(0, 10), total: m.problems.length, narrow: m.narrow });
         if (z === 1 && [1280, 1024, 768, 390, 1920].includes(w) && [800, 768, 1024, 844, 1080].includes(h)) await shot(page, '04-size-' + w + 'x' + h);
+        // the window the class reviewer used (1280 x 650 at 125%: 1024 x 520 CSS px): the big places still named with the class on
+        if (z === 1.25 && w === 1280 && h === 800) {
+          await page.setViewportSize({ width: 1024, height: 520 }); await wait(400);
+          const m2 = await page.evaluate(MEASURE);
+          line('1280x650 at 125% (1024x520 CSS px), 20 kids on: no knight, tag or name under the map\'s controls, the bar one row (' + m2.bar + ' px), and the big places named (' + (m2.labels || []).join(', ') + ')', m2.problems.length === 0 && ['Thistledown', 'The Jungle', 'Goblin Fields'].every(n => (m2.labels || []).includes(n)), { problems: m2.problems.slice(0, 8), labels: m2.labels });
+          await shot(page, '04b-1280x650-at-125');
+        }
       }
       if (z !== 1) await ctx.close();
       else await page.setViewportSize({ width: 1280, height: 800 });
@@ -259,12 +282,36 @@ async function main() {
     }
 
     // ---- 6. Watch: Sam out in the world, walking; then in the Spider Den, fighting; then back to the map ----
-    await tp.waitForFunction(() => TEACHERSCREEN.screen.S.knights.some(k => k.n === 'Sam'), null, { timeout: 15000 });
+    await tp.waitForFunction(() => TEACHERSCREEN.screen.peek().knights.includes('Sam'), null, { timeout: 15000 });
     const samRow = tp.locator('#tv-who .row', { hasText: 'Sam' }).first();
     await samRow.locator('button:has-text("Watch")').click();
     await tp.waitForFunction(() => window.VIEW && VIEW.state.on && VIEW.state.lastP, null, { timeout: 10000 });
-    await sam.bringToFront(); await sam.keyboard.down('ArrowRight'); await wait(1500); await sam.keyboard.up('ArrowRight'); await wait(700);
-    const centre = await tp.evaluate(() => { const e = PLAYERS.remote[VIEW.state.n], W = VIEW.state.paneW, H = VIEW.state.paneH, k = W / VW; return { dx: Math.round((e.shown.x - cam.x) * k - W / 2), dy: Math.round((e.shown.y - cam.y) * k - H / 2), what: document.querySelector('#tv-povhead .what').textContent, live: !document.querySelector('#tv-povhead .live').hidden, frames: VIEW.state.stats }; });
+    // Watch on his row opens his Knight card too (wide): his Mute and Send off are on screen while watching
+    {
+      const card = await tp.evaluate(() => { const c = document.getElementById('tv-card'), r = c.getBoundingClientRect(); return { shown: !c.hidden && r.height > 0, text: c.textContent, sel: TEACHERSCREEN.screen.peek().selected }; });
+      line('Watch on Sam\'s row opens his Knight card at the top of Who is on, with Mute 10 min and Send off for today', card.shown && card.sel === 'Sam' && /Mute 10 min/.test(card.text) && /Send off for today/.test(card.text), card);
+    }
+    await sam.bringToFront(); await sam.keyboard.down('ArrowRight'); await wait(1500); await sam.keyboard.up('ArrowRight'); await wait(1500);
+    await tp.bringToFront(); await wait(300);
+    const centre = await tp.evaluate(() => { const V = VIEW.state, e = PLAYERS.remote[V.n], k = V.scale; return { dx: Math.round((e.shown.x - cam.x) * k + V.offX - V.paneW / 2), dy: Math.round((e.shown.y - cam.y) * k + V.offY - V.paneH / 2), what: document.querySelector('#tv-povhead .what').textContent, live: !document.querySelector('#tv-povhead .live').hidden, frames: V.stats }; });
+    // Fit is his whole screen: the teacher's world rectangle is the one his camera shows (he stands still)
+    {
+      const kid = await sam.evaluate(() => ({ x: cam.x, y: cam.y, w: VW, h: VH }));
+      const t = await tp.evaluate(() => ({ x: cam.x, y: cam.y, w: VW, h: VH, zoom: VIEW.state.zoom }));
+      line('Watch at Fit shows exactly Sam\'s screen: his camera ' + JSON.stringify(kid) + ', the teacher\'s ' + JSON.stringify(t) + ' (within 1 px)', t.zoom === 1 && Math.abs(kid.x - t.x) <= 1 && Math.abs(kid.y - t.y) <= 1 && Math.abs(kid.w - t.w) <= 1 && Math.abs(kid.h - t.h) <= 1, { kid, t });
+    }
+    // the names on his screen: at least 13 CSS px tall however small his screen is drawn here (measured off the canvas calls)
+    const nameSize = async page => page.evaluate(async () => {
+      // (the game's own context carries its own fillText, so the spy goes on it, not on the prototype)
+      const C = ctx, own = Object.prototype.hasOwnProperty.call(C, 'fillText'), f0 = C.fillText, seen = [];
+      C.fillText = function (txt, x, y) { if (txt === 'Sam' || txt === 'Ava') { const m = /(\d+(?:\.\d+)?)px/.exec(this.font), a = this.getTransform().a; seen.push(+m[1] * a / (canvas.width / canvas.getBoundingClientRect().width)); } return f0.apply(this, arguments); };
+      await new Promise(r => setTimeout(r, 400)); if (own) C.fillText = f0; else delete C.fillText;
+      return seen.length ? Math.min(...seen) : 0;
+    });
+    {
+      const px = await nameSize(tp);
+      line('the knights\' names in Watch at 1280x800 are ' + px.toFixed(1) + ' CSS px tall (13 at the least)', px >= 13, px);
+    }
     const samAt = await sam.evaluate(() => ({ x: Math.round(player.x), y: Math.round(player.y) }));
     const shown = await tp.evaluate(() => ({ x: Math.round(PLAYERS.remote[VIEW.state.n].x), y: Math.round(PLAYERS.remote[VIEW.state.n].y) }));
     line('Watch Sam: his screen is drawn in the middle pane, live: he is within 8 px of its centre (' + centre.dx + ', ' + centre.dy + '), where his own game has him, and the header says "' + centre.what + '"', Math.abs(centre.dx) <= 8 && Math.abs(centre.dy) <= 8 && Math.abs(samAt.x - shown.x) <= 48 && centre.live && /^Watching Sam/.test(centre.what), { centre, samAt, shown });
@@ -281,11 +328,25 @@ async function main() {
     // a tap on his screen does nothing in his game: it picks him
     const before = await sam.evaluate(() => ({ x: player.x, y: player.y }));
     const gb = await (await tp.$('#tv-glass')).boundingBox();
-    const at = await tp.evaluate(() => { const e = PLAYERS.remote[VIEW.state.n], k = VIEW.state.paneW / VW; return { x: (e.shown.x - cam.x) * k, y: (e.shown.y - 6 - cam.y) * k }; });
+    const at = await tp.evaluate(() => { const V = VIEW.state, e = PLAYERS.remote[V.n], k = V.scale; return { x: (e.shown.x - cam.x) * k + V.offX, y: (e.shown.y - 6 - cam.y) * k + V.offY }; });
     await tp.mouse.click(gb.x + at.x, gb.y + at.y); await wait(400);
     const after = await sam.evaluate(() => ({ x: player.x, y: player.y }));
-    const picked = await tp.evaluate(() => TEACHERSCREEN.screen.S.selected);
+    const picked = (await peek(tp)).selected;
     line('a tap on his screen picks him (his Knight card) and changes nothing in his game', picked === 'Sam' && Math.abs(after.x - before.x) < 1 && Math.abs(after.y - before.y) < 1, { picked, before, after });
+    // an iPad upright, watching: his screen gets at least 45% of the window, his names stay readable
+    for (const [w, h] of [[768, 1024], [820, 1180]]) {
+      await tp.setViewportSize({ width: w, height: h }); await wait(700);
+      const box = await tp.evaluate(() => { const r = document.getElementById('tv-watchbox').getBoundingClientRect(); return { h: Math.round(r.height), share: r.height / innerHeight, bar: Math.round(document.getElementById('tv-bar').getBoundingClientRect().height), head: Math.round(document.getElementById('tv-povhead').getBoundingClientRect().height) }; });
+      const px = await nameSize(tp);
+      line('watching on an iPad upright ' + w + 'x' + h + ': his screen is ' + Math.round(box.share * 100) + '% of the window (45% at the least; bar ' + box.bar + ' px, header ' + box.head + ' px), names ' + px.toFixed(1) + ' CSS px', box.share >= 0.45 && px >= 13 && box.bar <= 49.5, { box, px });
+      await shot(tp, '08b-watch-ipad-' + w + 'x' + h);
+    }
+    for (const [w, h] of [[1180, 820], [1024, 690]]) {
+      await tp.setViewportSize({ width: w, height: h }); await wait(600);
+      const px = await nameSize(tp);
+      line('watching on an iPad sideways ' + w + 'x' + h + ': names ' + px.toFixed(1) + ' CSS px (13 at the least)', px >= 13, px);
+    }
+    await tp.setViewportSize({ width: 1280, height: 800 }); await wait(500);
     await tp.keyboard.press('Escape'); await wait(500);
     const back = await tp.evaluate(() => ({ on: VIEW.state.on, map: !document.getElementById('tv-mappane').hidden, canvas: getComputedStyle(canvas).display }));
     line('Esc (Back to the map) brings the map back and stops the view', !back.on && back.map && back.canvas === 'none', back);
@@ -294,7 +355,7 @@ async function main() {
 
     // ---- 7. mute, undo; pause, chat back on; send off, let back in ----
     // (Sam's card is open from the tap on his screen; a tap on his row would close it again)
-    if (!(await tp.evaluate(() => TEACHERSCREEN.screen.S.selected === 'Sam'))) await samRow.click();
+    if ((await peek(tp)).selected !== 'Sam') await samRow.click();
     await wait(300);
     await tp.click('#tv-card button:has-text("Mute 10 min")'); await wait(1200);
     const muted = await sam.evaluate(() => CHAT.muted());
@@ -324,8 +385,19 @@ async function main() {
 
     // ---- 8. the teacher's token reaches nothing but the teacher view ----
     {
-      const r = await tp.evaluate(async () => {
-        const tok = TEACHERSCREEN.screen.S.token, h = { authorization: 'Bearer ' + tok, 'content-type': 'application/json' };
+      // NEGATIVE: the page keeps the token where no script reaches it: not on TEACHERSCREEN, LOGIN, VIEW (deep), what the screen
+      // shows (peek), storage, the address or the history
+      const kept = await tp.evaluate(tok => {
+        const reach = (root, needle) => { const seen = new Set(), stack = [[root, 0]]; while (stack.length) { const [o, d] = stack.pop(); if (typeof o === 'string') { if (o.includes(needle)) return true; continue; } if (!o || (typeof o !== 'object' && typeof o !== 'function') || seen.has(o) || d > 8) continue; seen.add(o); if (o instanceof Node || o === window) continue; let ks = []; try { ks = Object.keys(o); } catch (e) { } for (const k of ks) { let v; try { v = o[k]; } catch (e) { continue; } stack.push([v, d + 1]); } } return false; };
+        const out = ['TEACHERSCREEN', 'LOGIN', 'VIEW', 'NET'].filter(g => window[g] && reach(window[g], tok));
+        if (JSON.stringify(TEACHERSCREEN.screen.peek()).includes(tok)) out.push('peek');
+        if (JSON.stringify(Object.assign({}, localStorage)).includes(tok) || JSON.stringify(Object.assign({}, sessionStorage)).includes(tok)) out.push('storage');
+        if (location.href.includes(tok) || JSON.stringify(history.state || null).includes(tok)) out.push('address');
+        return out;
+      }, tToken);
+      line('NEGATIVE: the teacher\'s token (from the world\'s answer) is reachable from none of TEACHERSCREEN, LOGIN, VIEW and NET, nor what the screen shows, storage or the address', !!tToken && kept.length === 0, { kept, token: !!tToken });
+      const r = await tp.evaluate(async tok => {
+        const h = { authorization: 'Bearer ' + tok, 'content-type': 'application/json' };
         const knight = [['GET', '/api/me'], ['GET', '/api/save'], ['PUT', '/api/save'], ['GET', '/api/save/pin'], ['POST', '/api/save/pin'], ['POST', '/api/save/restore'], ['GET', '/api/accounts'], ['POST', '/api/accounts/reset'], ['POST', '/api/accounts/strikes'], ['POST', '/api/accounts/rename']];
         const adminCalls = ['online', 'accounts', 'chat', 'modlog', 'teachers', 'teacher-acts', 'invite', 'export', 'sim', 'trades', 'role', 'mute', 'ban', 'pin', 'restore'];
         const out = {};
@@ -333,7 +405,7 @@ async function main() {
         for (const c of adminCalls) for (const m of ['GET', 'POST']) out[m + ' /api/admin/' + c] = (await fetch('/api/admin/' + c, { method: m, headers: h, body: m === 'GET' ? undefined : '{}' })).status;
         out.ws = await new Promise(res => { const w = new WebSocket(location.origin.replace(/^http/, 'ws') + '/ws?token=' + tok); w.onopen = () => res('open'); w.onclose = e => res('closed ' + e.code); w.onerror = () => { }; });
         return out;
-      });
+      }, tToken);
       const all401 = Object.entries(r).filter(([k]) => k !== 'ws').every(([, v]) => v === 401);
       line('the teacher\'s token is 401 on every knight route and every admin call, and /ws never opens with it (' + (Object.keys(r).length - 1) + ' calls)', all401 && r.ws !== 'open', r);
     }
@@ -360,13 +432,13 @@ async function main() {
       line('Sign out: the card says "' + out.err + '"; no screen; nothing kept in sessionStorage', out.err === 'You signed out.' && !out.tv && out.ss.length === 0, out);
       await shot(tp, '15-signed-out');
       await signInCard(tp, tName, pass);
-      await tp.evaluate(() => { TEACHERSCREEN.screen.S.lastInput -= 62 * 60000; }); await wait(1500);
+      await tp.evaluate(() => { TEACHERSCREEN.screen.idleFor(62 * 60000); }); await wait(1500);
       await tp.waitForSelector('#fl-name', { state: 'visible', timeout: 10000 }); await wait(500);
       const idle = await tp.evaluate(() => document.querySelector('#fl-login .fl-err').textContent);
       line('idle (nothing pressed for an hour, then two minutes): "' + idle + '"', idle === 'You were signed out because nothing was pressed for an hour.', idle);
       await shot(tp, '16-idle-signed-out');
       await signInCard(tp, tName, pass);
-      await tp.evaluate(() => { TEACHERSCREEN.screen.S.expires = Date.now() - 1; }); await wait(1500);
+      await tp.evaluate(() => { TEACHERSCREEN.screen.expireNow(); }); await wait(1500);
       await tp.waitForSelector('#fl-name', { state: 'visible', timeout: 10000 }); await wait(500);
       const mid = await tp.evaluate(() => document.querySelector('#fl-login .fl-err').textContent);
       line('the session\'s end (10 hours, or midnight in Toronto): "' + mid + '"', mid === 'Your sign-in ran out for today. Sign in again to keep watching.', mid);
