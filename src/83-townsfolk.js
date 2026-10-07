@@ -488,11 +488,12 @@ const TOWNSFOLK = (() => {
         if (quest.tinker) quest.tinker.stage = 0;
         // the overworld: the square, the kids, the statues; Hollowford's square and the guild; the ferry; Sylvaris; Goblin City
         quest.hollowford = Object.assign({}, quest.hollowford || {}, { freed: true }); quest.rebuild = quest.rebuild || {}; quest.rebuild.done = Object.assign({}, quest.rebuild.done || {}, { house: true });
-        F.tp(112, 36); F.sim(2, []); render();
-        F.tp(139, 80); F.sim(2, []); render();
-        quest.guild = Object.assign({}, quest.guild || {}, { founded: true, rank: 4 }); F.tp(153, 69); F.sim(2, []); render();
-        F.tp(170, 14); render();
-        F.tp(181, 15); render();
+        const TD = ATLAS.frame('thistledown'), HF = ATLAS.frame('hollowford'), GI = ATLAS.frame('gull_isle');
+        F.tp(...TD.p(112, 36)); F.sim(2, []); render();
+        F.tp(...HF.p(139, 80)); F.sim(2, []); render();
+        quest.guild = Object.assign({}, quest.guild || {}, { founded: true, rank: 4 }); F.tp(...HF.p(153, 69)); F.sim(2, []); render();
+        F.tp(...ATLAS.port('dock.planks')); render();   // Harl, who waits on the dock's planks (26-boats LOC.dock.harl, the dock's frame)
+        F.tp(...GI.p(181, 15)); render();               // Pete on Gull Isle
         for (const p of taps()) look(p.x, p.y);
         // the followers: each in turn, following and on the machine; Sera in the cage before she is freed
         for (const id of ['sera', 'garrick']) { player.companion = { id, hp: 50, mode: 'follow', x: player.x - 30, y: player.y, freed: { sera: true }, downT: 0 }; F.sim(2, []); render(); }
@@ -644,7 +645,7 @@ const TOWNSFOLK = (() => {
     // makes no picture and draws nobody live; every townsperson on screen is one blit
     { const at0 = { x: player.x, y: player.y }, t0 = time, d0 = dialog.cur; let r = null;
       try {
-        F.tp(112, 33); dialog.cur = null; render();
+        F.tp(...ATLAS.port('thistledown.square')); dialog.cur = null; render();
         const s1 = Object.assign({}, STATS), b1 = Object.assign({}, STATS.by), by1 = Object.values(STATS.by).reduce((a, b) => a + b, 0);
         render();
         const by2 = Object.values(STATS.by).reduce((a, b) => a + b, 0);
@@ -728,7 +729,7 @@ const TOWNSFOLK = (() => {
     // above the top of his drawing, not at the old 24 px
     { let box = null; const _b = HK.brackets, p0 = { x: player.x, y: player.y, facing: player.facing };
       try {
-        const o = h.openSpot(40, 20); F.tp(o.x, o.y); player.facing = { x: 0, y: 1 };
+        const o = h.openSpot(ATLAS.world.tx(40), ATLAS.world.ty(20)); F.tp(o.x, o.y); player.facing = { x: 0, y: 1 };
         HK.brackets = (g, x, y, w, hh) => { box = { x, y, w, h: hh }; };
         PEOPLE_UI.brackets(new Rec(), { px: 500, py: 500, name: 'Old Harl' });
       } finally { HK.brackets = _b; Object.assign(player, p0); }

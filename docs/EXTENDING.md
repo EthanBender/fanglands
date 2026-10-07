@@ -428,7 +428,12 @@ map number like `112` will be wrong after the move. Every overworld position is 
   `W.tx(150)` / `W.ty(40)` give whole tiles, `W.x` / `W.y` reals, `W.ix` / `W.iy` the inverse. World noise and curves
   are evaluated in OLD coordinates through the inverse (`noise(W.ix(x), W.iy(y))`), so their shapes stretch and stay
   bit-identical until the spread. A seam that must meet a place's gate goes through its pin:
-  `W.pin('rim', W.y(95), x)` (see `ATLAS.PINS`: rim, gw_steps, giants, jungle_west, river, strait, sea).
+  `W.pin('rim', W.y(95), x)` (see `ATLAS.PINS`: rim, gw_steps, giants, jungle_west, river, strait, sea). Near the pin's
+  port the seam moves with the port's place by its OWN old value (a seam three rows below the steps stays three rows
+  below them), so always pass the seam's value: never take an offset as `W.pin(id, 0, x)` (the pin at row 0 is not the
+  pin at the seam). A band of rows about a seam is `W.pin(id, W.y(lo), x)` .. `W.pin(id, W.y(hi), x)`, and a row of it
+  maps back to its old row with `W.iy(W.unpin(id, y, x))`. A place feature that must sit ON a seam (the scarp's steps)
+  is cut at its port, not found by searching the seam.
 - **A road or path is a track**: read it with `ATLAS.track('road_cave')` (a list of `[x, y]`, each point a port, a
   place's own point or a world point), never as a literal polyline. A new road goes into `TRACKS` in `src/01-atlas.js`,
   written the same way (`['port', 'thistledown.west_gate']`, `['thistledown', 84, 32]`, `['w', 60, 70]`). A guard or
@@ -442,15 +447,21 @@ map number like `112` will be wrong after the move. Every overworld position is 
 - **Never wrapped**: sizes, radii, counts, durations, screen pixels, and an instance's own map (any map other than
   `'over'`). Those go in `docs/spread/literals-allow.json` with a one-line reason when the counter mistakes them for
   positions.
-- **The gate**: `build.sh` runs `node tools/literals.mjs --gate` over every file listed in `docs/spread/converted.json`.
-  A bare coordinate in a converted file fails the build with "wrap it: ATLAS.frame('<place>') or ATLAS.world". It counts
+- **The gate**: `build.sh` runs `node tools/literals.mjs --gate` over every file of `src/` and `tools/` (repo-wide since
+  Stage 3). A bare coordinate fails the build with "wrap it: ATLAS.frame('<place>') or ATLAS.world". It counts
   pairs, points, rects, tile calls, `tc(N)`, `N * TILE`, comparisons, a centre after a coordinate pair
   (`near(x, y, 66, 57, ...)`, `dist(x, y, 140, 76)`) and a distance to a place (`Math.hypot(x - 140, y - 76)`). Run
-  `node tools/literals.mjs src/NN-file.js` to see what it counts. An allow entry with a `literal` must be pinned to its
-  declaration (`"decl": "LAW_ARM_RANGE"`) or its `line`, so it never covers a new position elsewhere in the file.
+  `node tools/literals.mjs src/NN-file.js` to see what it counts. An allow entry names the `literal` it lets through and
+  pins it to its declaration (`"decl": "LAW_ARM_RANGE"`), to text on its own line (`"context": "remote('Ann', 'over',
+  player.x + 2 * TILE"`, for a literal in an unnamed hook or test) or to its `line`, so it never covers a new position
+  elsewhere in the file. The gate refuses an entry with no literal (a whole line), bar a `decl` alone that names exactly
+  one declaration in the file. In a file a peer branch also edits, pin by `decl` or `context`: a `line` pin moves under
+  the peer's edit and the merge fails the gate. The gate reads `src/[0-9]*.js` and the top level of `tools/` only;
+  `online/src/`, `online/test/`, `tools/sim-bench/` and `tests/` are outside it until Stage 4d (docs/spread/README.md).
 - **A new feature file is written in frames from the start** and is added to `docs/spread/converted.json` in the same
-  commit. The gate only reads the files that list names: a new file left off it is not checked at all (until Stage 3's
-  repo-wide gate), so its bare numbers would sit there unseen until the spread moves the land under them. A frame point far outside its own place (past the
+  commit. The gate is repo-wide (Stage 3): it reads every file of `src/` and `tools/`, listed or not, so a bare number in
+  a new file or a new tool fails the build. Only a file an open peer branch is editing may wait, in
+  `docs/spread/held.json`. A tool reads the Atlas inside the game it drives (`A.ATLAS.world.tx(40)`). A frame point far outside its own place (past the
   box + guard + 12) is logged by the strict report (`ATLAS.strict()`), which `tools/headless.js` and
   `tools/fingerprint.mjs` fail on unless `docs/spread/strict-allow.json` lists it.
 - **Proving nothing moved** (until the spread every frame, the world and every pin are the identity):

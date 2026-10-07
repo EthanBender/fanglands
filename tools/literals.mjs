@@ -18,16 +18,24 @@
 //   minus      x - 140, px - 142 ... a number of 10 or more in the map taken from a coordinate name (Math.hypot's
 //              arguments included: Math helpers are excepted only from gcall)
 // A literal inside a frame call (F.x(112), F.p(..), ATLAS.world.tx(..), ATLAS.port(..)) is wrapped, so it is not counted.
+// The tools (tools/*.js, tools/*.mjs, named 'tools/<file>'; ADDENDUM A.2) are read the same way, plus three things only
+// they do: game code handed to a game as text (R(A, `FANGLANDS.tp(24, 37)`), scanned where it sits), a tile call on a
+// game handle (openSpot(A, 60, 30)), and a named spot (['dock landing', 164, 14]). In src/ the last two are drop tables
+// and recipe rows far more often than places, so the game's files are not read for them.
 //
-//   node tools/literals.mjs [files...]       counts per file (all of src/ when no file is named)
+//   node tools/literals.mjs [files...]       counts per file (all of src/ and tools/ when no file is named)
 //   node tools/literals.mjs --inventory      writes docs/spread/inventory.json: { file, line, col, literal, kind, guess }
-//   node tools/literals.mjs --gate           the build's gate: every file in docs/spread/converted.json must have 0
-//                                            literals outside docs/spread/literals-allow.json; exit 1 otherwise
-// literals-allow.json: [{ file, literal?, line?, decl?, reason }] — no literal/line/decl allows the whole file (an
-// instance's own map); `decl` alone allows everything inside that named declaration (01-atlas's own ANCHORS table);
-// `literal` matches the source text (spaces ignored) and MUST be pinned by `decl` (the declaration it sits in: the
-// sturdy pin, it survives edits above it) or `line`, so one exemption never covers a new position written elsewhere in
-// the same file. An unpinned `literal` entry matches nothing, and the gate names it.
+//   node tools/literals.mjs --gate           the build's gate, REPO-WIDE: every file of src/ and tools/ must have 0
+//                                            literals outside docs/spread/literals-allow.json, bar a file an open peer
+//                                            branch holds (docs/spread/held.json); exit 1 otherwise
+// literals-allow.json: [{ file, literal?, decl?, context?, line?, reason }] — an entry with no literal (the whole file, or
+// a whole line) is refused by the gate, bar `decl` alone, which allows everything inside that ONE named declaration
+// (01-atlas's own ANCHORS table): the gate refuses a decl-only pin whose name has more than one declaration in the file
+// (shorthand properties { ANCHORS } are not declarations). `literal` matches the source text (spaces ignored) and MUST be
+// pinned by `decl` (the declaration it sits in: the sturdy pin, it survives edits above it), `context` (text that must
+// stand on the literal's own line, spaces ignored: for a literal in an unnamed hook or test, it survives a peer's edits
+// above it too) or `line`, so one exemption never covers a new position written elsewhere in the same file. An unpinned
+// `literal` entry matches nothing, and the gate names it.
 // ============================================================================
 import fs from 'node:fs';
 import path from 'node:path';
@@ -38,6 +46,7 @@ import { fileURLToPath } from 'node:url';
 export const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const SPREAD = path.join(ROOT, 'docs', 'spread');
 const SRC = path.join(ROOT, 'src');
+const TOOLS = path.join(ROOT, 'tools');   // ADDENDUM A.2: the tools stand knights and read tiles on the overworld too
 const MAP_W = 260, MAP_H = 180;   // the map the literals were written for (read from 00-core below when it parses)
 
 let acorn = null;
@@ -47,7 +56,12 @@ export function parser() {
   catch (e) { throw new Error('literals: acorn is missing: run (cd online && npm ci)'); }
   return acorn;
 }
-export const parse = src => parser().parse(src, { ecmaVersion: 'latest', sourceType: 'script', allowReturnOutsideFunction: true, locations: true, ranges: true });
+export const parse = (src, sourceType = 'script') => parser().parse(src, { ecmaVersion: 'latest', sourceType, allowReturnOutsideFunction: true, allowHashBang: true, locations: true, ranges: true });
+// a file of the repo: 'NN-name.js' is src/'s (as converted.json and the allow list name it), 'tools/name.js' a tool's
+export const isTool = f => /^tools\//.test(f);
+export const fileOf = f => isTool(f) ? path.join(ROOT, f) : path.join(SRC, f);
+// a tool may be a module (.mjs, or a .js with import/export); the game's files are scripts
+export const parseFile = (f, src) => { if (/\.mjs$/.test(f)) return parse(src, 'module'); try { return parse(src); } catch (e) { return parse(src, 'module'); } };
 
 // ---------- the Atlas tables, read from src/01-atlas.js without running the game ----------
 // ANCHORS and PORTS are plain data literals: each is evaluated alone, in an empty context.
@@ -134,9 +148,10 @@ function wrapped(anc) {
 // every coordinate-shaped literal of one file: [{ line, col, literal, kind, x, y, start, end, nodes }]
 export function scanSource(src, opts = {}) {
   const W = opts.W || MAP_W, H = opts.H || MAP_H, out = [], seen = new Set();
-  const ast = parse(src);
+  const ast = opts.ast || parse(src, opts.sourceType);
   // a tile is a whole number (a centre may be a half: the fountain's 35.5); 6.4 is a drawing's, not a map's
   const tileish = v => Number.isInteger(v * 2);
+  const lineCol = off => { let line = 1, last = -1; for (let i = src.indexOf('\n'); i >= 0 && i < off; i = src.indexOf('\n', i + 1)) { line++; last = i; } return { line, col: off - last }; };
   const inMapX = v => tileish(v) && v >= 0 && v <= W - 1, inMapY = v => tileish(v) && v >= 0 && v <= H - 1;
   const add = (node, kind, x, y, nodes) => {
     const key = node.start + ':' + kind; if (seen.has(key)) return; seen.add(key);
@@ -150,6 +165,11 @@ export function scanSource(src, opts = {}) {
       if (parent && parent.type === 'ArrayExpression' && parent.elements.some(e => e && e !== n && e.type === 'ArrayExpression' && e.elements.length === 2 && e.elements.every(v => num(v) || neg(v)) && e.elements.some(v => neg(v) || !Number.isInteger(v.value * 2)))) return;
       if (inMapX(a) && inMapY(b) && Math.max(a, b) >= 2) add(n, 'pair', a, b, [n.elements[0], n.elements[1]]);
     }
+    // a named spot: ['Grubb', 216, 23] / ["Tinkerton's lab", 247, 42, id] (a string, then a map tile)
+    if (opts.tools && n.type === 'ArrayExpression' && n.elements.length >= 3 && n.elements[0] && (n.elements[0].type === 'Literal' && typeof n.elements[0].value === 'string' || n.elements[0].type === 'TemplateLiteral') && num(n.elements[1]) && num(n.elements[2])) {
+      const a = n.elements[1].value, b = n.elements[2].value;
+      if (inMapX(a) && inMapY(b) && Math.max(a, b) >= 2) add(n, 'named', a, b, [n.elements[1], n.elements[2]]);
+    }
     if (n.type === 'ObjectExpression') {
       const props = {}; for (const p of n.properties) { const k = propName(p); if (k) props[k] = p.value; }
       for (const [kx, ky] of [['x', 'y'], ['tx', 'ty']]) if (num(props[kx]) && num(props[ky]) && inMapX(props[kx].value) && inMapY(props[ky].value) && Math.max(props[kx].value, props[ky].value) >= 2) add(n, 'point', props[kx].value, props[ky].value, [props[kx], props[ky]]);
@@ -158,6 +178,11 @@ export function scanSource(src, opts = {}) {
     }
     if (n.type === 'CallExpression') {
       const c = n.callee, name = c.type === 'Identifier' ? c.name : c.type === 'MemberExpression' && !c.computed ? c.property.name : null;
+      // a tile call on a game handle: openSpot(A, 60, 30), tp(g, 140, 80) (the tools drive two games at once)
+      if (opts.tools && name && CALLS.has(name) && n.arguments.length >= 3 && !num(n.arguments[0]) && !(nameOf(n.arguments[0]) && COORD_NAME.test(nameOf(n.arguments[0]))) && n.arguments[0].type !== 'SpreadElement' && num(n.arguments[1]) && num(n.arguments[2])) {
+        const a = n.arguments[1], b = n.arguments[2];
+        if (inMapX(a.value) && inMapY(b.value) && Math.max(a.value, b.value) >= 2) add(n, 'call', a.value, b.value, [a, b]);
+      }
       if (name && CALLS.has(name) && n.arguments.length >= 2 && (num(n.arguments[0]) || num(n.arguments[1]))) {
         const a = n.arguments[0], b = n.arguments[1];
         if ((!num(a) || inMapX(a.value)) && (!num(b) || inMapY(b.value)) && (num(a) ? a.value : 0) + (num(b) ? b.value : 0) >= 2) add(n, 'call', num(a) ? a.value : null, num(b) ? b.value : null, [a, b].filter(num));
@@ -203,6 +228,27 @@ export function scanSource(src, opts = {}) {
         for (const a of [a2, a3]) if (a.value >= 10) add(a, 'rel', null, null, [a]);
     }
   });
+  // Game code inside a string (tools only): a tool hands a game handle its code as text (R(A, `FANGLANDS.tp(24, 37)`),
+  // ev(g, '...'), page.evaluate(`...`)). A string or template argument that parses as JavaScript is scanned like code;
+  // each `${...}` stands as a name, and every hit is reported at its place in the tool's own source.
+  if (opts.tools && !opts.inner) walk(ast, n => {
+    if (n.type !== 'CallExpression') return;
+    for (const a of n.arguments) {
+      if (!a || !((a.type === 'Literal' && typeof a.value === 'string') || a.type === 'TemplateLiteral')) continue;
+      const segs = [];   // [innerStart, outerStart, length]: the raw text of each piece, at its outer offset
+      let code = '';
+      if (a.type === 'Literal') { segs.push([0, a.start + 1, a.end - a.start - 2]); code = src.slice(a.start + 1, a.end - 1); }
+      else a.quasis.forEach((q, i) => { segs.push([code.length, q.start, q.end - q.start]); code += src.slice(q.start, q.end); if (i < a.expressions.length) { segs.push([code.length, a.expressions[i].start, 0]); code += '__e' + i; } });
+      if (code.length < 6 || !/\(/.test(code)) continue;
+      let inner; try { inner = scanSource(code, Object.assign({}, opts, { inner: true, ast: undefined, sourceType: 'script' })); } catch (e) { continue; }
+      const outer = off => { let s = segs[0]; for (const g of segs) if (g[0] <= off) s = g; return s[1] + Math.min(off - s[0], s[2]); };
+      for (const h of inner) {
+        const start = outer(h.start), end = Math.max(start + 1, outer(h.end)), pos = lineCol(start);
+        const key = start + ':' + h.kind; if (seen.has(key)) continue; seen.add(key);
+        out.push(Object.assign({}, h, { line: pos.line, col: pos.col, start, end, inString: true }));
+      }
+    }
+  });
   // A named coordinate: `const X = 112, Y = 49; setTile(X, Y)`. A declaration of a whole map number (10 or more) whose name
   // is then a tile argument (setTile and the other CALLS, any call's first two arguments, tc(NAME), NAME * TILE) is counted
   // as kind 'decl' at the declaration, for the hand pass (names are matched without scopes: an over-count, never a miss).
@@ -228,10 +274,13 @@ export function scanSource(src, opts = {}) {
   return out.sort((a, b) => a.start - b.start);
 }
 
+export const srcFiles = () => fs.readdirSync(SRC).filter(f => /^[0-9].*\.js$/.test(f)).sort();
+export const toolFiles = () => fs.readdirSync(TOOLS).filter(f => /\.m?js$/.test(f) && fs.statSync(path.join(TOOLS, f)).isFile()).sort().map(f => 'tools/' + f);
+// the files named on the command line (src/NN.js, NN.js or tools/x.js), or every one of src/ and tools/
 export function sourceFiles(names) {
-  const all = fs.readdirSync(SRC).filter(f => /^[0-9].*\.js$/.test(f)).sort();
+  const all = srcFiles().concat(toolFiles());
   if (!names || !names.length) return all;
-  return names.map(n => path.basename(n)).filter(n => all.includes(n));
+  return names.map(n => n.replace(/^\.\//, '')).map(n => /^tools\//.test(n) ? n : path.basename(n)).filter(n => all.includes(n));
 }
 
 // ---------- the allow list ----------
@@ -240,51 +289,93 @@ export function allowList() {
   return fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, 'utf8')) : [];
 }
 const squash = s => String(s).replace(/\s+/g, '');
-// an entry with a `literal` but neither `decl` nor `line` is unpinned: it matches nothing (the gate names it)
-export const unpinned = a => a.literal !== undefined && a.decl === undefined && a.line === undefined;
+// an entry with a `literal` but no `decl`, `context` or `line` is unpinned: it matches nothing (the gate names it)
+export const unpinned = a => a.literal !== undefined && a.decl === undefined && a.line === undefined && a.context === undefined;
+// the declarations of a file by name: const NAME = ..., function NAME () {...}, or a property NAME: ... / NAME () {...}
+// (a shorthand property { NAME } declares nothing), each with the source range of its value
+export function declIndex(ast) {
+  const byName = new Map(), put = (k, r) => { if (!byName.has(k)) byName.set(k, []); byName.get(k).push(r); };
+  walk(ast, n => {
+    if (n.type === 'VariableDeclarator' && n.id.type === 'Identifier' && n.init) put(n.id.name, [n.init.start, n.init.end]);
+    else if (n.type === 'FunctionDeclaration' && n.id) put(n.id.name, [n.start, n.end]);
+    else if ((n.type === 'Property' || n.type === 'MethodDefinition') && n.value && !n.shorthand) { const k = propName(n); if (k !== null && k !== undefined) put(k, [n.value.start, n.value.end]); }
+  });
+  return byName;
+}
 export function allowed(file, hit, src, allow, declRanges) {
+  let lines = null;
   for (const a of allow) {
     if (a.file !== file || unpinned(a)) continue;
     if (a.decl !== undefined) { const r = declRanges(a.decl); if (!r.some(([s, e]) => hit.start >= s && hit.end <= e)) continue; }
     if (a.line !== undefined && a.line !== hit.line) continue;
+    if (a.context !== undefined) { lines = lines || src.split('\n'); if (!squash(lines[hit.line - 1] || '').includes(squash(a.context))) continue; }
     if (a.literal !== undefined && squash(a.literal) !== squash(hit.literal)) continue;
     return a;
   }
   return null;
 }
 export function scanFile(file, allow = allowList(), T = null) {
-  const src = fs.readFileSync(path.join(SRC, file), 'utf8');
-  const hits = scanSource(src);
-  let ast = null;
-  // a `decl` pin: a declaration by name (const NAME = ..., function NAME () {...}, or a property NAME: ... / NAME () {...})
-  const declRanges = name => { ast = ast || parse(src); const out = []; walk(ast, n => {
-    if (n.type === 'VariableDeclarator' && n.id.type === 'Identifier' && n.id.name === name && n.init) out.push([n.init.start, n.init.end]);
-    else if (n.type === 'FunctionDeclaration' && n.id && n.id.name === name) out.push([n.start, n.end]);
-    else if ((n.type === 'Property' || n.type === 'MethodDefinition') && propName(n) === name && n.value) out.push([n.value.start, n.value.end]);
-  }); return out; };
+  const src = fs.readFileSync(fileOf(file), 'utf8');
+  const tool = isTool(file), ast = parseFile(file, src);
+  const hits = scanSource(src, { ast, tools: tool });
+  // a `decl` pin: a declaration by name (declIndex). Every named declaration's ranges are gathered in one walk, the
+  // first time a pin asks (one walk per file, not per pin).
+  let byName = null;
+  const declRanges = name => { if (!byName) byName = declIndex(ast); return byName.get(name) || []; };
   const bare = [], ok = [];
   for (const h of hits) { const a = allowed(file, h, src, allow, declRanges); (a ? ok : bare).push(a ? Object.assign({}, h, { allowedBy: a.reason }) : h); }
   if (T) for (const h of bare) h.guess = h.x !== null && h.x !== undefined && h.y !== null && h.y !== undefined ? anchorOf(T, h.x, h.y).id : null;
-  return { file, src, bare, allowed: ok };
+  return { file, src, bare, allowed: ok, declRanges };
 }
 
 // ---------- the command line ----------
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const argv = process.argv.slice(2), files = argv.filter(a => !a.startsWith('--'));
   if (argv.includes('--gate')) {
-    const cf = path.join(SPREAD, 'converted.json');
-    const converted = fs.existsSync(cf) ? JSON.parse(fs.readFileSync(cf, 'utf8')) : [];
-    const list = (Array.isArray(converted) ? converted : converted.files || []).map(f => path.basename(f));
-    if (!list.length) process.exit(0);   // nothing converted yet: the gate has nothing to hold
-    const allow = allowList(), T = atlasTables(); let bad = 0;
-    for (const a of allow) if (unpinned(a)) { bad++; console.error(`literals gate: docs/spread/literals-allow.json: the ${a.file} entry for ${JSON.stringify(a.literal)} has no decl or line: pin it to the declaration (or line) it allows`); }
-    for (const f of list) {
-      if (!fs.existsSync(path.join(SRC, f))) { console.error(`literals gate: docs/spread/converted.json names ${f}, which is not in src/`); bad++; continue; }
-      const r = scanFile(f, allow, T);
-      for (const h of r.bare) { bad++; console.error(`src/${f}:${h.line}:${h.col}: bare ${h.kind} ${h.literal} — wrap it: ATLAS.frame('${h.guess && h.guess !== 'world' ? h.guess : '<place>'}') or ATLAS.world`); }
+    // REPO-WIDE (Stage 3): every file of src/ and tools/ is held to 0 bare coordinates outside the allow list, whether
+    // converted.json names it or not. The one way out is docs/spread/held.json: a file an open peer branch is editing
+    // ([{ file, branch, reason }]), converted after that branch merges; the gate lists each one it lets wait, and names
+    // a held file that has no bare literal left (it can leave the list) or that no longer exists.
+    const rd = f => { const p = path.join(SPREAD, f); return fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, 'utf8')) : []; };
+    const norm = f => /^tools\//.test(f) ? f : path.basename(f);
+    const converted = rd('converted.json'), list = (Array.isArray(converted) ? converted : converted.files || []).map(norm);
+    const held = new Map(rd('held.json').map(h => [norm(h.file), h]));
+    const allow = allowList(), T = atlasTables(); let bad = 0, waiting = 0;
+    // every exemption is pinned (Stage 3): an entry with no literal, decl or line would let the whole file through, so a
+    // new position written anywhere in it would pass unseen; the gate refuses it
+    for (const a of allow) if (a.literal === undefined && a.decl === undefined && a.line === undefined && a.context === undefined) { bad++; console.error(`literals gate: docs/spread/literals-allow.json: the ${a.file} entry allows the whole file: pin each literal it means to its decl (or line)`); }
+    // and every exemption names what it lets through: a line or a context with no literal admits any position later
+    // written on that line, so it is refused too (give it the literal it means)
+    for (const a of allow) if (a.literal === undefined && a.decl === undefined && (a.line !== undefined || a.context !== undefined)) { bad++; console.error(`literals gate: docs/spread/literals-allow.json: the ${a.file} entry for line ${a.line !== undefined ? a.line : JSON.stringify(a.context)} has no literal: name the literal it allows`); }
+    for (const a of allow) if (unpinned(a)) { bad++; console.error(`literals gate: docs/spread/literals-allow.json: the ${a.file} entry for ${JSON.stringify(a.literal)} has no decl, context or line: pin it to the declaration (or line) it allows`); }
+    for (const f of list) if (!fs.existsSync(fileOf(f))) { console.error(`literals gate: docs/spread/converted.json names ${f}, which is not in ${isTool(f) ? 'tools/' : 'src/'}`); bad++; }
+    for (const [f, h] of held) {
+      if (!fs.existsSync(fileOf(f))) { console.error(`literals gate: docs/spread/held.json names ${f}, which does not exist`); bad++; }
+      else if (list.includes(f)) { console.error(`literals gate: ${f} is both converted (converted.json) and held (held.json): take it off held.json`); bad++; }
+      else if (!h.branch || !h.reason) { console.error(`literals gate: docs/spread/held.json's entry for ${f} needs its branch and a reason`); bad++; }
     }
-    if (bad) { console.error(`literals gate: ${bad} bare map coordinate${bad > 1 ? 's' : ''} in converted files (docs/spread/converted.json). Wrap each in its place's frame, or add it to docs/spread/literals-allow.json with a reason.`); process.exit(1); }
-    console.log(`literals gate: ${list.length} converted file${list.length > 1 ? 's' : ''}, 0 bare coordinates`);
+    const all = sourceFiles();
+    // and the record is whole: a file that reads an overworld position from the Atlas (a frame, a port, the world, a box
+    // or a track) holds one, so converted.json must name it (the Atlas's own counting and rewriting tools excepted: they
+    // write and count frame calls, they stand nothing anywhere)
+    const ATLAS_TOOLS = ['tools/literals.mjs', 'tools/frame-codemod.mjs'], READS = /\bATLAS\s*\.\s*(frame|port|world|box|track)\b/;
+    for (const f of all) {
+      if (list.includes(f) || held.has(f) || ATLAS_TOOLS.includes(f)) continue;
+      if (READS.test(fs.readFileSync(fileOf(f), 'utf8'))) { bad++; console.error(`literals gate: ${isTool(f) ? f : 'src/' + f} reads overworld positions from the Atlas but is not in docs/spread/converted.json: add it`); }
+    }
+    for (const f of all) {
+      const r = scanFile(f, allow, T), name = isTool(f) ? f : 'src/' + f;
+      if (held.has(f)) { if (r.bare.length) { waiting += r.bare.length; console.log(`literals gate: ${name} waits for ${held.get(f).branch} (${r.bare.length} bare, docs/spread/held.json)`); } else console.log(`literals gate: ${name} is held (docs/spread/held.json) but has no bare coordinate left: it can leave held.json`); continue; }
+      for (const h of r.bare) { bad++; console.error(`${name}:${h.line}:${h.col}: bare ${h.kind} ${h.literal} — wrap it: ATLAS.frame('${h.guess && h.guess !== 'world' ? h.guess : '<place>'}') or ATLAS.world`); }
+      // a decl-only pin allows everything inside its declaration, so it must name exactly one: a name declared twice in
+      // the file (a property of that name elsewhere, a second const in another scope) would let the second one through
+      for (const a of allow) if (a.file === f && a.literal === undefined && a.decl !== undefined) {
+        const n = r.declRanges(a.decl).length;
+        if (n !== 1) { bad++; console.error(`literals gate: docs/spread/literals-allow.json: the ${a.file} entry for decl ${JSON.stringify(a.decl)} with no literal names ${n ? n + ' declarations' : 'no declaration'} in ${name}: give it its literals (or rename the declaration it means)`); }
+      }
+    }
+    if (bad) { console.error(`literals gate: ${bad} bare map coordinate${bad > 1 ? 's' : ''} or list fault${bad > 1 ? 's' : ''} in src/ and tools/. Wrap each in its place's frame, or add it to docs/spread/literals-allow.json with a reason.`); process.exit(1); }
+    console.log(`literals gate (repo-wide): ${all.length} files of src/ and tools/ (${list.length} in converted.json), 0 bare coordinates${held.size ? `; ${held.size} held for a peer branch (${waiting} bare, docs/spread/held.json)` : ''}`);
     process.exit(0);
   }
   const allow = allowList(), T = atlasTables(), rows = [];
@@ -294,12 +385,12 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     rows.push({ file: f, bare: r.bare, allowed: r.allowed.length });
   }
   if (argv.includes('--inventory')) {
-    const inv = [];
-    for (const r of rows) for (const h of r.bare) inv.push({ file: r.file, line: h.line, col: h.col, literal: h.literal, kind: h.kind, guess: h.guess });
+    const inv = [], hf = path.join(SPREAD, 'held.json'), held = new Map((fs.existsSync(hf) ? JSON.parse(fs.readFileSync(hf, 'utf8')) : []).map(h => [/^tools\//.test(h.file) ? h.file : path.basename(h.file), h.branch]));
+    for (const r of rows) for (const h of r.bare) inv.push(Object.assign({ file: r.file, line: h.line, col: h.col, literal: h.literal, kind: h.kind, guess: h.guess }, held.has(r.file) ? { held: held.get(r.file) } : {}));
     fs.mkdirSync(SPREAD, { recursive: true });
     const byKind = {}; for (const h of inv) byKind[h.kind] = (byKind[h.kind] || 0) + 1;
-    fs.writeFileSync(path.join(SPREAD, 'inventory.json'), JSON.stringify({ about: 'bare coordinate-shaped literals in src/ (tools/literals.mjs --inventory); guess = the anchor tools/anchor-of.mjs names for a pair or point, world when no place box holds it, null for one axis alone', total: inv.length, byKind, files: rows.filter(r => r.bare.length).length, literals: inv }, null, 0).replace(/\},\{"file"/g, '},\n{"file"') + '\n');
-    console.log(`inventory: ${inv.length} literals in ${rows.filter(r => r.bare.length).length} files written to docs/spread/inventory.json (${Object.entries(byKind).map(([k, v]) => k + ' ' + v).join(', ')})`);
+    fs.writeFileSync(path.join(SPREAD, 'inventory.json'), JSON.stringify({ about: 'bare coordinate-shaped literals in src/ and tools/ (tools/literals.mjs --inventory; a tool file is named tools/<name>); guess = the anchor tools/anchor-of.mjs names for a pair or point, world when no place box holds it, null for one axis alone', total: inv.length, outsideHeld: inv.filter(h => !h.held).length, byKind, files: rows.filter(r => r.bare.length).length, literals: inv }, null, 0).replace(/\},\{"file"/g, '},\n{"file"') + '\n');
+    console.log(`inventory: ${inv.length} literals in ${rows.filter(r => r.bare.length).length} files written to docs/spread/inventory.json (${Object.entries(byKind).map(([k, v]) => k + ' ' + v).join(', ')}); ${inv.filter(h => !h.held).length} outside the files held for a peer branch (docs/spread/held.json)`);
   } else {
     for (const r of rows) if (r.bare.length || files.length) console.log(`${String(r.bare.length).padStart(5)}  ${r.file}${r.allowed ? `  (+${r.allowed} allowed)` : ''}`);
     console.log(`${String(total).padStart(5)}  total`);

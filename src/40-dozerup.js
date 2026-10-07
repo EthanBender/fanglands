@@ -79,11 +79,13 @@
   // A mechanic's pit in the smithy yard: the two-row grass strip between Brakka's south wall and the road. (96, 43) keeps the
   // smithy door lane (x 93) clear; if another feature has built there, the nearest free grass tile in the strip is used instead.
   const T_BAY = addTile('DOZER_BAY', { solid: true, tex: 'cobble', mini: '#5a5a62' });
-  const BAY_WANT = [96, 43];
+  // the bay's spot is the port thistledown.dozer_bay; its fallbacks are Thistledown's frame (the spread spec, section 9.1)
+  const TD = ATLAS.frame('thistledown');
+  const BAY_WANT = ATLAS.port('thistledown.dozer_bay');
   let bayPos = null;
   HOOKS.world.push((rnd, api) => {
     const free = (x, y) => inMap(x, y) && api.tileAt(x, y) === T.GRASS && !insideBuilding(x, y);
-    const spots = [BAY_WANT, [97, 43], [95, 43], [98, 43], [96, 42], [97, 42], [95, 42], [98, 42], [94, 43], [94, 42]];
+    const spots = [BAY_WANT, ...TD.pts([[97, 43], [95, 43], [98, 43], [96, 42], [97, 42], [95, 42], [98, 42], [94, 43], [94, 42]])];
     const s = spots.find(([x, y]) => free(x, y));
     if (!s) { bayPos = null; return; }
     api.setTile(s[0], s[1], T_BAY); bayPos = { x: s[0], y: s[1] };
@@ -261,7 +263,7 @@
     }
     // 3. the bay tile exists in the smithy yard and E opens the panel
     const bay = bayPos;
-    check(P + 'DOZER_BAY tile registered (solid, cobble) and carved in the smithy yard by (96, 43)', T.DOZER_BAY === T_BAY && SOLID.has(T_BAY) && !!bay && tileAt(bay.x, bay.y) === T_BAY && Math.abs(bay.x - 96) <= 2 && Math.abs(bay.y - 43) <= 1 && !insideBuilding(bay.x, bay.y), { bay });
+    check(P + 'DOZER_BAY tile registered (solid, cobble) and carved in the smithy yard by (96, 43)', T.DOZER_BAY === T_BAY && SOLID.has(T_BAY) && !!bay && tileAt(bay.x, bay.y) === T_BAY && Math.abs(bay.x - BAY_WANT[0]) <= 2 && Math.abs(bay.y - BAY_WANT[1]) <= 1 && !insideBuilding(bay.x, bay.y), { bay });
     if (!bay) return;
     h.peace(true); closePanel();
     const inv0 = player.inv.map(s => s ? { ...s } : null), craft0 = player.skills.crafting.xp, up0 = player.dozerUp;
@@ -298,7 +300,7 @@
       removeItem('blueprint_irondrill', 99); removeItem('steel_bar', 6); removeItem('coal', 4); player.dozerUp.drill = true; player.dozerUp.irondrill = true; }
     closePanel();
     // 5. driving with the upgrades: a parked bulldozer on a clear grass lane in the open fields
-    const o = h.openSpot(58, 50);
+    const o = h.openSpot(...ATLAS.frame('drill_field').p(58, 50));   // the drill field's flat lane (22-bulldozer's)
     const natural = [T.TREE, T.OAK, T.ROCK, T.IRON, T.COAL, T.FLOWERS, T.MUSHROOM, T.DIRT, T.STUMP, T.RUBBLE, T.SAND, T.SOIL];
     for (let yy = o.y - 1; yy <= o.y + 1; yy++) for (let xx = o.x - 2; xx <= o.x + 12; xx++) if (natural.includes(tileAt(xx, yy))) changeTile(xx, yy, T.GRASS);
     regrow = regrow.filter(r => { const tx = r.i % MAP_W, ty = Math.floor(r.i / MAP_W); return !(ty >= o.y - 1 && ty <= o.y + 1 && tx >= o.x - 2 && tx <= o.x + 12); });

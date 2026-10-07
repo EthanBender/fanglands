@@ -75,7 +75,7 @@ async function scene(browser, touch) {
     await page.waitForFunction(() => monsters.some(m => m.type === 'barrelbeast' && !m.dead), null, { timeout: 4000 }).catch(() => { });
     const shed = await page.evaluate(() => ({ inst: INSTANCES.active(), up: monsters.filter(m => m.type === 'barrelbeast' && !m.dead).length, shedUp: quest.hollowford.shedUp }));
     check('E on the War Shed valve stands one Barrelbeast up off the stocks', shed.inst === 'war_shed' && shed.up === 1 && shed.shedUp === true, shed);
-    await page.evaluate(() => { INSTANCES.leave(); quest.storm = Object.assign(quest.storm || {}, { beaten: true, restUntil: 0 }); if (!countItem('wind_flute')) addItem('wind_flute', 1); FANGLANDS.tp(62, 7); FANGLANDS.face(62, 6); dialog.cur = null; dialog.queue.length = 0; closePanel(); });
+    await page.evaluate(() => { INSTANCES.leave(); quest.storm = Object.assign(quest.storm || {}, { beaten: true, restUntil: 0 }); if (!countItem('wind_flute')) addItem('wind_flute', 1); FANGLANDS.tp(...ATLAS.port('quarry.shrine_step')); FANGLANDS.face(...ATLAS.port('quarry.shrine')); dialog.cur = null; dialog.queue.length = 0; closePanel(); });
     await page.waitForTimeout(150); await page.keyboard.press('e');
     await page.waitForFunction(() => panel === 'windshrine' && buttons.some(x => x.label === 'Into the storm'), null, { timeout: 4000 }).catch(() => { });
     const btn = await page.evaluate(() => { const b = buttons.find(x => x.label === 'Into the storm'); return { panel, b: b && { x: b.x + b.w / 2, y: b.y + b.h / 2, h: b.h } }; });

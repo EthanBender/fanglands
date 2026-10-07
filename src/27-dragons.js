@@ -14,22 +14,36 @@
   const DR_SHRINE = addTile('SHRINE', { solid: true, tex: 'cave', mini: '#8d9098' });
 
   // ---------- geometry ----------
-  const AF = { x0: 0, y0: 96, x1: 99, y1: 139 };                 // the whole south-west
-  const FANG = { x0: 2, y0: 108, x1: 34, y1: 138 };               // The Fang's lair: another feature carves this; never touched here
-  const APPROACH = { x0: 1, y0: 103, x1: 40, y1: 107 };           // kept as clear ash so the lair can always be reached from the east
-  const FARM = { x0: 58, y0: 96, x1: 79, y1: 107 };               // no lava, rocks or dead trees on Dunstan's land
-  const HUT = { x: 64, y: 98, w: 5, h: 4 };                       // door at (66,101), step at (66,102)
-  const FIELD = { x0: 70, y0: 98, x1: 76, y1: 103, gx: 70, gy: 101 };
-  const DUNSTAN_T = { x: 67, y: 104 };
-  const FIRE_T = { x: 62, y: 104 };
-  const SHRINE_T = { x: 87, y: 103 };
-  const ENTRANCE_OBSIDIAN = [[56, 98], [63, 108], [72, 108]];
-  const LAVA_POOLS = [[50, 116, 2.4], [63, 123, 3.1], [79, 114, 2.0], [88, 129, 3.4], [45, 131, 2.6], [70, 134, 2.2], [58, 111, 1.5], [93, 118, 1.8]];
-  const BONES = [[55, 113], [84, 121], [66, 128], [44, 123], [92, 111], [38, 118], [52, 136]];
-  const GREEN_SPAWNS = [[52, 120], [76, 118], [60, 131], [91, 124]];
-  const RED_SPAWNS = [[81, 135], [47, 136]];
-  const PATH = [[60, 94], [60, 100], [56, 104], [48, 105], [36, 105]];      // Wolfwood → the Ashfields → toward the lair
-  const FARM_PATH = [[60, 100], [63, 103], [69, 103]];
+  // Every overworld position reads the Atlas (the spread spec, section 9.1). The Ashfields are the stretched world (a world
+  // rect, its east edge the column before the jungle's JR in 25-elves, so no band of The Wilds opens between them at the
+  // spread); its lava, bones and dragons are world points; Dunstan's farm, hut, field and fire are the warden's frame
+  // (with its ports); the lair and its approach are The Fang's; the ruined shrine is its port. The two tracks are
+  // TRACKS.path_ash and path_farm.
+  const DW = ATLAS.world, WD = ATLAS.frame('warden'), FL = ATLAS.frame('fang_lair');
+  const XY = ([x, y]) => ({ x, y }), rt = ([x, y]) => [Math.round(x), Math.round(y)];   // a world point as a whole tile
+  // the whole south-west: its top is the row under the rim at the warden's gate and its east edge the column before the
+  // Ashfields / Jungle wall, both pinned seams that move with the warden (ATLAS.PINS rim and jungle_west), not open land.
+  // The wall is one column on its pin's taper, so the box (a bounding box: 92's outline trims it to the wall, row by
+  // row) reaches the wall's furthest column over its rows.
+  const AF = { x0: DW.tx(0), y0: Math.round(DW.pin('rim', DW.y(96), ATLAS.port('warden.gate')[0])), y1: DW.ty(139) };
+  AF.x1 = Math.max(...Array.from({ length: AF.y1 - AF.y0 + 1 }, (_, k) => DW.line('jungle_west', AF.y0 + k))) - 1;
+  const FANG = FL.rect({ x0: 2, y0: 108, x1: 34, y1: 138 });               // The Fang's lair: another feature carves this; never touched here
+  const APPROACH = FL.rect({ x0: 1, y0: 103, x1: 40, y1: 107 });           // kept as clear ash so the lair can always be reached from the east
+  const FARM = WD.rect({ x0: 58, y0: 96, x1: 79, y1: 107 });               // no lava, rocks or dead trees on Dunstan's land
+  const HUT = Object.assign(XY(ATLAS.port('warden.dunstan_hut')), { w: 5, h: 4 });   // door at (66,101), step at (66,102) on today's map
+  const FIELD = Object.assign(WD.rect({ x0: 70, y0: 98, x1: 76, y1: 103 }), { gx: WD.x(70), gy: WD.y(101) });
+  const DUNSTAN_T = XY(ATLAS.port('warden.dunstan'));
+  const FIRE_T = WD.pt({ x: 62, y: 104 });
+  const SHRINE_T = XY(ATLAS.port('ash_shrine.shrine'));
+  const ENTRANCE_OBSIDIAN = WD.pts([[56, 98], [63, 108], [72, 108]]);
+  // [x, y, radius]: open Ashfields, so the centres are world reals (the pool's shape is read through them)
+  const LAVA_POOLS = [[50, 116, 2.4], [63, 123, 3.1], [79, 114, 2.0], [88, 129, 3.4], [45, 131, 2.6], [70, 134, 2.2], [58, 111, 1.5], [93, 118, 1.8]].map(([x, y, r]) => [DW.x(x), DW.y(y), r]);
+  // bones in the open ash are world tiles; the two inside The Fang's box (east of its walls) move with the lair
+  const BONES = [rt(DW.p(55, 113)), rt(DW.p(84, 121)), rt(DW.p(66, 128)), FL.p(44, 123), rt(DW.p(92, 111)), FL.p(38, 118), rt(DW.p(52, 136))];
+  const GREEN_SPAWNS = [rt(DW.p(52, 120)), rt(DW.p(76, 118)), rt(DW.p(60, 131)), rt(DW.p(91, 124))];
+  const RED_SPAWNS = [rt(DW.p(81, 135)), rt(DW.p(47, 136))];
+  const PATH = ATLAS.track('path_ash');        // Wolfwood → the Ashfields → toward the lair
+  const FARM_PATH = ATLAS.track('path_farm');
   const DRAGONS = new Set(['green_dragon', 'red_dragon']);
   const DR_POTATO_PRICE = ITEMS.potato ? ITEMS.potato.value : 3, DR_POTATO_MAX = 20;   // Dunstan buys potatoes at their value, 20 per hand-in
   const GOLD = '#f5e6a8';
@@ -224,10 +238,10 @@
       else if (r < 0.075) api.setTile(x, y, DR_OBSIDIAN);
     }
     // lava pools
-    for (const [px, py, pr] of LAVA_POOLS) for (let y = py - 5; y <= py + 5; y++) for (let x = px - 5; x <= px + 5; x++) {
+    for (const [px, py, pr] of LAVA_POOLS) for (let y = Math.round(py) - 5; y <= Math.round(py) + 5; y++) for (let x = Math.round(px) - 5; x <= Math.round(px) + 5; x++) {
       if (inFang(x, y) || inRect(APPROACH, x, y) || inRect(FARM, x, y) || !inAshfields(x, y) || x < 1 || y > AF.y1 - 1) continue;
       const d = dist(x, y, px, py);
-      if (d < pr + Math.sin(x * 1.7 + y * 0.9) * 0.9 && ours.includes(api.tileAt(x, y))) api.setTile(x, y, DR_LAVA);
+      if (d < pr + Math.sin(DW.ix(x) * 1.7 + DW.iy(y) * 0.9) * 0.9 && ours.includes(api.tileAt(x, y))) api.setTile(x, y, DR_LAVA);
       else if (d < pr + 1.6 && api.tileAt(x, y) === DR_ASH && rnd() < 0.35) api.setTile(x, y, DR_OBSIDIAN);
     }
     // dragon bones, the ruined shrine, obsidian by the entrance
@@ -243,7 +257,7 @@
     for (let y = FIELD.y0 + 1; y < FIELD.y1; y++) for (let x = FIELD.x0 + 1; x < FIELD.x1; x++) api.setTile(x, y, T.SOIL);
     api.setTile(FIRE_T.x, FIRE_T.y, T.FIRE);
     // the path in from Wolfwood (starts at the stone circle's south side) and the farm track: cleared, trodden
-    const track = (pts, w) => { for (let s = 0; s < pts.length - 1; s++) { const [ax, ay] = pts[s], [bx, by] = pts[s + 1]; const steps = Math.max(Math.abs(bx - ax), Math.abs(by - ay));
+    const track = (pts, w) => { for (let s = 0; s < pts.length - 1; s++) { const [ax, ay] = pts[s], [bx, by] = pts[s + 1]; const steps = Math.max(1, Math.round(Math.max(Math.abs(bx - ax), Math.abs(by - ay))));
       for (let k = 0; k <= steps; k++) { const x = Math.round(ax + (bx - ax) * k / steps), y = Math.round(ay + (by - ay) * k / steps);
         for (let dy = -w; dy <= w; dy++) for (let dx = -w; dx <= w; dx++) { const t = api.tileAt(x + dx, y + dy); if ((NATURAL.includes(t) || ours.includes(t)) && Math.abs(dx) + Math.abs(dy) <= w) api.setTile(x + dx, y + dy, T.DIRT); } } } };
     track(PATH, 1); track(FARM_PATH, 0);
@@ -258,7 +272,7 @@
         if (inFang(x, y)) continue; area++;
         if (api.tileAt(x, y) !== DR_ASH) continue;
         if (inRect(APPROACH, x, y)) { keep++; continue; }
-        cands.push({ x, y, n: noise(x, y) });
+        cands.push({ x, y, n: noise(DW.ix(x), DW.iy(y)) });   // the drifts are read in OLD coordinates, so they stretch with the land
       }
       cands.sort((a, b) => b.n - a.n);
       const want = Math.max(0, Math.round(area * DR_ASH_COVER) - keep);
@@ -503,18 +517,18 @@
     h.peace(true);
     // region + path
     { let ash = 0, lava = 0, obs = 0; for (let y = AF.y0; y <= AF.y1; y++) for (let x = AF.x0; x <= AF.x1; x++) { if (inFang(x, y)) continue; const t = tileAt(x, y); if (t === DR_ASH) ash++; else if (t === DR_LAVA) lava++; else if (t === DR_OBSIDIAN) obs++; }
-      check('dragons: The Ashfields region fills the south-west (ash, lava, obsidian), Wolfwood ends at y 95', REGIONS.some(r => r.name === 'The Ashfields') && regionAt(60, 110).name === 'The Ashfields' && regionAt(60, 94).name === 'Wolfwood' && ash > 900 && ash < 2200 && lava >= 40 && obs >= 30, { at60_110: regionAt(60, 110).name, at60_94: regionAt(60, 94).name, ash, lava, obs }); }
-    { const toFarm = F.bfs(60, 94, DUNSTAN_T.x, DUNSTAN_T.y + 1), toLair = F.bfs(60, 94, 36, 105);
-      check('dragons: the path from Wolfwood (60,94) reaches the farm and the approach to the lair', !!toFarm && !!toLair && tileAt(60, 96) === T.DIRT, { farm: toFarm && toFarm.length, lair: toLair && toLair.length }); }
+      check('dragons: The Ashfields region fills the south-west (ash, lava, obsidian), Wolfwood ends at y 95', REGIONS.some(r => r.name === 'The Ashfields') && regionAt(...rt(DW.p(60, 110))).name === 'The Ashfields' && regionAt(...WD.p(60, 94)).name === 'Wolfwood' && ash > 900 && ash < 2200 && lava >= 40 && obs >= 30, { at60_110: regionAt(...rt(DW.p(60, 110))).name, at60_94: regionAt(...WD.p(60, 94)).name, ash, lava, obs }); }
+    { const toFarm = F.bfs(...WD.p(60, 94), DUNSTAN_T.x, DUNSTAN_T.y + 1), toLair = F.bfs(...WD.p(60, 94), ...ATLAS.port('fang_lair.node'));
+      check('dragons: the path from Wolfwood (60,94) reaches the farm and the approach to the lair', !!toFarm && !!toLair && tileAt(...WD.p(60, 96)) === T.DIRT, { farm: toFarm && toFarm.length, lair: toLair && toLair.length }); }
     // lava burns
-    { let lava = null, side = null; for (let y = AF.y0; y <= AF.y1 && !side; y++) for (let x = 36; x <= AF.x1 && !side; x++) if (tileAt(x, y) === DR_LAVA) { const b = besideTile(x, y); if (b) { lava = { x, y }; side = b; } }
+    { let lava = null, side = null; for (let y = AF.y0; y <= AF.y1 && !side; y++) for (let x = FL.x(36); x <= AF.x1 && !side; x++) if (tileAt(x, y) === DR_LAVA) { const b = besideTile(x, y); if (b) { lava = { x, y }; side = b; } }
       let hp0 = 0, warn0 = DR.stats.lavaWarn; if (side) { F.tp(side.x, side.y); player.hp = player.maxHp; hp0 = player.hp; F.sim(150); }
-      check('dragons: standing beside lava burns 1 hp a second, with a warning', !!side && player.hp <= hp0 - 2 && DR.stats.lavaWarn > warn0, { lava, side, hp0, hp: player.hp }); F.tp(60, 100); }
+      check('dragons: standing beside lava burns 1 hp a second, with a warning', !!side && player.hp <= hp0 - 2 && DR.stats.lavaWarn > warn0, { lava, side, hp0, hp: player.hp }); F.tp(...WD.p(60, 100)); }
     // dragons live here
     { const ds = monsters.filter(isDragon), gr = ds.filter(m => m.type === 'green_dragon'), rd = ds.filter(m => m.type === 'red_dragon');
       check('dragons: four green and two red dragons sleep in the Ashfields (lv 45 / lv 60, fire-breathing, aggressive)', gr.length === 4 && rd.length === 2 && ds.every(m => inAshfields(Math.floor(m.home.x / TILE), Math.floor(m.home.y / TILE)) && !inFang(Math.floor(m.home.x / TILE), Math.floor(m.home.y / TILE)) && m.angry) && MONSTER_DEFS.green_dragon.hp === 220 && MONSTER_DEFS.red_dragon.hp === 420 && MONSTER_DEFS.red_dragon.maxHit === 24 && MONSTER_DEFS.green_dragon.level === 45 && MONSTER_DEFS.red_dragon.level === 60, { green: gr.length, red: rd.length }); }
     // fire breath, then half damage with the salve
-    { const q = dq(); const spot = ashSpot(72, 124); F.tp(spot.x, spot.y); player.facing = { x: 1, y: 0 };
+    { const q = dq(); const spot = ashSpot(...rt(DW.p(72, 124))); F.tp(spot.x, spot.y); player.facing = { x: 1, y: 0 };
       const others = monsters.filter(m => !m.dead && m !== monsters.find(isDragon)); for (const m of others) { m.stunT = 999; }
       const g = monsters.find(m => isDragon(m) && !m.dead); const oldSpeed = g.speed, oldSalve = q.salve; q.salve = false;
       const arm = () => { g.x = player.x + 3 * TILE; g.y = player.y; g.home = { x: g.x, y: g.y }; g.state = 'chase'; g.angry = true; g.hp = g.maxHp; g.stunT = 0; g.speed = 0; g.fireCd = 0; g.attackCd = 99; DR.fire = []; player.hp = 150; };
@@ -524,14 +538,14 @@
       check('dragons: with the fireproof salve the fire only half-bites', hit2 && dmg2 >= 4 && dmg2 <= 8 && salved2, { hit2, dmg2 });
       q.salve = oldSalve; g.speed = oldSpeed; g.fireCd = 0; g.attackCd = 0; for (const m of others) m.stunT = 0; h.peace(true); DR.fire = []; player.hp = player.maxHp; }
     // kill a green dragon: dung drops
-    { const spot = ashSpot(72, 124); F.tp(spot.x, spot.y); player.facing = { x: 1, y: 0 };
+    { const spot = ashSpot(...rt(DW.p(72, 124))); F.tp(spot.x, spot.y); player.facing = { x: 1, y: 0 };
       const g = monsters.find(m => m.type === 'green_dragon' && !m.dead); const d0 = countItem('dragon_dung'); g.hp = 1;
       for (let i = 0; i < 80 && !g.dead; i++) { g.x = player.x + 40; g.y = player.y; g.stunT = 0; g.state = 'idle'; player.attackCd = 0; F.press('Space'); F.sim(3, []); }
       const dung = drops.some(d => d.id === 'dragon_dung') || countItem('dragon_dung') > d0, scale = drops.some(d => d.id === 'dragon_scale') || countItem('dragon_scale') > 0;
       check('dragons: a slain green dragon drops dragon dung and scales', g.dead && dung && scale, { dead: g.dead, dung, scale, dropped: drops.filter(d => dist(d.x, d.y, player.x, player.y) < 120).map(d => d.id) }); g.x = g.home.x; g.y = g.home.y; }
     // Dunstan: the main quest 11 → 12 → 13 → 14, and the dung quest
     { const q = dq(); q.stage = 0; q.salve = false; quest.stage = 11; while (countItem('dragon_dung') > 0) removeItem('dragon_dung', countItem('dragon_dung'));
-      drain(); F.tp(60, 100); F.sim(3); const s12 = quest.stage === 12;
+      drain(); F.tp(...WD.p(60, 100)); F.sim(3); const s12 = quest.stage === 12;
       const stand = { x: DUNSTAN_T.x, y: DUNSTAN_T.y + 1 }; F.tp(stand.x, stand.y); F.face(DUNSTAN_T.x, DUNSTAN_T.y); drain(); F.press('KeyE'); F.sim(3, []);
       const asked = q.stage === 1 && quest.stage === 13 && dialog.cur && /Dunstan/.test(dialog.cur.who) && activeQuests().includes('dragons') && /dung/.test(questText('dragons')) && /Dunstan/.test(questText('main'));
       drain(); F.press('KeyE'); F.sim(3, []); const notYet = q.stage === 1 && dialog.cur && /got 0/.test(dialog.cur.text);
@@ -542,7 +556,7 @@
       const shopOpen = panel === 'shop' && panelArg === 'dung'; closePanel();
       check('dragons: Dunstan buys potatoes at 3 coins each (their value) and opens his stall (baked potato 8)', coins() === c1 + 9 && countItem('potato') === 0 && shopOpen && SHOPS.dung.stock.some(([id, p]) => id === 'baked_potato' && p === 8), { coins: coins() - c1, shopOpen, panel, panelArg }); }
     // obsidian: pickaxe + Mining 35
-    { const r = F.nearestTile([DR_OBSIDIAN], { x: tc(60), y: tc(100) }); const side = r && besideTile(r.x, r.y); let noPick = false, lowLv = false, started = false, steps = 'skipped', o0 = 0, mx0 = 0;
+    { const r = F.nearestTile([DR_OBSIDIAN], { x: tc(WD.x(60)), y: tc(WD.y(100)) }); const side = r && besideTile(r.x, r.y); let noPick = false, lowLv = false, started = false, steps = 'skipped', o0 = 0, mx0 = 0;
       if (side) { F.tp(side.x, side.y); F.face(r.x, r.y);
         const stash = []; for (let i = 0; i < INV_SLOTS; i++) { const s = player.inv[i]; if (s && ITEMS[s.id].tool === 'pickaxe') { stash.push([i, s]); player.inv[i] = null; } } const eqw = player.equip.weapon; if (eqw && ITEMS[eqw].tool === 'pickaxe') player.equip.weapon = null;
         F.press('KeyE'); F.sim(2, []); noPick = !player.action && notice && /pickaxe/.test(notice.text);

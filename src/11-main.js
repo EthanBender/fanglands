@@ -51,6 +51,8 @@ window.FANGLANDS = {
   untilAction(max, done) { let s = 0; while (s < max && !done()) { this.step([]); s++; } render(); return s < max ? s : 'timeout'; },
   selfTest() {
     const F = this; const report = {};
+    // the Atlas (the spread spec, section 9.1): a place's own spots are read in its frame, open land in the stretched world
+    const TD = ATLAS.frame('thistledown'), CV = ATLAS.frame('cave'), AW = ATLAS.world;
     const check = (name, ok, info) => { report[name] = (ok ? 'PASS' : 'FAIL') + (info !== undefined ? ' ' + JSON.stringify(info) : '') + (!ok && notice ? ' notice=' + JSON.stringify(notice.text) : ''); };
     const peace = on => { window.__peace = on; if (on) for (const m of monsters) if (m.state === 'chase') m.state = 'return'; };
     const openSpot = (cx, cy, extra) => { for (let r = 0; r < 30; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) { const x = cx + dx, y = cy + dy; let ok = inMap(x - 2, y - 2) && inMap(x + 2, y + 2); for (let yy = y - 1; yy <= y + 1 && ok; yy++) for (let xx = x - 2; xx <= x + 2 && ok; xx++) if (tileAt(xx, yy) !== T.GRASS) ok = false; if (ok && !inVillageBounds(tc(x), tc(y)) && (!extra || extra(x, y))) return { x, y }; } return { x: cx, y: cy }; };
@@ -75,10 +77,10 @@ window.FANGLANDS = {
     check('sword pickup goes to the weapon slot', player.equip.weapon === 'wooden_sword' && countItem('wooden_sword') === 0 && quest.stage === 2, { stage: quest.stage });
     check('RNG combat: max hit 4 at level 1 with the wooden sword', playerMaxHit() === 4, { maxHit: playerMaxHit() });
     { const k0 = player.kills; F.goAdjacent(Math.floor(sp[0].x / TILE), Math.floor(sp[0].y / TILE), 2000); F.fight(900, ['spider']); check('kill a spider', player.kills > k0, { kills: player.kills }); }
-    F.walkTo(CAVE_EXIT_X + 3, 7, 3000);
+    F.walkTo(CAVE_EXIT_X + 3, CV.y(7), 3000);
     check('left the cave', quest.stage === 3, { x: +(player.x / TILE).toFixed(1) });
-    F.goAdjacent(23, 9); F.press('KeyE'); F.sim(3, []);
-    check('bronze axe from the stump outside the cave', countItem('bronze_axe') === 1 && tileAt(23, 9) === T.STUMP && player.tookAxe, {});
+    F.goAdjacent(...ATLAS.port('cave.axe_stump')); F.press('KeyE'); F.sim(3, []);
+    check('bronze axe from the stump outside the cave', countItem('bronze_axe') === 1 && tileAt(...ATLAS.port('cave.axe_stump')) === T.STUMP && player.tookAxe, {});
     // the pace is read the moment the third goblin falls: fight() keeps swinging at every goblin in reach after the quest moves on, and the
     // neighbours and respawns it goes on to kill are the bot's doing, not the first goblins (4 xp a point of damage, so more kills are meant to level)
     let firstXp = null; const thirdGoblin = m => { if (m.type === 'goblin' && quest.stage === 3 && quest.kills === 2) firstXp = player.skills.melee.xp; }; HOOKS.kill.push(thirdGoblin);
@@ -108,16 +110,16 @@ window.FANGLANDS = {
     // ---------- drop tables ----------
     { let coinsN = 0, scrap = 0, ok = true; for (let i = 0; i < 300; i++) { const before = drops.length; rollDrops(MONSTER_DEFS.goblin, -999, -999); const got = drops.slice(before); if (got.some(d => d.id === 'coins')) coinsN++; if (got.some(d => d.id === 'goblin_scrap')) scrap++; if (got.some(d => !ITEMS[d.id])) ok = false; } drops = drops.filter(d => d.x > 0); check('drop tables: coins always, scrap sometimes, rare ~1/40', ok && coinsN === 300 && scrap > 30 && scrap < 200, { coinsN, scrap }); }
     // ---------- village ----------
-    { const w6 = F.walkTo(86, 32, 9000); check('reached Thistledown (area banner)', player.visitedVillage && player.region === 'Thistledown' && typeof w6 === 'number', { w6, region: player.region }); }
+    { const w6 = F.walkTo(...TD.p(86, 32), 9000); check('reached Thistledown (area banner)', player.visitedVillage && player.region === 'Thistledown' && typeof w6 === 'number', { w6, region: player.region }); }
     give('coins', 300);
     { const wm = F.talk('marta'); const open = panel === 'shop'; const inside = !!insideBuilding(Math.floor(player.x / TILE), Math.floor(player.y / TILE)); const b1 = F.clickButton('Buy 60'), b2 = F.clickButton('Buy 5'), b3 = F.clickButton('Buy 10'); closePanel(); check('walk in through the door, buy rod, hammer, bread', open && inside && b1 && b2 && b3 && countItem('fishing_rod') === 1 && countItem('hammer') === 1 && countItem('bread') >= 1, { wm, open, inside, coins: coins() }); }
     { topUp('plank', 4); const wa = F.talk('aldous'); const open = panel === 'bank'; const slot = player.inv.findIndex(s => s && s.id === 'plank'); const dep = F.clickButton('slot' + slot); const inBank = player.bank.some(b => b.id === 'plank' && b.qty === 4); const wd = F.clickButton('bank0'); closePanel(); check('bank deposit + withdraw', open && dep && inBank && wd && countItem('plank') === 4 && player.bank.length === 0, { wa, open, inBank, planks: countItem('plank') }); }
     { F.calm(); const d = DUMMIES[0]; F.goAdjacent(d[0], d[1]); const x0 = player.skills.melee.xp; for (let i = 0; i < 6; i++) { F.press('Space'); F.sim(30, []); } check('training dummies: small xp, misses possible, records best hit', player.skills.melee.xp > x0 && player.skills.melee.xp - x0 <= 24 && player.highestHit >= 1, { gained: player.skills.melee.xp - x0, best: player.highestHit }); }
     { const wt = F.talk('tobin'); const q1 = quest.bread; const c0 = coins(); F.press('KeyE'); F.sim(2, []); check("Tobin's bread quest", q1 === 'active' && quest.bread === 'done' && coins() === c0 + 30, { wt, bread: quest.bread }); }
     { quest.tracked = null; openPanel('quests'); render(); const t = F.clickButton('Track'); closePanel(); check('quests are tracked on demand, not by default', t && quest.tracked === 'main', { tracked: quest.tracked }); }
-    { const wd = F.walkTo(112, 48, 6000); F.face(112, 49); F.press('KeyE'); F.sim(2, []); const st = quest.stage; player.skills.melee.xp = XP_TABLE[5]; player.skills.woodcutting.xp = XP_TABLE[3]; F.press('KeyE'); F.sim(2, []); check('Duke inside the castle keep gates Chapter 2', typeof wd === 'number' && st === 6 && quest.stage === 7 && player.region === 'Castle Thistledown', { wd, st, stage: quest.stage, region: player.region }); }
+    { const wd = F.walkTo(...TD.p(112, 48), 6000); F.face(...ATLAS.port('thistledown.duke')); F.press('KeyE'); F.sim(2, []); const st = quest.stage; player.skills.melee.xp = XP_TABLE[5]; player.skills.woodcutting.xp = XP_TABLE[3]; F.press('KeyE'); F.sim(2, []); check('Duke inside the castle keep gates Chapter 2', typeof wd === 'number' && st === 6 && quest.stage === 7 && player.region === 'Castle Thistledown', { wd, st, stage: quest.stage, region: player.region }); }
     // ---------- fire, cooking, eating ----------
-    give('wood', 3); peace(true); { const o = openSpot(60, 24); F.tp(o.x, o.y); } player.facing = { x: 0, y: -1 };
+    give('wood', 3); peace(true); { const o = openSpot(AW.tx(60), AW.ty(24)); F.tp(o.x, o.y); } player.facing = { x: 0, y: -1 };
     { const ft = frontTile(player, 40); const slot = player.inv.findIndex(s => s && s.id === 'wood'); useItem(slot); const r = F.untilAction(200, () => tileAt(ft.tx, ft.ty) === T.FIRE); check('firemaking: light logs into a fire that burns out', typeof r === 'number' && player.skills.firemaking.xp === 40 && fires.length === 1, { r, fmxp: player.skills.firemaking.xp });
       give('raw_beef', 1); F.face(ft.tx, ft.ty); F.press('KeyE'); const r2 = F.untilAction(200, () => countItem('raw_beef') === 0); check('cook at your own fire (burn chance)', typeof r2 === 'number' && (countItem('cooked_beef') === 1 || countItem('burnt_food') === 1), { cooked: countItem('cooked_beef'), burnt: countItem('burnt_food') }); }
     { give('bread', 1); player.hp = 5; const slot = player.inv.findIndex(s => s && s.id === 'bread'); useItem(slot); check('eat food to heal', player.hp === 10, { hp: player.hp }); }
@@ -125,11 +127,11 @@ window.FANGLANDS = {
     { peace(true); const w = F.nearestTile([T.WATER]); const r = F.goAdjacent(w.x, w.y, 8000); F.calm(); F.goAdjacent(w.x, w.y, 3000); F.press('KeyE'); const r2 = F.untilAction(1500, () => countItem('raw_shrimp') >= 1); check('fishing: rod, timed, shrimp', typeof r === 'number' && typeof r2 === 'number' && player.skills.fishing.xp >= 10, { r, r2, fxp: player.skills.fishing.xp }); }
     // ---------- farming ----------
     give('bronze_hoe', 1); give('potato_seed', 1);
-    { const noMarker = (x, y) => { if (!window.GRAVES) return true; for (let yy = y - 2; yy <= y + 2; yy++) for (let xx = x - 3; xx <= x + 3; xx++) if (GRAVES.markerAt(xx, yy)) return false; return true; }; const o = openSpot(70, 30, noMarker); F.tp(o.x, o.y); const gt = { x: o.x + 1, y: o.y }; F.goAdjacent(gt.x, gt.y); F.press('KeyE'); const r = F.untilAction(200, () => tileAt(gt.x, gt.y) === T.SOIL); F.face(gt.x, gt.y); F.press('KeyE'); F.sim(2, []); const planted = tileAt(gt.x, gt.y) === T.CROP; const c = crops.find(c => c.i === idx(gt.x, gt.y)); if (c) c.stage = 3; F.press('KeyE'); F.sim(2, []); check('farming: till, plant, grow, harvest potatoes', typeof r === 'number' && planted && countItem('potato') >= 2 && tileAt(gt.x, gt.y) === T.SOIL && player.skills.farming.xp >= 40, { r, planted, potato: countItem('potato'), farmxp: player.skills.farming.xp }); }
+    { const noMarker = (x, y) => { if (!window.GRAVES) return true; for (let yy = y - 2; yy <= y + 2; yy++) for (let xx = x - 3; xx <= x + 3; xx++) if (GRAVES.markerAt(xx, yy)) return false; return true; }; const o = openSpot(...TD.p(70, 30), noMarker); F.tp(o.x, o.y); const gt = { x: o.x + 1, y: o.y }; F.goAdjacent(gt.x, gt.y); F.press('KeyE'); const r = F.untilAction(200, () => tileAt(gt.x, gt.y) === T.SOIL); F.face(gt.x, gt.y); F.press('KeyE'); F.sim(2, []); const planted = tileAt(gt.x, gt.y) === T.CROP; const c = crops.find(c => c.i === idx(gt.x, gt.y)); if (c) c.stage = 3; F.press('KeyE'); F.sim(2, []); check('farming: till, plant, grow, harvest potatoes', typeof r === 'number' && planted && countItem('potato') >= 2 && tileAt(gt.x, gt.y) === T.SOIL && player.skills.farming.xp >= 40, { r, planted, potato: countItem('potato'), farmxp: player.skills.farming.xp }); }
     // ---------- smithing at forge + anvil ----------
     clearJunk(); give('iron_ore', 2);
-    { F.tp(93, 39); F.face(92, 37); F.walkTo(92, 38, 500); F.face(92, 37); F.press('KeyE'); const open = panel === 'station' && panelArg === 'forge'; const c1 = F.clickButton('Iron ore → Iron bar'); const r = F.untilAction(200, () => countItem('iron_bar') >= 1); closePanel(); F.face(92, 37); F.press('KeyE'); F.clickButton('Iron ore → Iron bar'); F.untilAction(200, () => countItem('iron_bar') >= 2); closePanel(); check('forge smelts ore into bars (timed)', open && c1 && typeof r === 'number' && countItem('iron_bar') === 2 && player.skills.smithing.xp === 24, { open, bars: countItem('iron_bar') });
-      F.walkTo(94, 39, 500); F.face(94, 38); F.press('KeyE'); const open2 = panel === 'station' && panelArg === 'anvil'; const d0 = countItem('iron_dagger'), b0 = countItem('iron_bar'); const c2 = F.clickButton('1 bar → Iron dagger'); const r2 = F.untilAction(200, () => countItem('iron_dagger') >= d0 + 1 && countItem('iron_bar') === b0 - 1); closePanel(); check('anvil + hammer smiths an iron dagger (hammer animation)', open2 && c2 && typeof r2 === 'number' && countItem('iron_dagger') === d0 + 1 && countItem('iron_bar') === b0 - 1, { open2, c2, r2, dagger: countItem('iron_dagger'), bars: countItem('iron_bar'), notice: notice && notice.text }); }
+    { F.tp(...TD.p(93, 39)); F.face(...ATLAS.port('thistledown.forge')); F.walkTo(...TD.p(92, 38), 500); F.face(...ATLAS.port('thistledown.forge')); F.press('KeyE'); const open = panel === 'station' && panelArg === 'forge'; const c1 = F.clickButton('Iron ore → Iron bar'); const r = F.untilAction(200, () => countItem('iron_bar') >= 1); closePanel(); F.face(...ATLAS.port('thistledown.forge')); F.press('KeyE'); F.clickButton('Iron ore → Iron bar'); F.untilAction(200, () => countItem('iron_bar') >= 2); closePanel(); check('forge smelts ore into bars (timed)', open && c1 && typeof r === 'number' && countItem('iron_bar') === 2 && player.skills.smithing.xp === 24, { open, bars: countItem('iron_bar') });
+      F.walkTo(...TD.p(94, 39), 500); F.face(...ATLAS.port('thistledown.anvil')); F.press('KeyE'); const open2 = panel === 'station' && panelArg === 'anvil'; const d0 = countItem('iron_dagger'), b0 = countItem('iron_bar'); const c2 = F.clickButton('1 bar → Iron dagger'); const r2 = F.untilAction(200, () => countItem('iron_dagger') >= d0 + 1 && countItem('iron_bar') === b0 - 1); closePanel(); check('anvil + hammer smiths an iron dagger (hammer animation)', open2 && c2 && typeof r2 === 'number' && countItem('iron_dagger') === d0 + 1 && countItem('iron_bar') === b0 - 1, { open2, c2, r2, dagger: countItem('iron_dagger'), bars: countItem('iron_bar'), notice: notice && notice.text }); }
     // equipment slots: its own pack and its own weapon, not the leftovers of the anvil and the goblin fights. A goblin's rare
     // drop (1 in 40 kills, an iron dagger 3 in 4 of those) could already sit in the pack, and the absolute counts then failed.
     { const bag = player.inv, w0 = player.equip.weapon; player.inv = new Array(INV_SLOTS).fill(null); player.inv[0] = { id: 'iron_dagger', qty: 1 }; player.equip.weapon = 'wooden_sword';
@@ -138,11 +140,11 @@ window.FANGLANDS = {
       player.inv = bag; player.equip.weapon = w0; const s2 = player.inv.findIndex(s => s && s.id === 'iron_dagger'); equipItem(s2); }
     // ---------- workbench: bow + arrows; alchemy: bomb; workshop: trap ----------
     clearJunk(); give('wood', 6); give('spider_silk', 1); give('stone', 1); give('blast_powder', 1); give('goblin_scrap', 1); player.skills.crafting.xp = XP_TABLE[3]; const cx0 = player.skills.crafting.xp;
-    { F.tp(103, 39); F.walkTo(100, 38, 500); F.face(100, 37); F.press('KeyE'); const ok1 = panel === 'station' && panelArg === 'workbench' && F.clickButton('2 Logs + Spider silk → Shortbow') && F.clickButton('Logs + Stone → 5 Stone arrows'); closePanel();
-      F.walkTo(104, 38, 500); F.face(104, 37); F.press('KeyE'); const ok2 = panel === 'station' && panelArg === 'alchemy' && F.clickButton('Blast powder + Goblin scrap → Goblin bomb'); closePanel();
+    { F.tp(...TD.p(103, 39)); F.walkTo(...TD.p(100, 38), 500); F.face(...TD.p(100, 37)); F.press('KeyE'); const ok1 = panel === 'station' && panelArg === 'workbench' && F.clickButton('2 Logs + Spider silk → Shortbow') && F.clickButton('Logs + Stone → 5 Stone arrows'); closePanel();
+      F.walkTo(...TD.p(104, 38), 500); F.face(...TD.p(104, 37)); F.press('KeyE'); const ok2 = panel === 'station' && panelArg === 'alchemy' && F.clickButton('Blast powder + Goblin scrap → Goblin bomb'); closePanel();
       check('workbench makes a bow and arrows; alchemy makes a bomb', ok1 && ok2 && countItem('shortbow') === 1 && countItem('stone_arrow') === 5 && countItem('bomb') === 1 && player.skills.crafting.xp === cx0 + 78, { bow: countItem('shortbow'), arrows: countItem('stone_arrow'), bomb: countItem('bomb'), cxp: player.skills.crafting.xp }); }
-    { topUp('plank', 2); topUp('iron_bar', 1); F.walkTo(102, 38, 500); F.face(102, 37); F.press('KeyE'); const ok = panel === 'station' && panelArg === 'workshop'; render(); const c = F.clickButton('Iron bar + 2 Planks → Goblin trap'); closePanel(); check('workshop makes a goblin trap (Crafting 3)', ok && c && countItem('goblin_trap') === 1, { ok, trap: countItem('goblin_trap') }); }
-    { const o = openSpot(40, 20); F.tp(o.x, o.y); const gob = monsters.find(m => m.type === 'goblin' && !m.dead); gob.x = player.x + 120; gob.y = player.y; gob.home = { x: gob.x, y: gob.y }; gob.state = 'idle'; gob.hp = gob.maxHp; gob.stunT = 0; gob.wanderT = 99; gob.wander = { x: 0, y: 0 }; player.facing = { x: 1, y: 0 };
+    { topUp('plank', 2); topUp('iron_bar', 1); F.walkTo(...TD.p(102, 38), 500); F.face(...TD.p(102, 37)); F.press('KeyE'); const ok = panel === 'station' && panelArg === 'workshop'; render(); const c = F.clickButton('Iron bar + 2 Planks → Goblin trap'); closePanel(); check('workshop makes a goblin trap (Crafting 3)', ok && c && countItem('goblin_trap') === 1, { ok, trap: countItem('goblin_trap') }); }
+    { const o = openSpot(AW.tx(40), AW.ty(20)); F.tp(o.x, o.y); const gob = monsters.find(m => m.type === 'goblin' && !m.dead); gob.x = player.x + 120; gob.y = player.y; gob.home = { x: gob.x, y: gob.y }; gob.state = 'idle'; gob.hp = gob.maxHp; gob.stunT = 0; gob.wanderT = 99; gob.wander = { x: 0, y: 0 }; player.facing = { x: 1, y: 0 };
       const bs = player.inv.findIndex(s => s && s.id === 'shortbow'); equipItem(bs); give('stone_arrow', 30); const a0 = countItem('stone_arrow'); const rx0 = player.skills.range.xp;
       // watch every frame: under peace the goblin is 'home' the frame after the arrow lands and the leash heals 1 hp (07-update), which erased every 1-damage hit when hp was read after the 40 frames. 21 shots: P(all miss) = (1 - 630/1282)^21 = 6.8e-7
       let hit = false; for (let i = 0; i < 21 && !hit; i++) { gob.x = player.x + 120; gob.y = player.y; gob.stunT = 0; player.attackCd = 0; F.press('Space'); for (let f = 0; f < 40; f++) { F.step([]); if (gob.hp < gob.maxHp) hit = true; } render(); }
@@ -157,33 +159,33 @@ window.FANGLANDS = {
       gob.maxHp = trapMh0; gob.hp = Math.min(gob.hp, trapMh0);
       const ws = player.inv.findIndex(s => s && s.id === 'wooden_sword'); if (ws >= 0) equipItem(ws); }
     // ---------- aggression stops at higher combat level ----------
-    peace(false); { const o = openSpot(40, 20); F.tp(o.x, o.y); const gob = monsters.find(m => m.type === 'goblin' && !m.dead); gob.x = player.x + 100; gob.y = player.y; gob.home = { x: gob.x, y: gob.y }; gob.state = 'idle'; gob.angry = true; gob.hp = gob.maxHp; gob.stunT = 0; gob.wanderT = 99; gob.wander = { x: 0, y: 0 }; const m0 = player.skills.melee.xp, d0 = player.skills.defence.xp; player.skills.melee.xp = XP_TABLE[8]; player.skills.defence.xp = XP_TABLE[8]; F.sim(60, []); const calmHigh = gob.state === 'idle'; player.skills.melee.xp = m0; player.skills.defence.xp = d0; gob.x = player.x + 100; gob.y = player.y; gob.state = 'idle'; F.sim(60, []); const chaseLow = gob.state === 'chase'; check('goblins ignore a combat-level 8 knight, chase a low one (sight 4.5 tiles)', calmHigh && chaseLow, { cbHigh: 8, cbLow: combatLevel(), calmHigh, chaseLow }); F.fight(2000); }
+    peace(false); { const o = openSpot(AW.tx(40), AW.ty(20)); F.tp(o.x, o.y); const gob = monsters.find(m => m.type === 'goblin' && !m.dead); gob.x = player.x + 100; gob.y = player.y; gob.home = { x: gob.x, y: gob.y }; gob.state = 'idle'; gob.angry = true; gob.hp = gob.maxHp; gob.stunT = 0; gob.wanderT = 99; gob.wander = { x: 0, y: 0 }; const m0 = player.skills.melee.xp, d0 = player.skills.defence.xp; player.skills.melee.xp = XP_TABLE[8]; player.skills.defence.xp = XP_TABLE[8]; F.sim(60, []); const calmHigh = gob.state === 'idle'; player.skills.melee.xp = m0; player.skills.defence.xp = d0; gob.x = player.x + 100; gob.y = player.y; gob.state = 'idle'; F.sim(60, []); const chaseLow = gob.state === 'chase'; check('goblins ignore a combat-level 8 knight, chase a low one (sight 4.5 tiles)', calmHigh && chaseLow, { cbHigh: 8, cbLow: combatLevel(), calmHigh, chaseLow }); F.fight(2000); }
     // ---------- base: lodestone, home teleport, bed ----------
     // the base check brings its own pack: the loot the bot picked up on the way can leave fewer than three free slots, and give() then hands over no door (its bag comes back after)
     const bag = player.inv; player.inv = new Array(INV_SLOTS).fill(null); give('lodestone', 1); give('bed', 1); give('door', 1);
     // the base goes on ground no fight left loot on and no monster stands on: openSpot(36, 22) alone is two tiles from the arena the range, bomb,
     // trap and aggression checks fight in (openSpot(40, 20)), and a coin or a goblin on the lodestone's, bed's or door's tile is refused, as it is for a player
-    peace(true); { const o = openSpot(36, 22, clutterFree); F.tp(o.x, o.y); player.facing = { x: 1, y: 0 }; placeAction('lodestone'); const home = player.home && { ...player.home }; player.facing = { x: 0, y: 1 }; placeAction('bed'); const bt = frontTile(player, 40); F.face(bt.tx, bt.ty); F.press('KeyE'); F.sim(2, []); const bed = !!player.bedSpawn; player.facing = { x: 0, y: -1 }; const dt = frontTile(player, 40); changeTile(dt.tx, dt.ty, T.DOOR); const door = tileAt(dt.tx, dt.ty) === T.DOOR; F.tp(40, 30); goHome(); check('lodestone sets home, bed sets respawn, doors push through, H teleports home', !!home && bed && door && dist(player.x, player.y, home.x, home.y) < 2 && !collides(tc(dt.tx), tc(dt.ty), 13, 'person') && collides(tc(dt.tx), tc(dt.ty), 13, 'beast'), { home, bed, door }); }
+    peace(true); { const o = openSpot(AW.tx(36), AW.ty(22), clutterFree); F.tp(o.x, o.y); player.facing = { x: 1, y: 0 }; placeAction('lodestone'); const home = player.home && { ...player.home }; player.facing = { x: 0, y: 1 }; placeAction('bed'); const bt = frontTile(player, 40); F.face(bt.tx, bt.ty); F.press('KeyE'); F.sim(2, []); const bed = !!player.bedSpawn; player.facing = { x: 0, y: -1 }; const dt = frontTile(player, 40); changeTile(dt.tx, dt.ty, T.DOOR); const door = tileAt(dt.tx, dt.ty) === T.DOOR; F.tp(...ATLAS.frame('pond').p(40, 30)); goHome(); check('lodestone sets home, bed sets respawn, doors push through, H teleports home', !!home && bed && door && dist(player.x, player.y, home.x, home.y) < 2 && !collides(tc(dt.tx), tc(dt.ty), 13, 'person') && collides(tc(dt.tx), tc(dt.ty), 13, 'beast'), { home, bed, door }); }
     player.inv = bag;
     // ---------- death: Death's chest in his house ----------
     { player.inv = new Array(INV_SLOTS).fill(null); give('coins', 100); give('goblin_scrap', 2); give('wood', 3); player.bedSpawn = null;
       hurtPlayer(player.hp + 999, player.x + 10, player.y, true); F.sim(200, []);
       const kept = deathKeep && deathKeep.items.map(s => s.id).sort().join(',');
       check('death: pack to Death, gear stays on, respawn in the village', !player.dead && dist(player.x, player.y, VILLAGE_SPAWN.x, VILLAGE_SPAWN.y) < 5 && kept === 'coins,goblin_scrap,wood' && player.equip.weapon !== null, { kept });
-      const w = F.walkTo(134, 51, 4000); const inside = !!insideBuilding(Math.floor(player.x / TILE), Math.floor(player.y / TILE)); F.face(134, 50); F.press('KeyE'); const open = panel === 'coffin'; const fee = coffinFee(); const want = deathKeep ? deathKeep.items.reduce((a, s2) => a + itemFee(s2.id, s2.qty), 0) : 0; const rec = F.clickButton('Reclaim everything');
+      const w = F.walkTo(...TD.p(134, 51), 4000); const inside = !!insideBuilding(Math.floor(player.x / TILE), Math.floor(player.y / TILE)); F.face(...TD.p(134, 50)); F.press('KeyE'); const open = panel === 'coffin'; const fee = coffinFee(); const want = deathKeep ? deathKeep.items.reduce((a, s2) => a + itemFee(s2.id, s2.qty), 0) : 0; const rec = F.clickButton('Reclaim everything');
       // the fee scales with the knight (50-economy): a twelfth of an item's value below combat 10, a quarter later.
       // At the level this test runs, 2 goblin scrap is the only thing worth charging for, so the fee is small but real.
       // the headline price is defined as the sum of the per-item prices (50-economy), so that is what it must equal (taken before the reclaim empties the chest)
       const share = window.ECONOMY ? ECONOMY.feeShare() : 0.25;
       check("Death's chest: cheap free, valuables charged at the knight's own share, fee from the dropped purse first", typeof w === 'number' && inside && open && fee === want && rec && coins() === 100 - want && countItem('goblin_scrap') === 2 && countItem('wood') === 3 && !deathKeep, { w, inside, open, fee, want, share, coins: coins() }); closePanel(); }
     // ---------- the goblin walker: kill, wreck, repair, pilot ----------
-    peace(true); { const wk = monsters.find(m => m.type === 'walker'); F.tp(150, 28); wk.hp = 1; wk.x = player.x + 40; wk.y = player.y; player.facing = { x: 1, y: 0 }; for (let i = 0; i < 60 && !wk.dead; i++) { wk.x = player.x + 40; wk.y = player.y; wk.stunT = 0; player.attackCd = 0; F.press('Space'); F.sim(3, []); } const wt = F.nearestTile([T.WRECK]) || { x: 150, y: 28 }; check('walker dies into a wreck, quest notes it', wk.dead && tileAt(wt.x, wt.y) === T.WRECK && quest.walkerKilled, { wreck: tileAt(wt.x, wt.y) === T.WRECK, dead: wk.dead });
+    peace(true); { const wk = monsters.find(m => m.type === 'walker'); F.tp(...ATLAS.frame('camp').p(150, 28)); wk.hp = 1; wk.x = player.x + 40; wk.y = player.y; player.facing = { x: 1, y: 0 }; for (let i = 0; i < 60 && !wk.dead; i++) { wk.x = player.x + 40; wk.y = player.y; wk.stunT = 0; player.attackCd = 0; F.press('Space'); F.sim(3, []); } const wt = F.nearestTile([T.WRECK]) || ATLAS.frame('camp').pt({ x: 150, y: 28 }); check('walker dies into a wreck, quest notes it', wk.dead && tileAt(wt.x, wt.y) === T.WRECK && quest.walkerKilled, { wreck: tileAt(wt.x, wt.y) === T.WRECK, dead: wk.dead });
       give('iron_bar', 3); give('goblin_scrap', 4); F.goAdjacent(wt.x, wt.y, 800); F.press('KeyE'); F.sim(2, []); if (panel === 'salvage') { render(); F.clickButton('Repair it and drive it'); F.sim(2, []); } const repaired = tileAt(wt.x, wt.y) === T.MECH; F.press('KeyE'); F.sim(2, []); const piloting = !!player.mech; F.sim(30, ['KeyA']); const moved = Math.abs(player.x - tc(wt.x)) > 20; F.press('KeyX'); F.sim(2, []); const parked = !player.mech && !!F.nearestTile([T.MECH]);
       check('repair the wreck (3 bars + 4 scrap), climb in, drive, climb out', repaired && piloting && moved && parked, { repaired, piloting, moved, parked }); }
-    { F.tp(112, 48); F.face(112, 49); F.press('KeyE'); F.sim(2, []); check('Duke closes Chapter 3', quest.stage === 8, { stage: quest.stage }); }
+    { F.tp(...TD.p(112, 48)); F.face(...ATLAS.port('thistledown.duke')); F.press('KeyE'); F.sim(2, []); check('Duke closes Chapter 3', quest.stage === 8, { stage: quest.stage }); }
     peace(false);
     // ---------- villagers walk; monsters respawn without walking away ----------
-    { F.tp(112, 33); const v = NPCS.filter(n => n.wander); F.sim(900, []); const moved = v.filter(n => dist(n.px, n.py, n.home.x, n.home.y) > 20).length; check('villagers wander the streets', moved >= 2, { moved, of: v.length }); }
+    { F.tp(...ATLAS.port('thistledown.square')); const v = NPCS.filter(n => n.wander); F.sim(900, []); const moved = v.filter(n => dist(n.px, n.py, n.home.x, n.home.y) > 20).length; check('villagers wander the streets', moved >= 2, { moved, of: v.length }); }
     { const gob = monsters.find(m => m.type === 'goblin'); gob.dead = true; gob.respawnT = 0.1; F.tp(Math.floor(gob.home.x / TILE) + 6, Math.floor(gob.home.y / TILE)); F.sim(30, []); check('monsters respawn while you are nearby (4+ tiles)', !gob.dead, {}); }
     // ---------- save / load ----------
     save(); const snap = JSON.stringify({ q: quest, inv: player.inv, eq: player.equip, bank: player.bank, hh: player.highestHit, diffs: mapDiffs.size, home: player.home, crops: crops.length });
@@ -192,7 +194,7 @@ window.FANGLANDS = {
     peace(true);
     const invSnap = () => player.inv.map(s => s ? { ...s } : null);
     { // a bed against a wall: you wake beside it, never inside the wall
-      const o = openSpot(30, 30); const bx = o.x, by = o.y; const t0 = tileAt(bx, by), t1 = tileAt(bx, by + 1), t2 = tileAt(bx, by - 1);
+      const o = openSpot(AW.tx(30), AW.ty(30)); const bx = o.x, by = o.y; const t0 = tileAt(bx, by), t1 = tileAt(bx, by + 1), t2 = tileAt(bx, by - 1);
       changeTile(bx, by, T.BED); changeTile(bx, by + 1, T.WALL); changeTile(bx, by - 1, T.WALL);
       player.bedSpawn = { x: tc(bx), y: tc(by) }; const p = respawnPoint();
       const inv0 = invSnap(), dk0 = deathKeep; deathKeep = null;
@@ -215,7 +217,7 @@ window.FANGLANDS = {
       check('coins: addItem with a full pack drops them at your feet, they wait, then come back when there is room', left === 0 && !!d && dist(d.x, d.y, player.x, player.y) < 20 && stays && picked, { left, dropped: !!d, stays, picked, coins: coins(), c0 });
       removeItem('coins', 7); drops = drops.filter(x => x !== d); }
     { // regrow: a door placed on ashes stays a door; a stump under a goblin waits; a monster whose home is now solid respawns beside it
-      const o = openSpot(50, 30); const x = o.x, y = o.y; const gob = monsters.find(m => m.type === 'goblin'); const gs = { x: gob.x, y: gob.y, dead: gob.dead, home: { ...gob.home }, respawnT: gob.respawnT };
+      const o = openSpot(...ATLAS.frame('pond').p(50, 30)); const x = o.x, y = o.y; const gob = monsters.find(m => m.type === 'goblin'); const gs = { x: gob.x, y: gob.y, dead: gob.dead, home: { ...gob.home }, respawnT: gob.respawnT };
       changeTile(x, y, T.ASHES); regrow.push({ i: idx(x, y), t: T.GRASS, timer: 0.05 }); changeTile(x, y, T.DOOR);
       changeTile(x + 1, y, T.STUMP); regrow.push({ i: idx(x + 1, y), t: T.TREE, timer: 0.05 }); gob.dead = false; gob.x = tc(x + 1); gob.y = tc(y); gob.stunT = 5; gob.home = { x: tc(x + 1), y: tc(y) };
       F.tp(x, y - 1); F.sim(10, []);
@@ -226,7 +228,7 @@ window.FANGLANDS = {
       gob.x = gs.x; gob.y = gs.y; gob.dead = gs.dead; gob.home = gs.home; gob.respawnT = gs.respawnT; gob.state = 'idle'; changeTile(x, y, T.GRASS); changeTile(x + 1, y, T.GRASS); changeTile(x - 1, y, T.GRASS); }
     { // load(): a save taken mid-death wakes you alive on a safe tile; unknown item ids are dropped, not crashed on
       const inv0 = invSnap(), eq0 = { ...player.equip }, dk0 = deathKeep; player.bedSpawn = null; deathKeep = null; save();
-      const raw = JSON.parse(localStorage.getItem(SAVE_KEY)); raw.player.hp = 0; raw.player.dead = true; raw.player.x = tc(0); raw.player.y = tc(0); localStorage.setItem(SAVE_KEY, JSON.stringify(raw));
+      const raw = JSON.parse(localStorage.getItem(SAVE_KEY)); raw.player.hp = 0; raw.player.dead = true; raw.player.x = tc(CV.x(0)); raw.player.y = tc(CV.y(0)); localStorage.setItem(SAVE_KEY, JSON.stringify(raw));
       const ok = load();
       check('load: a save taken mid-death wakes you at full hp on a free tile', ok && player.hp === player.maxHp && !player.dead && !collides(player.x, player.y, 13, 'person'), { ok, hp: player.hp, at: [+(player.x / TILE).toFixed(1), +(player.y / TILE).toFixed(1)] });
       raw.player.hp = player.maxHp; raw.player.dead = false; raw.player.x = player.x; raw.player.y = player.y;
@@ -279,20 +281,20 @@ window.FANGLANDS = {
       const raw = JSON.parse(localStorage.getItem(SAVE_KEY)); const named = raw.mapDiffs.length > 0 && raw.mapDiffs.every(([, t]) => typeof t === 'string' && t in T) && raw.regrow.every(r => typeof r.t === 'string' && r.t in T);
       const before = JSON.stringify([...mapDiffs.entries()]), rg = JSON.stringify(regrow.map(r => [r.i, r.t]));
       const ok1 = load(); const same = JSON.stringify([...mapDiffs.entries()]) === before && JSON.stringify(regrow.map(r => [r.i, r.t])) === rg;
-      raw.mapDiffs = raw.mapDiffs.map(([i, t]) => [i, T[t]]); raw.regrow = raw.regrow.map(r => ({ ...r, t: T[r.t] })); raw.mapDiffs.push([idx(1, 1), 'NO_SUCH_TILE']); localStorage.setItem(SAVE_KEY, JSON.stringify(raw));
+      raw.mapDiffs = raw.mapDiffs.map(([i, t]) => [i, T[t]]); raw.regrow = raw.regrow.map(r => ({ ...r, t: T[r.t] })); raw.mapDiffs.push([idx(...CV.p(1, 1)), 'NO_SUCH_TILE']); localStorage.setItem(SAVE_KEY, JSON.stringify(raw));
       const ok2 = load(); const same2 = JSON.stringify([...mapDiffs.entries()]) === before;
       check('save: tiles are stored by name and resolved back; numeric saves and unknown names still load', named && ok1 && same && ok2 && same2, { named, diffs: raw.mapDiffs.length, sample: raw.mapDiffs[0], same, same2 }); save(); }
     // ---------- player feedback pass (2026-09-07): friendly fire, camp respawns, doorsteps, the signpost, gear tiers ----------
     peace(true);
     { // a sapper's sticky bomb hurts the goblin standing beside the blast, and the knight earns nothing for it
-      const o = openSpot(40, 20); F.tp(o.x, o.y); const gob = monsters.find(m => m.type === 'goblin' && !m.dead); const gs = { x: gob.x, y: gob.y, home: gob.home, hp: gob.hp, state: gob.state };
+      const o = openSpot(AW.tx(40), AW.ty(20)); F.tp(o.x, o.y); const gob = monsters.find(m => m.type === 'goblin' && !m.dead); const gs = { x: gob.x, y: gob.y, home: gob.home, hp: gob.hp, state: gob.state };
       gob.x = player.x + 300; gob.y = player.y; gob.home = { x: gob.x, y: gob.y }; gob.hp = gob.maxHp; gob.stunT = 5; gob.state = 'idle';
       const mx0 = player.skills.melee.xp, rx0 = player.skills.range.xp, hp0 = player.hp;
       projectiles.push({ kind: 'sticky', x: gob.x + 20, y: gob.y, vx: 0, vy: 0, t: 0, life: 0, fuse: 0.05, owner: 'monster' }); F.sim(10, []);
       check('friendly fire: a sapper sticky bomb hurts the goblin beside the blast (3–8), no xp to the knight', gob.hp < gob.maxHp && gob.hp >= gob.maxHp - 8 && player.skills.melee.xp === mx0 && player.skills.range.xp === rx0 && player.hp === hp0 && !projectiles.some(p => p.kind === 'sticky'), { hp: gob.hp, max: gob.maxHp });
       Object.assign(gob, { x: gs.x, y: gs.y, home: gs.home, hp: gs.hp, state: gs.state, stunT: 0 }); }
     { // the bulldozer's charge runs down an hp-1 goblin in its path; it dies through killMonster (kills counted, drops rolled)
-      const o = openSpot(60, 40); F.tp(o.x - 12, o.y + 12); const dz = monsters.find(m => m.type === 'bulldozer'); const gob = monsters.find(m => m.type === 'goblin' && !m.dead);
+      const o = openSpot(...ATLAS.frame('drill_field').p(60, 40)); F.tp(o.x - 12, o.y + 12); const dz = monsters.find(m => m.type === 'bulldozer'); const gob = monsters.find(m => m.type === 'goblin' && !m.dead);
       const ds = dz && { x: dz.x, y: dz.y, home: dz.home, dead: dz.dead, hp: dz.hp, state: dz.state, respawnT: dz.respawnT, deadT: dz.deadT }; const gs = { x: gob.x, y: gob.y, home: gob.home, hp: gob.hp, state: gob.state, dead: gob.dead, respawnT: gob.respawnT };
       let ok = false, info = { dozer: !!dz };
       if (dz) {
@@ -303,16 +305,16 @@ window.FANGLANDS = {
       }
       check('friendly fire: the bulldozer charge kills an hp-1 goblin in its path (drops roll)', ok, info);
       Object.assign(gob, gs); gob.stunT = 0; drops = drops.filter(d => dist(d.x, d.y, tc(o.x), tc(o.y)) > 3 * TILE); }
-    { // the Goblin Camp: flagged spawns, 30-minute respawn that waits for the knight to be 40+ tiles off, one CLEARED banner per clear
-      const inCamp = s => s.tx >= 142 && s.tx <= 158 && s.ty >= 20 && s.ty <= 40; const camp = MONSTER_SPAWNS.filter(s => s.camp); const cm = monsters.filter(isCampMonster);
+    { // the Goblin Camp (02-world's CAMP_GROUND, read, not copied): flagged spawns, 30-minute respawn that waits for the knight to be 40+ tiles off, one CLEARED banner per clear
+      const inCamp = s => s.tx >= CAMP_GROUND.x0 && s.tx <= CAMP_GROUND.x1 && s.ty >= CAMP_GROUND.y0 && s.ty <= CAMP_GROUND.y1; const camp = MONSTER_SPAWNS.filter(s => s.camp); const cm = monsters.filter(isCampMonster);
       const flagged = camp.length >= 12 && camp.every(inCamp) && MONSTER_SPAWNS.every(s => !!s.camp === inCamp(s)) && cm.length === camp.length;
       const snap = cm.map(m => ({ m, dead: m.dead, hp: m.hp, respawnT: m.respawnT, deadT: m.deadT, state: m.state, x: m.x, y: m.y }));
-      F.tp(60, 40); quest.campCleared = false; levelBanner = null; const last = cm.find(m => m.type === 'goblin');
+      F.tp(...ATLAS.frame('drill_field').p(60, 40)); quest.campCleared = false; levelBanner = null; const last = cm.find(m => m.type === 'goblin');
       for (const m of cm) { m.dead = true; m.deadT = 0; m.respawnT = 999; }
       last.dead = false; last.hp = 1; last.x = last.home.x; last.y = last.home.y; killMonster(last);
       const banner = !!levelBanner && levelBanner.text === 'GOBLIN CAMP CLEARED' && levelBanner.sub === 'They will not be back for a while' && quest.campCleared === true, slow = last.respawnT === 1800;
-      levelBanner = null; last.respawnT = 0; F.tp(120, 30); F.sim(5, []); const waits = last.dead; // 30 tiles away: still too close
-      F.tp(60, 40); F.sim(5, []); const back = !last.dead && quest.campCleared === false;
+      levelBanner = null; last.respawnT = 0; F.tp(CAMP_GROUND.x0 - 22, CAMP_GROUND.y0 + 10); F.sim(5, []); const waits = last.dead; // 22 tiles west of the camp ground, about 30 from its goblins: still too close
+      F.tp(...ATLAS.frame('drill_field').p(60, 40)); F.sim(5, []); const back = !last.dead && quest.campCleared === false;
       for (const m of cm) { m.dead = true; m.deadT = 0; } last.dead = false; last.hp = 1; killMonster(last); const again = !!levelBanner && levelBanner.text === 'GOBLIN CAMP CLEARED';
       check('goblin camp: spawns flagged camp, 1800 s respawn only while 40+ tiles away, CAMP CLEARED banner once per clear', flagged && banner && slow && waits && back && again, { camp: camp.length, flagged, banner, slow, waits, back, again });
       for (const s of snap) Object.assign(s.m, { dead: s.dead, hp: s.hp, respawnT: s.respawnT, deadT: s.deadT, state: s.state, x: s.x, y: s.y }); quest.campCleared = false; levelBanner = null; drops = drops.filter(d => dist(d.x, d.y, last.home.x, last.home.y) > 3 * TILE); }
@@ -344,7 +346,7 @@ window.FANGLANDS = {
       check('gear tiers: bronze set (shops), steel legs/shield/dagger/axe/warhammer/pickaxe, mithril dagger/warhammer, oak bow — stats, colours, recipes; sappers drop bombs', armour && weapons && tools && bow && recipes && bowRecipe && shops && sapper, { armour, weapons, tools, bow, recipes, bowRecipe, shops, sapper }); }
     { // the oak bow crafts at the Tinker's workbench
       clearJunk(); const inv0 = invSnap(), cxp = player.skills.crafting.xp; player.inv = player.inv.map(s => s && ['oak_log', 'spider_silk', 'oak_bow'].includes(s.id) ? null : s); give('oak_log', 2); give('spider_silk', 1); player.skills.crafting.xp = XP_TABLE[8];
-      F.tp(103, 39); F.walkTo(100, 38, 500); F.face(100, 37); F.press('KeyE'); const open = panel === 'station' && panelArg === 'workbench'; const c = F.clickButton('2 Oak logs + Spider silk → Oak bow'); closePanel();
+      F.tp(...TD.p(103, 39)); F.walkTo(...TD.p(100, 38), 500); F.face(...TD.p(100, 37)); F.press('KeyE'); const open = panel === 'station' && panelArg === 'workbench'; const c = F.clickButton('2 Oak logs + Spider silk → Oak bow'); closePanel();
       check('oak bow crafts at a workbench (Crafting 8: 2 oak logs + silk, 40 xp)', open && c && countItem('oak_bow') === 1 && countItem('oak_log') === 0 && countItem('spider_silk') === 0 && player.skills.crafting.xp === XP_TABLE[8] + 40, { open, c, bow: countItem('oak_bow'), cxp: player.skills.crafting.xp - XP_TABLE[8] });
       player.inv = inv0; player.skills.crafting.xp = cxp; }
     // ---------- Cohen's batch (2026-09-07): crafting xp, food, icons, machines, ash, jungle ----------
@@ -354,9 +356,9 @@ window.FANGLANDS = {
       check('crafting: planks give Crafting xp (2 logs → 4 planks, +6 xp, from the pack)', ok && rec.station === null && rec.skill === 'crafting' && rec.xp === 6 && countItem('plank') === 4 && player.skills.crafting.xp === cx0 + 6, { ok, planks: countItem('plank'), gained: player.skills.crafting.xp - cx0 });
       player.inv = inv0; }
     { // berry bushes: about 60 on the grass, E picks 1–3 berries, the bush goes bare, and it is ripe again after the regrow timer
-      const B = T.BERRY_BUSH; let n = 0, bad = 0; for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) if (map[idx(x, y)] === B) { n++; if (inVillageBounds(tc(x), tc(y)) || (x >= 142 && x <= 158 && y >= 20 && y <= 40) || buildingAt(x, y)) bad++; }
+      const B = T.BERRY_BUSH; let n = 0, bad = 0; for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) if (map[idx(x, y)] === B) { n++; if (['Thistledown', 'Castle Thistledown', 'Goblin Camp'].includes(regionAt(x, y).name) || buildingAt(x, y)) bad++; }   // 34-food's own rule: the town's and the camp's regions (their outlines), and every building
       const inv0 = invSnap(); player.inv = player.inv.map(s => s && s.id === 'berries' ? null : s);
-      const bush = F.nearestTile([B], { x: tc(60), y: tc(30) }); let side = null;
+      const bush = F.nearestTile([B], { x: tc(AW.tx(60)), y: tc(AW.ty(30)) }); let side = null;
       if (bush) for (const [dx, dy] of [[0, 1], [0, -1], [-1, 0], [1, 0]]) if (!side && inMap(bush.x + dx, bush.y + dy) && !SOLID.has(tileAt(bush.x + dx, bush.y + dy))) side = { x: bush.x + dx, y: bush.y + dy };
       let picked = 0, bare = false, again = 0;
       if (side) { F.tp(side.x, side.y); F.face(bush.x, bush.y); F.press('KeyE'); F.sim(2, []); picked = countItem('berries'); notice = null; F.press('KeyE'); F.sim(2, []); bare = countItem('berries') === picked && !!notice && /bare/.test(notice.text) && FOOD.bushes.has(idx(bush.x, bush.y));
@@ -365,7 +367,7 @@ window.FANGLANDS = {
       player.inv = inv0; }
     { // wheat: Greta sells the seed, it plants on soil like a potato, the crop remembers what it is, harvest gives wheat
       const inv0 = invSnap(); clearJunk(); player.inv = player.inv.map(s => s && (s.id === 'wheat' || s.id === 'wheat_seed' || s.id === 'potato_seed') ? null : s); if (!hasTool('hoe')) give('bronze_hoe', 1); give('wheat_seed', 1); // a potato seed from a goblin drop would be planted first (plantSeed takes the first seed in the pack)
-      const o = openSpot(70, 30); F.tp(o.x, o.y); const gt = { x: o.x + 1, y: o.y }; if (tileAt(gt.x, gt.y) !== T.SOIL) changeTile(gt.x, gt.y, T.SOIL);
+      const o = openSpot(...TD.p(70, 30)); F.tp(o.x, o.y); const gt = { x: o.x + 1, y: o.y }; if (tileAt(gt.x, gt.y) !== T.SOIL) changeTile(gt.x, gt.y, T.SOIL);
       F.face(gt.x, gt.y); F.press('KeyE'); F.sim(2, []); const c = crops.find(c => c.i === idx(gt.x, gt.y)); const planted = tileAt(gt.x, gt.y) === T.CROP && !!c && c.crop === 'wheat' && countItem('wheat_seed') === 0;
       if (c) c.stage = 3; F.press('KeyE'); F.sim(2, []);
       check('food: wheat seed (Greta, 2c) plants like a potato, the crop entry says wheat, harvest gives 2–4 wheat', SHOPS.seeds.stock.some(([id, p]) => id === 'wheat_seed' && p === 2) && ITEMS.wheat_seed.seed === 'wheat' && planted && countItem('wheat') >= 2 && countItem('wheat') <= 4 && tileAt(gt.x, gt.y) === T.SOIL, { planted, wheat: countItem('wheat'), crop: c && c.crop });
@@ -388,11 +390,11 @@ window.FANGLANDS = {
       player.inv = inv0; }
     { // draw paths: the pickaxe icon, a parked walker tile (empty seat) and the wreck all draw without throwing (the harness canvas is a stub)
       let icon = true, mech = true; try { drawItemIcon(ctx, 'bronze_pickaxe', 0, 0, 18); drawItemIcon(ctx, 'berries', 0, 0, 18); drawItemIcon(ctx, 'wheat', 0, 0, 18); drawItemIcon(ctx, 'flour', 0, 0, 18); } catch (e) { icon = false; }
-      const o = openSpot(50, 30); try { drawFurniture(ctx, o.x + 1, o.y, T.MECH); drawFurniture(ctx, o.x + 1, o.y, T.WRECK); changeTile(o.x + 1, o.y, T.MECH); F.tp(o.x, o.y); render(); } catch (e) { mech = false; }
+      const o = openSpot(...ATLAS.frame('pond').p(50, 30)); try { drawFurniture(ctx, o.x + 1, o.y, T.MECH); drawFurniture(ctx, o.x + 1, o.y, T.WRECK); changeTile(o.x + 1, o.y, T.MECH); F.tp(o.x, o.y); render(); } catch (e) { mech = false; }
       changeTile(o.x + 1, o.y, T.GRASS);
       check('draw: pickaxe/berry/wheat/flour icons and the parked walker (MECH) + wreck tiles draw without error', icon && mech, { icon, mech }); }
     { // the bulldozer blade: tree → stump (regrow, a log), rock → rubble (regrow, stone), the next pass grinds them flat; fences and gates hold
-      const o = openSpot(56, 40); const e = { x: tc(o.x), y: tc(o.y), r: 22 }; const dir = { x: 1, y: 0 }; const d0 = drops.length;
+      const o = openSpot(...ATLAS.frame('drill_field').p(56, 40)); const e = { x: tc(o.x), y: tc(o.y), r: 22 }; const dir = { x: 1, y: 0 }; const d0 = drops.length;
       changeTile(o.x + 1, o.y, T.TREE); dozerPlow(e, dir, false); const stump = tileAt(o.x + 1, o.y) === T.STUMP && regrow.some(r => r.i === idx(o.x + 1, o.y) && r.t === T.TREE) && drops.slice(d0).some(d => d.id === 'wood');
       dozerPlow(e, dir, false); const ground = tileAt(o.x + 1, o.y) === T.GRASS;
       changeTile(o.x + 1, o.y, T.ROCK); dozerPlow(e, dir, false); const rubble = tileAt(o.x + 1, o.y) === T.RUBBLE && regrow.some(r => r.i === idx(o.x + 1, o.y) && r.t === T.ROCK) && drops.slice(d0).some(d => d.id === 'stone');
@@ -401,7 +403,7 @@ window.FANGLANDS = {
       check('bulldozer: tree → stump (regrow + log), rock → rubble (regrow + stone), the next pass grinds them flat; fences and gates are never flattened', stump && ground && rubble && ground2 && fence && gate, { stump, ground, rubble, ground2, fence, gate });
       changeTile(o.x + 1, o.y, T.GRASS); regrow = regrow.filter(r => r.i !== idx(o.x + 1, o.y)); drops = drops.filter((d, i) => i < d0); }
     { // a goblin-driven bulldozer still rams goblins in its way, at half the knight's damage (3–6)
-      const o = openSpot(60, 40); F.tp(o.x - 12, o.y + 12); const dz = monsters.find(m => m.type === 'bulldozer'); const gob = monsters.find(m => m.type === 'goblin' && !m.dead);
+      const o = openSpot(...ATLAS.frame('drill_field').p(60, 40)); F.tp(o.x - 12, o.y + 12); const dz = monsters.find(m => m.type === 'bulldozer'); const gob = monsters.find(m => m.type === 'goblin' && !m.dead);
       const ds = dz && { x: dz.x, y: dz.y, home: dz.home, dead: dz.dead, hp: dz.hp, state: dz.state, respawnT: dz.respawnT, deadT: dz.deadT }; const gs = { x: gob.x, y: gob.y, home: gob.home, hp: gob.hp, state: gob.state, dead: gob.dead, respawnT: gob.respawnT };
       let ok = false, info = { dozer: !!dz };
       if (dz) {
@@ -413,7 +415,7 @@ window.FANGLANDS = {
       check('friendly fire: a goblin-driven bulldozer rams a goblin in its path for half damage (3–6)', ok, info);
       Object.assign(gob, gs); gob.stunT = 0; }
     { // the core parks the machine you are in: X from the bulldozer leaves T.DOZER, a wrecked bulldozer leaves T.DOZER_WRECK; the walker keeps T.MECH / T.WRECK
-      const o = openSpot(44, 24); F.tp(o.x, o.y); player.facing = { x: 1, y: 0 }; player.action = null; const r0 = player.r, s0 = player.speed;
+      const o = openSpot(AW.tx(44), AW.ty(24)); F.tp(o.x, o.y); player.facing = { x: 1, y: 0 }; player.action = null; const r0 = player.r, s0 = player.speed;
       player.mech = { hp: 110, maxHp: 110, kind: 'dozer' }; player.r = 22; player.speed = 130; notice = null; exitMech();
       const ptx = Math.floor(player.x / TILE), pty = Math.floor(player.y / TILE);
       const dozer = !player.mech && !!nearestTileOfType(ptx, pty, T.DOZER, 2) && !nearestTileOfType(ptx, pty, T.MECH, 2) && !!notice && /bulldozer/.test(notice.text); const dn = notice && notice.text;
@@ -428,20 +430,21 @@ window.FANGLANDS = {
       check('machines: X from the bulldozer parks T.DOZER and a wrecked bulldozer leaves T.DOZER_WRECK (never walker tiles); the walker still parks T.MECH', dozer && wreck && walker, { dozer, wreck, walker, dn }); }
     { // walker and bulldozer come back after an hour, even inside the camp (the camp's 1800 s never shortens it)
       const wk = monsters.find(m => m.type === 'walker'); const ws = { x: wk.x, y: wk.y, dead: wk.dead, hp: wk.hp, respawnT: wk.respawnT, deadT: wk.deadT, state: wk.state }; const k0 = player.kills, wq = quest.walkerKilled;
-      wk.dead = false; wk.hp = 1; wk.x = tc(VILLAGE.x0); wk.y = tc(20); dialog.queue.length = 0; dialog.cur = null; const d0 = drops.length; const wallWas = tileAt(VILLAGE.x0, 20); killMonster(wk); const rt = wk.respawnT; const noWreck = tileAt(VILLAGE.x0, 20) === wallWas; // the town wall tile must be left alone, whatever it is
+      wk.dead = false; wk.hp = 1; wk.x = tc(VILLAGE.x0); wk.y = tc(TD.y(20)); dialog.queue.length = 0; dialog.cur = null; const d0 = drops.length; const wallWas = tileAt(VILLAGE.x0, TD.y(20)); killMonster(wk); const rt = wk.respawnT; const noWreck = tileAt(VILLAGE.x0, TD.y(20)) === wallWas; // the town wall tile must be left alone, whatever it is
       check('machines: walker and bulldozer respawn 3600 s (a killed camp walker waits at least an hour)', MONSTER_DEFS.walker.respawn === 3600 && MONSTER_DEFS.bulldozer.respawn === 3600 && rt >= 3600 && noWreck, { rt, noWreck, wallWas: tileName(wallWas) });
       Object.assign(wk, ws); player.kills = k0; quest.walkerKilled = wq; drops = drops.filter((d, i) => i < d0); dialog.queue.length = 0; dialog.cur = null; }
     { // the Ashfields: ash in patches (25–60% of dragon country outside the lair), grass and dirt between; lava and obsidian still there
-      let ash = 0, area = 0, lava = 0, obs = 0, green = 0; const inFang = (x, y) => x >= 2 && x <= 34 && y >= 108 && y <= 138;
-      for (let y = 96; y <= 138; y++) for (let x = 1; x <= 99; x++) { if (inFang(x, y)) continue; area++; const t = tileAt(x, y); if (t === T.ASH) ash++; else if (t === T.LAVA) lava++; else if (t === T.OBSIDIAN) obs++; else if (t === T.GRASS || t === T.DIRT || ('SCORCH' in T && t === T.SCORCH)) green++; }
+      let ash = 0, area = 0, lava = 0, obs = 0, green = 0; const LAIR = ATLAS.frame('fang_lair').rect({ x0: 2, y0: 108, x1: 34, y1: 138 }), inFang = (x, y) => x >= LAIR.x0 && x <= LAIR.x1 && y >= LAIR.y0 && y <= LAIR.y1;   // 28-thefang's lair
+      // dragon country: the stretched Ashfields, west of the Ashfields / Jungle wall (the old x 100 line)
+      for (let y = AW.ty(96); y <= AW.ty(138); y++) for (let x = AW.tx(1), xe = AW.line('jungle_west', y) - 1; x <= xe; x++) { if (inFang(x, y)) continue; area++; const t = tileAt(x, y); if (t === T.ASH) ash++; else if (t === T.LAVA) lava++; else if (t === T.OBSIDIAN) obs++; else if (t === T.GRASS || t === T.DIRT || ('SCORCH' in T && t === T.SCORCH)) green++; }
       const cover = ash / area;
       // the owner's call: no grass in the Ashfields (56-ashfields burns what was left), so the ground between the
       // ash is scorch and bare dirt now rather than green. The intent of the check is unchanged: ash must be
       // patchy rather than a flat sheet, there must be open ground between it, and lava and obsidian must survive.
       check('ashfields: ash lies in patches — 25–80% of dragon country, scorch and bare dirt between, lava and obsidian kept', cover >= 0.25 && cover <= 0.8 && green > 500 && lava >= 40 && obs >= 30, { cover: +cover.toFixed(2), ash, area, openGround: green, lava, obs }); }
     { // the jungle runs south to the map edge: giant trees and ferns in the band y 140–178 at the old density
-      let trees = 0, ferns = 0, band = 0, row150 = 0; for (let y = 140; y <= 178; y++) for (let x = 100; x <= 198; x++) { band++; const t = tileAt(x, y); if (t === T.JUNGLE) { trees++; if (y === 150) row150++; } else if (t === T.FERN) ferns++; }
-      check('jungle: the biome continues south (y 140–178, x 100–198) at the same density; jungle trees stand at y 150', row150 >= 20 && trees / band > 0.3 && trees / band < 0.5 && ferns / band > 0.06 && regionAt(150, 160).name === 'The Jungle' && regionAt(133, 120).name === 'Sylvaris', { row150, trees: +(trees / band).toFixed(2), ferns: +(ferns / band).toFixed(2), region: regionAt(150, 160).name }); }
+      let trees = 0, ferns = 0, band = 0, row150 = 0; for (let y = AW.ty(140); y <= AW.ty(178); y++) for (let x = AW.tx(100); x <= AW.tx(198); x++) { band++; const t = tileAt(x, y); if (t === T.JUNGLE) { trees++; if (y === AW.ty(150)) row150++; } else if (t === T.FERN) ferns++; }
+      check('jungle: the biome continues south (y 140–178, x 100–198) at the same density; jungle trees stand at y 150', row150 >= 20 && trees / band > 0.3 && trees / band < 0.5 && ferns / band > 0.06 && regionAt(AW.tx(150), AW.ty(160)).name === 'The Jungle' && regionAt(...ATLAS.frame('sylvaris').p(133, 120)).name === 'Sylvaris', { row150, trees: +(trees / band).toFixed(2), ferns: +(ferns / band).toFixed(2), region: regionAt(AW.tx(150), AW.ty(160)).name }); }
     peace(false);
     for (const h of HOOKS.selfTest) h(check, F, { give, peace, openSpot, clearJunk });
     const fails = Object.values(report).filter(v => v.startsWith('FAIL')).length;

@@ -18,7 +18,7 @@
 // Wraps by reassignment with explicit args (docs/EXTENDING.md): mapTargets, questText, advanceQuest,
 // useAction, tapPick. The drawing is drawAxeStump, called from drawFurniture (08-draw) for T.AXESTUMP.
 // ============================================================================
-const AXE_T = { x: 23, y: 9 };                         // 02-world puts the axe stump here, by the cave mouth
+const AXE_T = (([x, y]) => ({ x, y }))(ATLAS.port('cave.axe_stump'));   // 02-world puts the axe stump here, by the cave mouth (the Atlas port)
 const AXE = { T: AXE_T, drawn: 0 };                    // drawn: frames the axe was drawn (the self-test reads it)
 window.AXE = AXE;
 function axeWaiting() { return !player.tookAxe && !window.__instance && tileAt(AXE_T.x, AXE_T.y) === T.AXESTUMP; }

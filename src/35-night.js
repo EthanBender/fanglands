@@ -16,9 +16,13 @@
 {
   const DAY = 600, LIGHT = 420, DUSK = 60, DAWN_FADE = 15, NIGHT_ALPHA = 0.55;
   const SPAWN_EVERY = 20, MAX_ZOMBIES = 4, PLAYER_LIGHT = 170;
-  const GRAVE_T = { x: 12, y: 70 };                       // the last knight of Hollowford (02-world)
-  const CRYPT_T = { x: 13, y: 70 }, STEP_T = { x: 14, y: 70 }; // the crypt door east of the grave, and where you stand after leaving
-  const WOLFWOOD_GRAVES = [[10, 70], [11, 68], [13, 68], [15, 68]]; // a few more stones make it a graveyard
+  // Every overworld position reads the Atlas (the spread spec, section 9.1): the grave, the crypt door and its step are
+  // the graveyard's ports and its stones the graveyard's frame; the Afterlands (an instance) keeps its own map.
+  const NT_GY = ATLAS.frame('graveyard'), NT_FS = ATLAS.frame('far_shore'), NT_W = ATLAS.world;
+  const XY = ([x, y]) => ({ x, y });
+  const GRAVE_T = XY(ATLAS.port('graveyard.grave'));       // the last knight of Hollowford (02-world)
+  const CRYPT_T = XY(ATLAS.port('graveyard.crypt')), STEP_T = XY(ATLAS.port('graveyard.crypt_step')); // the crypt door east of the grave, and where you stand after leaving
+  const WOLFWOOD_GRAVES = NT_GY.pts([[10, 70], [11, 68], [13, 68], [15, 68]]); // a few more stones make it a graveyard
   const AFTER = { id: 'afterlands', w: 60, h: 40, name: 'The Afterlands', sub: 'Night never ends here' };
   const AF_ENTRY = [30, 3], AF_EXIT = [30, 2], AF_FIRE = [30, 8], AF_COUNT = [46, 18];
   const AF_SPAWNS = [
@@ -215,7 +219,7 @@
   const isOwnGrave = (tx, ty) => WOLFWOOD_GRAVES.some(([x, y]) => x === tx && y === ty);
   HOOKS.world.push((rnd, api) => {
     const soft = [T.TREE, T.OAK, T.ROCK, T.IRON, T.COAL, T.FLOWERS, T.MUSHROOM, T.STUMP];
-    for (let y = 67; y <= 71; y++) for (let x = 9; x <= 16; x++) if (soft.includes(api.tileAt(x, y))) api.setTile(x, y, T.GRASS);
+    for (let y = NT_GY.y(67); y <= NT_GY.y(71); y++) for (let x = NT_GY.x(9); x <= NT_GY.x(16); x++) if (soft.includes(api.tileAt(x, y))) api.setTile(x, y, T.GRASS);
     for (const [x, y] of WOLFWOOD_GRAVES) api.setTile(x, y, T.GRAVE);
     api.setTile(GRAVE_T.x, GRAVE_T.y, T.GRAVE);
     api.setTile(CRYPT_T.x, CRYPT_T.y, T.DIRT); api.setTile(STEP_T.x, STEP_T.y, T.DIRT); // the disturbed earth, and the step
@@ -357,7 +361,7 @@
     dg.globalCompositeOperation = 'destination-out';
     if (!inAfter) {
       // places that light themselves: the starting cave (the core darkens it), Deepholm, The Fang's Lair, and the building the knight stands in
-      dg.fillRect(-cam.x, -cam.y, (CAVE_EXIT_X + 1) * TILE, 16 * TILE);
+      dg.fillRect(-cam.x, -cam.y, (CAVE_EXIT_X + 1) * TILE, ATLAS.frame('cave').y(16) * TILE);   // the cave, pinned at the origin
       for (const name of OWN_DARK_REGIONS) { const r = regionRect(name); if (r) dg.fillRect(r.x0 * TILE - cam.x, r.y0 * TILE - cam.y, (r.x1 - r.x0 + 1) * TILE, (r.y1 - r.y0 + 1) * TILE); }
       const b = insideBuilding(ptx, pty); if (b) dg.fillRect(b.x * TILE - cam.x, b.y * TILE - cam.y, b.w * TILE, b.h * TILE);
     }
@@ -418,7 +422,7 @@
       player.dayTime = DAY - 0.5; F.sim(60, []); const dawn = phase(), aD = alpha();
       check('night: 10-minute clock — 7 min day, 1 min dusk (overlay ramps 0 → 0.55), 2 min night, then dawn; player.dayTime is the clock', d === 'day' && a0 === 0 && du === 'dusk' && Math.abs(aMid - 0.275) < 0.01 && ni === 'night' && aN === NIGHT_ALPHA && dawn === 'day' && aD === 0 && typeof player.dayTime === 'number', { elapsedBeforeThisTest: elapsed, d, a0, du, aMid: +aMid.toFixed(3), ni, aN, dawn, aD }); }
     // zombies rise outdoors at night, at most four, and crumble at dawn
-    { const o = h.openSpot(40, 20); F.tp(o.x, o.y); drain(); player.dayTime = LIGHT + DUSK + 1; NIGHT.resetTimer(); h.peace(false); player.hp = 100000;
+    { const o = h.openSpot(NT_W.tx(40), NT_W.ty(20)); F.tp(o.x, o.y); drain(); player.dayTime = LIGHT + DUSK + 1; NIGHT.resetTimer(); h.peace(false); player.hp = 100000;
       const before = nightMs().length;
       F.sim(SPAWN_EVERY * 60 + 6, []); const first = nightMs().filter(m => !m.dead); const n1 = first.length;
       const farEnough = first.every(m => { const d = dist(m.home.x, m.home.y, m.rose.x, m.rose.y) / TILE; return d >= 7.5 && d <= 12.6; });
@@ -439,7 +443,7 @@
       check('night: beside the Wolfwood graves the risen are grave zombies (lv 24, 90 hp)', gz.length >= 1 && gz.every(m => m.type === 'grave_zombie' && m.maxHp === 90) && MONSTER_DEFS.grave_zombie.level === 24 && tileAt(GRAVE_T.x, GRAVE_T.y) === T.GRAVE && WOLFWOOD_GRAVES.every(([x, y]) => tileAt(x, y) === T.GRAVE), { n: gz.length, types: gz.map(m => m.type) });
       player.dayTime = 0; F.sim(3, []); h.peace(true); }
     // never inside Thistledown
-    { F.tp(112, 33); player.dayTime = LIGHT + DUSK + 1; NIGHT.resetTimer(); h.peace(false); F.sim(SPAWN_EVERY * 60 + 30, []); const n = nightMs().length; const can = NIGHT.canSpawn();
+    { F.tp(...ATLAS.port('thistledown.square')); player.dayTime = LIGHT + DUSK + 1; NIGHT.resetTimer(); h.peace(false); F.sim(SPAWN_EVERY * 60 + 30, []); const n = nightMs().length; const can = NIGHT.canSpawn();
       check('night: nothing rises inside Thistledown (village bounds + region), the timer never fires there', n === 0 && !can && player.region === 'Thistledown', { n, can, region: player.region });
       player.dayTime = 0; F.sim(3, []); h.peace(true); }
     // never inside the goblin city: with the knight in Grubmarket the dead rise on the shore outside the city rects, never in them, and one
@@ -448,7 +452,7 @@
       if (city.length === 2) {
         const inCity = (tx, ty) => city.some(r => tx >= r.x0 && tx <= r.x1 && ty >= r.y0 && ty <= r.y1);
         const tileOf = m => [Math.floor(m.x / TILE), Math.floor(m.y / TILE)];
-        leave(); closePanel(); F.tp(215, 30); F.sim(2, []); drain(); player.dayTime = LIGHT + DUSK + 1; NIGHT.resetTimer(); h.peace(false); player.hp = 100000;
+        leave(); closePanel(); F.tp(...NT_FS.p(215, 30)); F.sim(2, []); drain(); player.dayTime = LIGHT + DUSK + 1; NIGHT.resetTimer(); h.peace(false); player.hp = 100000;
         const seen = new Set(); let inside = 0, ticks = 0; const can = NIGHT.canSpawn();
         for (let i = 0; i < SPAWN_EVERY * 60 * 5 + 30; i++) {
           F.step([]); ticks++;
@@ -460,11 +464,11 @@
         // the line: a zombie set on the road just west of the market, hungry for a knight standing inside it, is turned back every time it crosses
         const z = [...seen].find(m => !m.dead) || null; let held = false, turned = 0, crossedTo = null;
         if (z) { for (const m of nightMs()) if (m !== z) m.stunT = 999; const gm = city.find(r => r.name === 'Grubmarket');
-          F.tp(gm.x0 + 2, 30); z.x = tc(gm.x0 - 1); z.y = tc(30); z.home = { x: z.x, y: z.y }; z.lastOut = null; z.state = 'idle'; z.stunT = 0; z.turned = 0; z.angry = true; z.hp = z.maxHp;
+          F.tp(gm.x0 + 2, NT_FS.y(30)); z.x = tc(gm.x0 - 1); z.y = tc(NT_FS.y(30)); z.home = { x: z.x, y: z.y }; z.lastOut = null; z.state = 'idle'; z.stunT = 0; z.turned = 0; z.angry = true; z.hp = z.maxHp;
           let never = true; for (let i = 0; i < 240; i++) { F.step([]); if (inCity(...tileOf(z))) { never = false; crossedTo = tileOf(z); } }
           turned = z.turned; held = never && !z.dead && tileOf(z)[0] < gm.x0; }
         check('night: a zombie chasing a knight into Grubmarket is turned back at the city line (never inside after a tick, sent home)', !!z && held && turned >= 1, { found: !!z, held, turned, crossedTo, at: z && tileOf(z), state: z && z.state });
-        for (const m of nightMs()) m.stunT = 999; player.dayTime = 0; F.sim(3, []); h.peace(true); drops = drops.filter(d => dist(d.x, d.y, tc(215), tc(30)) > 30 * TILE); }
+        for (const m of nightMs()) m.stunT = 999; player.dayTime = 0; F.sim(3, []); h.peace(true); drops = drops.filter(d => dist(d.x, d.y, tc(NT_FS.x(215)), tc(NT_FS.y(30))) > 30 * TILE); }
       else check('night: the goblin city regions (33-goblincity) are present for the no-go check', false, { names: REGIONS.map(r => r.name) }); }
     // one darkness at a time: Deepholm, the starting cave and dark instances keep their own lights.
     // Deepholm is an instance now (24-dwarves), so the probe climbs down the shaft to stand in it.
@@ -473,8 +477,8 @@
       const inDh = !!(window.DEEPHOLM && DEEPHOLM.enter()); if (inDh) F.tp(DEEPHOLM.ENTRY[0], DEEPHOLM.ENTRY[1]); F.sim(2, []);
       const dh = inDh ? NIGHT.overlay() : 1, dhRegion = player.region;
       if (window.INSTANCES && INSTANCES.active()) INSTANCES.leave();
-      F.tp(4, 7); F.sim(2, []); const cave = NIGHT.overlay();
-      const o = h.openSpot(40, 20); F.tp(o.x, o.y); F.sim(2, []); const open = NIGHT.overlay();
+      F.tp(...ATLAS.port('cave.spawn')); F.sim(2, []); const cave = NIGHT.overlay();
+      const o = h.openSpot(NT_W.tx(40), NT_W.ty(20)); F.tp(o.x, o.y); F.sim(2, []); const open = NIGHT.overlay();
       check('night: the overlay is 0.55 in the open after dark and 0 in Deepholm and the starting cave (they draw their own darkness)', open === NIGHT_ALPHA && dh === 0 && dhRegion === 'Deepholm' && cave === 0, { open, dh, dhRegion, cave });
       player.dayTime = 0; F.sim(3, []); }
     // the grave reveals the crypt door once

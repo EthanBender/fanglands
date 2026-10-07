@@ -36,7 +36,7 @@
     { id: 'fang_lair', combat: 'multi' },
     { id: 'hollowford_square', kind: 'area', of: 'hollowford', combat: 'multi', get rects() { return [FR('hollowford').box([130, 70, 150, 90])]; } },   // the cracked well and the Barrelbeast's ground
     // where the green and red dragons sleep: open Ashfields ground, a world rect (whole tiles)
-    { id: 'ashfields_dragons', kind: 'area', of: 'ashfields', combat: 'multi', get rects() { const W = WR(); return [[W.tx(40), W.ty(110), W.tx(99), W.ty(139)]]; } },
+    { id: 'ashfields_dragons', kind: 'area', of: 'ashfields', combat: 'multi', get rects() { const W = WR(), af = REGIONS.find(r => r.name === 'The Ashfields'); return [[W.tx(40), W.ty(110), af ? af.x1 : W.tx(99), W.ty(139)]]; } },   // east as far as 27-dragons' Ashfields box (to the wall on its pin), read, not copied
     { id: 'iron_isle_wreck', kind: 'area', of: 'ironclad_isle', combat: 'multi', get rects() { return [FR('ironclad_isle').box([182, 43, 194, 56])]; } },  // the goblin wreck and its crew
     { id: 'deep_wilderlands', kind: 'reserved', combat: 'multi', pvp: true },                                   // named now, on no tile yet
     // Hollowford is rebuilt in play (31-rebuild, 41-guild): its building walls come and go, so they never count as fixed
@@ -228,7 +228,7 @@
 //   const F = ATLAS.frame('hollowford')   F.x(v) F.y(v) (exact, reals allowed), F.p(x, y) -> [x, y], F.pt({x, y}),
 //                                          F.pts(list), F.rect({x0, y0, x1, y1}), F.box([x0, y0, x1, y1]),
 //                                          F.ix(v) F.iy(v) (new to old), F.dx, F.dy, F.inOld(x, y); pixels: F.x(112) * TILE
-//   const W = ATLAS.world                  the same, real-valued; W.tx/W.ty rounded; W.ix/W.iy the inverse; W.pin(seam, v, along)
+//   const W = ATLAS.world                  the same, real-valued; W.tx/W.ty rounded; W.ix/W.iy the inverse; W.pin(seam, v, along), W.unpin
 //   ATLAS.port(id) ATLAS.box(id) ATLAS.track(id) ATLAS.guards() ATLAS.anchorOf(x, y) ATLAS.oldToNew(x, y) ATLAS.oldToNewWorld(x, y)
 //   ATLAS.frameProblems() ATLAS.strict()
 // oldToNew and oldToNewWorld are for the save migration and the tools ONLY, never for game code: game code names its frame.
@@ -292,30 +292,48 @@
   // Old boxes overlap in seven places (quarry/thistledown, dock/gull_isle, dock/camp, thistledown/hollowford,
   // graveyard/deepholm_rock, wren/deepholm_rock, warden/stone_circle). "Smallest box wins" can split one thing between two
   // places that move apart at the spread, so a point inside more than one box has an owner only when one is DECIDED:
-  // a rect here (each with the reason), or a port at that exact point. Every other overlap point is refused by
-  // tools/anchor-of.mjs and tools/frame-codemod.mjs until a human decides (docs/spread/README.md lists the open ones).
+  // a rect here (each with the reason), or a port at that exact point. Every overlap tile is decided (Stage 3); a new
+  // overlap point is refused by tools/anchor-of.mjs and tools/frame-codemod.mjs until a human decides
+  // (docs/spread/README.md lists them).
   const OWNERS = [
     { box: [72, 14, 80, 21], id: 'thistledown', why: 'the cow pen 72..80 x 14..21: section 2 lists it under thistledown, not quarry' },
+    { box: [128, 59, 140, 61], id: 'thistledown', why: "the south pond and its sandy shore (centre 134,60, 02-world's second pond, drawn in Thistledown's frame): the spec author's decision; section 2 had listed it under both" },
+    { box: [170, 12, 171, 14], id: 'gull_isle', why: "Gull Isle's mooring (26-boats LOC.gull: the boat 170,13, the lantern 171,12, the planks 171..172 x 12..14) moves as one with the isle: the spec author's decision" },
+    // decided at Stage 3 by the built structure each tile is part of (docs/spread/README.md lists them)
+    { box: [156, 17, 159, 20], id: 'camp', why: "the palisade's north wall (PALISADE 156..158,20, drawn in the camp's frame by 02-world and 65-palisade) and the camp's corner inside its line" },
+    { box: [160, 17, 161, 20], id: 'dock', why: "the shore east of where the palisade ends, inside the dock's keep-clear (92's DOCKF.box([158, 9, 170, 19])): the dock's beach and water" },
+    { box: [168, 8, 169, 20], id: 'dock', why: "the water off the dock's end, where the dock's own boat lies (dock.boat 167,14): the dock's side of the channel to Gull Isle" },
+    { box: [170, 8, 171, 20], id: 'gull_isle', why: "the water in the mooring's columns north and south of it (the mooring 170..171 x 12..14 is gull_isle's): the isle's side of the channel" },
+    { box: [54, 90, 66, 91], id: 'stone_circle', why: "the circle's south stones (STONECIRCLE 58,90 and 62,90, drawn in its frame by 02-world) and the clear ground round it (39 and 92 keep CIRCLE.box([55, 83, 65, 91]))" },
+    { box: [54, 92, 66, 92], id: 'warden', why: "the open row above the warden's tree line and notch (rows 93..95): its approach from the north, inside its keep-clear (92's WARD.box([53, 90, 68, 106])); nothing of the circle's is built there" },
+    { box: [6, 72, 19, 72], id: 'graveyard', why: "the graveyard's south row, its gate's row (the port graveyard.gate 13,72), inside its keep-clear (GRAVE.box([8, 65, 17, 72]))" },
+    { box: [6, 73, 19, 73], id: 'deepholm_rock', why: "the first row of the reclaimed Deepholm wood (58-underground's rectangle x 2..26, y 72..94, south of the graveyard's keep-clear)" },
+    { box: [25, 73, 26, 83], id: 'deepholm_rock', why: "the east edge of the reclaimed Deepholm wood (58-underground's rectangle to x 26), open wood west of Old Wren's hut (28..29) and its yard" },
+    { box: [70, 12, 72, 13], id: 'thistledown', why: "open grass north of the cow pen (thistledown's, 72..80 x 14..21): the quarry's rock (48..60) and its dozer spawn (70,8) lie north of row 12" },
+    { box: [70, 14, 71, 16], id: 'thistledown', why: "open grass west of the cow pen's fence (72,14..21): the pen's side, nothing of the quarry's built there" },
+    { box: [120, 59, 127, 61], id: 'thistledown', why: "the river and the scarp's foot west of the south pond (thistledown's 128..140), on the town's side of the river; Hollowford's ruins start at row 69" },
+    { box: [141, 59, 141, 61], id: 'thistledown', why: "the grass east of the south pond's shore (thistledown's 128..140), the river's turn past the town's corner (thistledown.river_se 146,57)" },
   ];
 
   // ---------- the ports (~100): doors, gates, road ends and named spots ----------
+  // (the *.arch ports are 63-house's arch landings, where an island arch sets the knight down)
   const PORTS = {
     'cave.spawn': ['cave', 4, 7], 'cave.sword': ['cave', 11, 7], 'cave.mouth': ['cave', 21, 7], 'cave.axe_stump': ['cave', 23, 9],
     'cave.death_house': ['cave', 25, 10], 'cave.board': ['cave', 24, 6], 'spider_den.door': ['cave', 22, 3], 'spider_den.step': ['cave', 23, 3],
     'quarry.shaft': ['quarry', 56, 6], 'quarry.shaft_step': ['quarry', 56, 7], 'quarry.shrine': ['quarry', 62, 6], 'quarry.shrine_step': ['quarry', 62, 7],
-    'quarry.cart': ['quarry', 54, 13], 'quarry.spur': ['quarry', 54, 14], 'quarry.dozer_spawn': ['quarry', 70, 8],
+    'quarry.cart': ['quarry', 54, 13], 'quarry.spur': ['quarry', 54, 14], 'quarry.dozer_spawn': ['quarry', 70, 8], 'quarry.arch': ['quarry', 54, 8],
     'signpost.sign': ['signpost', 65, 27],
-    'pond.centre': ['pond', 43, 36], 'pond.stones_n': ['pond', 43, 31], 'pond.stones_s': ['pond', 43, 40], 'pond.outflow': ['pond', 50, 37], 'pond.landing': ['pond', 45, 29],
+    'pond.centre': ['pond', 43, 36], 'pond.stones_n': ['pond', 43, 31], 'pond.stones_s': ['pond', 43, 40], 'pond.outflow': ['pond', 50, 37], 'pond.landing': ['pond', 45, 29], 'pond.arch': ['pond', 41, 39],
     'thistledown.origin': ['thistledown', 84, 13], 'thistledown.square': ['thistledown', 112, 33], 'thistledown.fountain': ['thistledown', 112, 35],
     'thistledown.duke': ['thistledown', 112, 49], 'thistledown.castle': ['thistledown', 104, 42], 'thistledown.west_gate': ['thistledown', 85, 32],
     'thistledown.east_gate': ['thistledown', 140, 32], 'thistledown.board': ['thistledown', 105, 27], 'thistledown.house_portal': ['thistledown', 117, 17],
     'thistledown.house_portal_step': ['thistledown', 117, 18], 'thistledown.rail': ['thistledown', 119, 27], 'thistledown.stall': ['thistledown', 116, 28],
     'thistledown.dozer_bay': ['thistledown', 96, 43], 'thistledown.agility_gate': ['thistledown', 87, 50], 'thistledown.forge': ['thistledown', 92, 37],
     'thistledown.anvil': ['thistledown', 94, 38], 'thistledown.brazier': ['thistledown', 119, 38], 'thistledown.death_house': ['thistledown', 133, 48],
-    'thistledown.west_lane_n': ['thistledown', 84, 33], 'thistledown.west_lane_s': ['thistledown', 84, 60], 'thistledown.blood_portal': ['thistledown', 129, 21],
+    'thistledown.river_se': ['thistledown', 146, 57], 'thistledown.west_lane_n': ['thistledown', 84, 33], 'thistledown.west_lane_s': ['thistledown', 84, 60], 'thistledown.blood_portal': ['thistledown', 129, 21],
     'camp.west_gap': ['camp', 147, 30], 'camp.walker': ['camp', 152, 30], 'camp.cage': ['camp', 148, 34], 'camp.climb': ['camp', 158, 30],
     'camp.shed_door': ['camp', 147, 44], 'camp.shed_step': ['camp', 148, 44], 'camp.dozer_spawn': ['camp', 146, 38], 'camp.south': ['camp', 153, 40],
-    'dock.planks': ['dock', 164, 14], 'dock.land': ['dock', 163, 14], 'dock.boat': ['dock', 167, 14], 'dock.boat2': ['dock', 170, 13],
+    'dock.planks': ['dock', 164, 14], 'dock.land': ['dock', 163, 14], 'dock.boat': ['dock', 167, 14], 'gull_isle.boat': ['gull_isle', 170, 13],
     'gull_isle.pete': ['gull_isle', 181, 14], 'ironclad_isle.hull': ['ironclad_isle', 188, 46],
     'far_shore.strait': ['far_shore', 200, 30], 'far_shore.landing': ['far_shore', 206, 30], 'far_shore.city_gate': ['far_shore', 212, 30],
     'far_shore.lab_door': ['far_shore', 247, 41], 'far_shore.lab_step': ['far_shore', 247, 42], 'far_shore.blood_portal': ['far_shore', 218, 43],
@@ -327,7 +345,7 @@
     'hollowford.square': ['hollowford', 140, 80], 'hollowford.heart': ['hollowford', 140, 76], 'hollowford.hatch': ['hollowford', 147, 70],
     'hollowford.barrelbeast': ['hollowford', 140, 86], 'hollowford.board': ['hollowford', 139, 78], 'hollowford.tam': ['hollowford', 126, 88],
     'hollowford.guild_hall': ['hollowford', 150, 66], 'hollowford.north': ['hollowford', 140, 68], 'hollowford.south': ['hollowford', 141, 96],
-    'hollowford.west': ['hollowford', 120, 77], 'hollowford.east': ['hollowford', 158, 82], 'hollowford.blood_portal': ['hollowford', 154, 88],
+    'hollowford.west': ['hollowford', 120, 77], 'hollowford.east': ['hollowford', 158, 82], 'hollowford.blood_portal': ['hollowford', 154, 88], 'hollowford.arch': ['hollowford', 139, 79],
     'warden.gate': ['warden', 60, 96], 'warden.post': ['warden', 60, 95], 'warden.dunstan_hut': ['warden', 64, 98], 'warden.dunstan': ['warden', 67, 104],
     'warden.node': ['warden', 66, 100], 'warden.turn': ['warden', 64, 103], 'warden.east_wall': ['warden', 100, 96],
     'ash_shrine.shrine': ['ash_shrine', 87, 103],
@@ -343,12 +361,18 @@
   // ports that lie outside their own box on purpose: relative geometry that moves with the place (one line of reason each)
   const PORT_REL = {
     'warden.east_wall': 'the Ashfields/Jungle wall is the old x 100 line; it moves with the warden frame (the jungle_west pin)',
+    'thistledown.river_se': "the river's turn past the town's south-east corner, a row below the wall: it moves with the town (TRACKS.river)",
   };
 
   // ---------- the tracks: today's values (no readers yet); each point a port, a world point or an anchor point ----------
   // 39-worldblend's and 92-worldshape's ROADS (11 polylines), the NODES (92's 15; 39 reads the first 9), 39's RIVER,
   // 27-dragons' PATH and FARM_PATH, 25-elves' PATH, 24-dwarves' shaft lane and 26-boats' dock lanes. Points are tagged by
-  // the smallest old box that holds them (tools/anchor-of.mjs); the river is the stretched world's (§2), all 'w'.
+  // the smallest old box that holds them (tools/anchor-of.mjs); the river is the stretched world's (§2), bar where it runs
+  // through a pond: its head (the first two points, inside Miller's Pond, which it leaves by the east shore) and its three
+  // points through the small pond south of Thistledown (inside OWNERS' south-pond strip, thistledown's) and the next one,
+  // the port thistledown.river_se (146,57, the turn past the town's south-east corner a row below the wall: PORT_REL), which
+  // move with their ponds and the town. The jiggle found the channel cut each time the pond, or Thistledown, moved alone.
+  // (Stage 4a lays the river anew.)
   const P = id => ['port', id], w = (x, y) => ['w', x, y];
   const TRACKS = {
     road_cave: [P('cave.mouth'), P('signpost.sign'), ['thistledown', 84, 32]],
@@ -364,14 +388,15 @@
     shaft_lane: [['quarry', 54, 13], ['quarry', 54, 8], ['quarry', 55, 8], ['quarry', 55, 5], ['quarry', 57, 5]],
     nodes: [P('cave.mouth'), P('signpost.sign'), P('thistledown.west_gate'), P('dock.planks'), P('hollowford.heart'), P('warden.node'), P('fang_lair.node'),
       P('hollowford.south'), P('quarry.shaft'), P('wren.wren'), P('graveyard.grave'), ['pond', 38, 36], P('camp.walker'), P('sylvaris.node'), P('thistledown.square')],
-    river: [w(44, 38), w(47, 44), w(48, 50), w(52, 56), w(62, 58), w(72, 60), w(84, 60), w(94, 61), w(102, 59), w(110, 62), w(118, 60), w(124, 62),
-      w(128, 61), w(134, 60), w(140, 59), w(146, 57), w(154, 53), w(178, 47)],
+    river: [['pond', 44, 38], ['pond', 47, 44], w(48, 50), w(52, 56), w(62, 58), w(72, 60), w(84, 60), w(94, 61), w(102, 59), w(110, 62), w(118, 60), w(124, 62),
+      ['thistledown', 128, 61], ['thistledown', 134, 60], ['thistledown', 140, 59], P('thistledown.river_se'), w(154, 53), w(178, 47)],
   };
 
   // ---------- the stretched world, and the seam pins (§3) ----------
   const WORLD = { xs: [[0, 0], [MAP_W - 1, MAP_W - 1]], ys: [[0, 0], [MAP_H - 1, MAP_H - 1]] };   // identity until Stage 4a
-  // each pinned seam is offset by (port's new place - where the stretch puts its old place), tapered to 0 over 12 tiles
-  // either side; `axis` is the coordinate the seam is moved in, `along` the one it runs along
+  // near each of its ports a pinned seam moves with the port's place (its old value through the port's frame) instead of
+  // the stretch, tapered back to the stretch over 12 tiles either side (W.pin); `axis` is the coordinate the seam is
+  // moved in, `along` the one it runs along
   const PINS = [
     { id: 'rim', seam: 'the Ashfields rim row (37 row 95, 92 footWA, 93 band)', axis: 'y', ports: ['warden.gate'] },
     { id: 'gw_steps', seam: 'the Goblin Fields / Wolfwood scarp (92 sGW)', axis: 'y', ports: ['graveyard.steps'] },
@@ -443,19 +468,29 @@
     box: b => [W.x(b[0]), W.y(b[1]), W.x(b[2]), W.y(b[3])],
     get dx() { return 0; }, get dy() { return 0; },
     inOld: (x, y) => x >= 0 && y >= 0 && x <= WORLD.xs[WORLD.xs.length - 1][0] && y <= WORLD.ys[WORLD.ys.length - 1][0],
-    // a pinned seam's value v (new coordinates) at `along` (new coordinates): passes exactly through each of its ports
+    // a pinned seam's value v (new coordinates) at `along` (new coordinates). Near a port the seam is carried by the
+    // port's place: its OLD value (W.iy(v), or W.ix) goes through the port's frame, so it keeps the distance from the
+    // port it had on the old map (a seam 3 rows below the steps is 3 rows below them after the spread, not 3 rows
+    // stretched); the offset (frame - stretch) tapers to 0 over TAPER tiles of `along` either side of the port
     pin(seamId, v, along) {
       const pin = PINS.find(q => q.id === seamId); if (!pin) throw new Error('ATLAS.world.pin: no seam ' + JSON.stringify(seamId));
       let off = 0;
       for (const pid of pin.ports) {
         const o = PORTS[pid], n = port(pid); if (!o || !n) continue;
-        const ax = pin.axis === 'y' ? 1 : 0, al = 1 - ax;
-        const oldAt = o[0] === 'new' ? null : o[1 + ax];
-        if (oldAt === null) continue;   // a port of a new place has no old position: it pins from Stage 4a
-        const delta = n[ax] - (ax ? W.y(oldAt) : W.x(oldAt)), d = Math.abs(along - n[al]);
+        if (o[0] === 'new') continue;   // a port of a new place has no old position: it pins from Stage 4a
+        const ax = pin.axis === 'y' ? 1 : 0, al = 1 - ax, F = FRAMES[o[0]];
+        const delta = (ax ? F.y(W.iy(v)) : F.x(W.ix(v))) - v, d = Math.abs(along - n[al]);
         if (d < TAPER) off += delta * (1 - d / TAPER);
       }
       return v + off;
+    },
+    // the inverse along the seam's axis: the v whose pinned value is u (a band of rows about a seam, mapped back to old
+    // rows through W.iy(W.unpin(...))). Exactly u wherever the pin moves nothing (always, before the spread).
+    unpin(seamId, u, along) {
+      if (W.pin(seamId, u, along) === u) return u;
+      let lo = u - 256, hi = u + 256;   // pin is monotone in v (each port's frame and the stretch both are)
+      for (let k = 0; k < 60; k++) { const m = (lo + hi) / 2; if (W.pin(seamId, m, along) < u) lo = m; else hi = m; }
+      return (lo + hi) / 2;
     },
     // a straight pinned seam (a PIN with `old`, its old line): the new tile column (or row) it stands on at `along`.
     // The one read of that line: jungle_west is the Ashfields / Jungle wall, and every split, box edge and loop end on
@@ -513,13 +548,14 @@
     const inside = (b, W2, H2) => b[0] >= 0 && b[1] >= 0 && b[2] <= W2 - 1 && b[3] <= H2 - 1 && b[0] <= b[2] && b[1] <= b[3];
     const meet = (a, b) => a[0] <= b[2] && b[0] <= a[2] && a[1] <= b[3] && b[1] <= a[3];
     const nested = (i, o) => NESTED.some(([p, q]) => (p === i && q === o) || (p === o && q === i));
-    // now: every live box inside the map; two boxes may overlap only while both still sit where the old map put them
-    // (§2: old boxes may overlap) or where NESTED allows it
+    // now: every live box inside the map; two boxes may overlap only while both keep the old map's relative placement
+    // (the same shift: §2's old boxes may overlap, and OWNERS decides each overlap tile; at Stage 0-3 every shift is 0,
+    // and the jiggle moves an overlapping pair as one) or where NESTED allows it
     const now = Object.keys(ANCHORS).filter(live);
     for (const id of now) if (!inside(box(id), MAP_W, MAP_H)) problems.push(id + "'s box lies outside the map");
-    const atHome = id => ANCHORS[id].at[0] === ANCHORS[id].box[0] && ANCHORS[id].at[1] === ANCHORS[id].box[1];
+    const shift = id => (ANCHORS[id].at[0] - ANCHORS[id].box[0]) + ',' + (ANCHORS[id].at[1] - ANCHORS[id].box[1]);
     for (let i = 0; i < now.length; i++) for (let j = i + 1; j < now.length; j++)
-      if (!(atHome(now[i]) && atHome(now[j])) && !nested(now[i], now[j]) && meet(box(now[i]), box(now[j]))) problems.push(now[i] + ' and ' + now[j] + ' overlap');
+      if (shift(now[i]) !== shift(now[j]) && !nested(now[i], now[j]) && meet(box(now[i]), box(now[j]))) problems.push(now[i] + ' and ' + now[j] + ' overlap');
     // the plan: every §2 box at its `to` and every §4 box inside 400x280, pairwise disjoint (bar NESTED)
     const plan = {};
     for (const id in ANCHORS) { const a = ANCHORS[id]; plan[id] = a.kind === 'place' ? [a.to[0], a.to[1], a.to[0] + a.box[2] - a.box[0], a.to[1] + a.box[3] - a.box[1]] : a.newBox; }
@@ -567,7 +603,7 @@
     // Stage 0: every frame, the world and every pin are the identity, so nothing on screen can have moved
     const notId = Object.keys(FRAMES).filter(id => { const f = FRAMES[id], a = ANCHORS[id]; return f.dx !== 0 || f.dy !== 0 || f.x(a.box[0] + 0.5) !== a.box[0] + 0.5 || f.iy(f.y(a.box[3])) !== a.box[3]; });
     const wId = [0, 7.25, 0.1, 37.3, 61.5 + 0.7 * 6.5, MAP_W - 1].every(v => W.x(v) === v && W.ix(v) === v) && [0, 3.5, MAP_H - 1].every(v => W.y(v) === v && W.iy(v) === v) && W.tx(12.4) === 12 && W.ty(12.6) === 13;
-    const pinsZero = PINS.every(pin => [0, 50, 96, 140].every(al => W.pin(pin.id, 42.5, al) === 42.5));
+    const pinsZero = PINS.every(pin => [0, 50, 96, 140].every(al => W.pin(pin.id, 42.5, al) === 42.5 && W.unpin(pin.id, 42.5, al) === 42.5));
     check(PF + 'Stage 0: every frame, the world and every seam pin are the identity (frame.x = x, W.x = x, pin offset 0)', notId.length === 0 && wId && pinsZero, { notId, wId, pinsZero });
     // the API's shapes
     const Fh = frame('hollowford'), r = Fh.rect({ x0: 122, y0: 66, x1: 156, y1: 92, name: 'HF' }), pt = Fh.pt({ x: 140, y: 80, label: 'well' });
@@ -577,16 +613,21 @@
     check(PF + "a frame answers in every shape the conversions use (p, pt, pts, rect, box, inOld) and keeps a rect's other fields; an unknown place throws", shapes && threw, { shapes, threw });
     // helpers
     const sp = port('thistledown.square'), reserved = port('old_bridge.span'), hfBox = box('hollowford'), g = guards().find(q => q.id === 'hollowford');
-    const smallest = anchorOf(134, 60), ow = oldToNew(140, 80), none = oldToNew(60, 70), nw = oldToNewWorld(60, 70), trackOk = Object.keys(TRACKS).every(id => track(id).every(q => Array.isArray(q) && q.length === 2 && Number.isFinite(q[0]) && Number.isFinite(q[1])));
-    check(PF + 'port, box, guards, anchorOf (the smallest box wins), oldToNew (null on open land) and every track resolve; a reserved place has no box or port before 4a',
+    const smallest = anchorOf(160, 18), ow = oldToNew(140, 80), none = oldToNew(60, 70), nw = oldToNewWorld(60, 70), trackOk = Object.keys(TRACKS).every(id => track(id).every(q => Array.isArray(q) && q.length === 2 && Number.isFinite(q[0]) && Number.isFinite(q[1])));
+    check(PF + 'port, box, guards, anchorOf (an overlap tile goes to its owner: the dock / camp corner 160,18 to the dock), oldToNew (null on open land) and every track resolve; a reserved place has no box or port before 4a',
       JSON.stringify(sp) === '[112,33]' && reserved === null && box('old_bridge') === null && JSON.stringify(hfBox) === '[120,59,160,96]' && g && g.x0 === hfBox[0] - ANCHORS.hollowford.guard && g.y1 === hfBox[3] + ANCHORS.hollowford.guard &&
-      smallest && smallest.id === 'hollowford' && smallest.holders.includes('thistledown') && JSON.stringify(ow) === '[140,80]' && none === null && JSON.stringify(nw) === '[60,70]' && trackOk,
+      smallest && smallest.id === 'dock' && smallest.holders.includes('camp') && JSON.stringify(ow) === '[140,80]' && none === null && JSON.stringify(nw) === '[60,70]' && trackOk,
       { sp, reserved, hfBox, g, smallest, ow, none, trackOk });
-    // an overlap point is flagged until a human decides it; an OWNERS rect or a port at that exact point decides it
-    const pen = anchorOf(72, 14), gate = anchorOf(13, 72), open = anchorOf(134, 60), alone = anchorOf(140, 80);
-    check(PF + 'a point inside two old boxes is an overlap a human decides (134,60), unless an OWNERS rect (the cow pen 72,14: thistledown, not the smaller quarry) or a port at that point (graveyard.gate 13,72) decides it',
-      open.overlap === true && pen.id === 'thistledown' && pen.decided === 'owner' && !pen.overlap && gate.id === 'graveyard' && gate.decided === 'port' && !gate.overlap && alone.overlap === false && alone.decided === null,
-      { open, pen, gate, alone });
+    // an overlap point is flagged until a human decides it (an OWNERS rect, or a port at that exact point); since Stage 3
+    // every one is decided, so no tile inside two old boxes is left open
+    const pen = anchorOf(72, 14), gate = anchorOf(13, 72), pal = anchorOf(157, 20), stone = anchorOf(58, 90), alone = anchorOf(140, 80), pond = anchorOf(134, 60), moor = anchorOf(170, 13);
+    const undecided = [];
+    for (const id in ANCHORS) { const b = ANCHORS[id].box; if (!b) continue;
+      for (let y = b[1]; y <= b[3]; y++) for (let x = b[0]; x <= b[2]; x++) { const a = anchorOf(x, y); if (a && a.overlap && undecided.length < 8) undecided.push(x + ',' + y); } }
+    check(PF + 'every point inside two old boxes has its owner decided (OWNERS, or a port at that point), none left for a human: the cow pen 72,14 and the south pond 134,60 are thistledown, not the smaller quarry or hollowford; the Gull Isle mooring 170,13 gull_isle, not the smaller dock; the palisade 157,20 the camp, not the smaller dock; the south stones 58,90 the stone circle; the gate 13,72 the graveyard',
+      undecided.length === 0 && pen.id === 'thistledown' && pen.decided === 'owner' && !pen.overlap && pond.id === 'thistledown' && pond.decided === 'owner' && moor.id === 'gull_isle' && moor.decided === 'owner' &&
+      pal.id === 'camp' && !pal.overlap && stone.id === 'stone_circle' && !stone.overlap && gate.id === 'graveyard' && !gate.overlap && alone.overlap === false && alone.decided === null,
+      { undecided, pen, gate, pal, stone, alone, pond, moor });
     // TRACKS hold today's values: the cave road ends where 02-world lays it, and the river is 39's 18 points
     const cave = track('road_cave'), riv = track('river');
     check(PF + "TRACKS hold today's values (the cave road from the cave mouth by the signpost to the lane outside the west gate; 18 river points from the pond to the sea)",

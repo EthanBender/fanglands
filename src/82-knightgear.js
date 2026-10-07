@@ -1661,7 +1661,7 @@ const KNIGHTGEAR = (() => {
       // the knight; for that work the knight holds the tool himself (one tool, two hands)
       { const back = keep(), bad = [], picks0 = countItem('steel_pickaxe');
         try {
-          const o = h.openSpot(40, 20); F.tp(o.x, o.y); player.y += 0.37; player.mech = null; player.dead = false; player.facing = { x: 0, y: 1 }; player.attackT = 0;
+          const o = h.openSpot(ATLAS.world.tx(40), ATLAS.world.ty(20)); F.tp(o.x, o.y); player.y += 0.37; player.mech = null; player.dead = false; player.facing = { x: 0, y: 1 }; player.attackT = 0;
           const hand = shade(ITEMS.iron_body.color, -0.15);
           const cases = [['cape_melee', { cape: 'cape_melee' }], ['godly_helm', { helm: 'godly_helm' }], ['mine_obsidian', null, 'pickaxe'], ['mine_mithril', null, 'pickaxe'], ['chop_jungle', null, 'axe'], ['rm_giant', null, 'pickaxe'], ['rm_vein', null, 'pickaxe'], ['coalface', null, 'pickaxe', true]];
           for (const [name, eq, tool, noTier] of cases) {
@@ -1773,7 +1773,7 @@ const KNIGHTGEAR = (() => {
       { const back = keep(), hurt0 = player.hurtT, dT0 = player.deadT, seen = [], _dh = drawHuman, r = {};
         try {
           // beside a townsperson, so the frame has looks without gear in it too
-          const tp = NPCS.find(n => !n.ghost), o = tp ? h.openSpot(Math.floor(tp.px / TILE) + 1, Math.floor(tp.py / TILE)) : h.openSpot(40, 20);
+          const tp = NPCS.find(n => !n.ghost), o = tp ? h.openSpot(Math.floor(tp.px / TILE) + 1, Math.floor(tp.py / TILE)) : h.openSpot(ATLAS.world.tx(40), ATLAS.world.ty(20));
           F.tp(o.x, o.y); player.mech = null; player.action = null; player.attackT = 0; F.step([]);
           Object.assign(player.equip, { helm: 'iron_helm', body: 'iron_body', legs: 'iron_legs', shield: 'iron_shield', weapon: 'iron_sword' });
           drawHuman = function (g, e, l) { const a = STATS.live; try { return _dh(g, e, l); } finally { seen.push({ e, knight: !!(l && l.gear), live: STATS.live - a }); } };
@@ -1945,7 +1945,7 @@ const KNIGHTGEAR = (() => {
       // rope's end, and handAt is where his hand is drawn (26-boats starts the rope there)
       { const back = keep(), r = {};
         try {
-          const o = h.openSpot(40, 20); F.tp(o.x, o.y); player.y += 0.37; player.mech = null; player.dead = false; player.facing = { x: 1, y: 0 }; player.attackT = 0;
+          const o = h.openSpot(ATLAS.world.tx(40), ATLAS.world.ty(20)); F.tp(o.x, o.y); player.y += 0.37; player.mech = null; player.dead = false; player.facing = { x: 1, y: 0 }; player.attackT = 0;
           Object.assign(player.equip, { body: 'iron_body', shield: 'iron_shield', weapon: 'iron_sword', helm: null, cape: null });
           const hand = shade(ITEMS.iron_body.color, -0.15);
           for (const [type, tool] of [['rm_warm', 'stone'], ['rm_heat', 'stone'], ['lobster', 'rope']]) {

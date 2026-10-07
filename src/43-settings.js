@@ -450,7 +450,7 @@ const SETTINGS = (() => {
         toggleKidMode(); render(); const readBack = S.kid === true && JSON.parse(lsGet(KEY)).kid === true; // the core toggle is read back on the next frame
         set('kid', k0); check('settings: kid mode row drives window.__kidmode; a core toggle is read back into the settings', on && off && readBack, { on, off, readBack }); }
       // tap-to-walk gate
-      { window.__forceTouch = false; const o = h.openSpot(40, 24); F.tp(o.x, o.y); F.step([]); tapCancel('test'); render();
+      { window.__forceTouch = false; const o = h.openSpot(ATLAS.world.tx(40), ATLAS.world.ty(24)); F.tp(o.x, o.y); F.step([]); tapCancel('test'); render();
         const tapAt = (dx) => { render(); const sx = player.x + dx - cam.x, sy = player.y - cam.y; pointerDown(sx, sy, 'mouse'); pointerUp('mouse'); };
         set('tap', false); tapAt(2 * TILE); const x0 = player.x; const noPath = !tap.path && !tap.kind; F.sim(30, []); const still = Math.abs(player.x - x0) < 1;
         set('tap', true); tapAt(2 * TILE); const path = !!tap.path || !!tap.kind; tapCancel('test');

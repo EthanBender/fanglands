@@ -636,12 +636,19 @@
         return (road[a] && everywhere[b] && !road[b]) || (road[b] && everywhere[a] && !road[a]); };
       const cand = [];
       // (the window round the scarp: OLD world rows 48..76, on the gw_steps pin)
-      for (let x = W.tx(1); x <= W.tx(161); x++) for (let off = W.pin('gw_steps', 0, x), y = Math.round(W.y(48) + off); y <= Math.round(W.y(76) + off); y++) {
+      for (let x = W.tx(1); x <= W.tx(161); x++) for (let y = Math.round(W.pin('gw_steps', W.y(48), x)); y <= Math.round(W.pin('gw_steps', W.y(76), x)); y++) {
         if (at(x, y) !== CLIFF || !free(x, y) || roadD[y * MAP_W + x] <= 4) continue;
         if (SOLID.has(at(x, y - 1)) || SOLID.has(at(x, y + 1)) || !joins(x, y)) continue;
         cand.push([x, y]); break;
       }
-      if (cand.length) { const c = cand[Math.floor(cand.length / 2)];
+      // the steps are the graveyard's: cut at its port, on the scarp the gw_steps pin carries through it, with open ground
+      // above and below (where the face is two tiles thick there, or a tree stands against it, the cut goes through, up
+      // to two tiles each way); only a scarp that misses the port falls back to the middle measured climb
+      const [px, py] = port('graveyard.steps'), solidAt = (x, y) => inMap(x, y) && SOLID.has(at(x, y)) && !PUSH_THROUGH.has(at(x, y)) && !buildingAt(x, y);
+      if (at(px, py) === CLIFF) {
+        for (const dir of [-1, 1]) for (let k = 1; k <= 2 && solidAt(px, py + dir * k); k++) set(px, py + dir * k, T.GRASS);
+        set(px, py, STEPS); S.stairs.push({ x: px, y: py, tile: tileName(STEPS), lv: STEPS_LV });
+      } else if (cand.length) { const c = cand[Math.floor(cand.length / 2)];
         set(c[0], c[1], STEPS); S.stairs.push({ x: c[0], y: c[1], tile: tileName(STEPS), lv: STEPS_LV }); }
       S.climbable = cand.length;
     }
@@ -683,7 +690,7 @@
     const lv = agLv();
     if (lv >= STEPS_LV) WALK_OVER.add(STEPS); else WALK_OVER.delete(STEPS);
     hintT = Math.max(0, hintT - dt);
-    if (hintT > 0 || player.dead || player.mech) return;
+    if (hintT > 0 || player.dead || player.mech || window.__instance) return;   // the steps are the overworld's: an instance's map is another place
     for (const st of WS.STAIRS) { if (lv >= st.lv) continue;
       if (dist(player.x, player.y, tc(st.x), tc(st.y)) < 1.6 * TILE) { notify(`Steps cut in the rock face. Agility ${st.lv} climbs the scarp here.`); hintT = 12; break; } }
   });
@@ -903,7 +910,8 @@
       }
       player.skills.agility = a0; player.hp = hp0; F.sim(1, []);
       check(P + `the steps cut in the scarp are solid below Agility ${STEPS_LV}, refuse the climb and say so, and carry the knight over the step at that level`,
-        rows.length === 1 && rows.every(r => r.standing && r.shut && r.refused && r.opens && r.over), { climbs: rows }); }
+        rows.length === 1 && rows.every(r => r.standing && r.shut && r.refused && r.opens && r.over && r.at[0] === port('graveyard.steps')[0] && r.at[1] === port('graveyard.steps')[1]),
+        { climbs: rows, port: port('graveyard.steps') }); }
 
     // ---- 8. the rim and the jungle's edge ----
     { let rim = 0, line = 0; for (let x = W.tx(1); x <= rimX1(); x++) { if (x >= WARD.x(59) && x <= WARD.x(61)) continue; if (tiles[idx(x, rimRow(x))] === CLIFF) rim++; if (SOLID.has(tiles[idx(x, rimRow(x))])) line++; }

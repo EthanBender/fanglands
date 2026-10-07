@@ -635,7 +635,7 @@
       wk.search = ''; closePanel(); window.__forceTouch = prev;
       check(P + 'typing "gob" narrows the monster list to goblins; letters go to the search box, not to the panels', ok && stillWiki, { typed, all, narrowed: list.length, list, i0, stillWiki }); }
     // K on a monster you face
-    { closePanel(); const o = h.openSpot(40, 24); F.tp(o.x, o.y); player.facing = { x: 1, y: 0 }; const gob = monsters.find(m => m.type === 'goblin'); const s0 = { x: gob.x, y: gob.y, dead: gob.dead, hp: gob.hp, state: gob.state }; h.peace(true); gob.dead = false; gob.hp = gob.maxHp; gob.x = player.x + TILE * 1.5; gob.y = player.y; gob.state = 'idle';
+    { closePanel(); const o = h.openSpot(ATLAS.world.tx(40), ATLAS.world.ty(24)); F.tp(o.x, o.y); player.facing = { x: 1, y: 0 }; const gob = monsters.find(m => m.type === 'goblin'); const s0 = { x: gob.x, y: gob.y, dead: gob.dead, hp: gob.hp, state: gob.state }; h.peace(true); gob.dead = false; gob.hp = gob.maxHp; gob.x = player.x + TILE * 1.5; gob.y = player.y; gob.state = 'idle';
       F.press('KeyK'); const opened = panel === 'wiki' && wk.section === 'monsters' && wk.id === 'goblin'; F.press('Escape'); const closed = panel === null;
       Object.assign(gob, s0); h.peace(false); closePanel();
       check(P + 'K while facing a goblin opens its page; Esc closes the book', opened && closed, { opened, closed }); }
