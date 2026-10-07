@@ -2613,8 +2613,11 @@ capability, which `KNOWN_CAPS` now lists), and again after a welcome while he is
 viewer, and when a limit is reached. While told (`COOP.viewed()`): his presence carries `tod` = his time of day (`player.dayTime`
 mod 600 s) rounded to 0.1 (J3) and `vw`, `vh` = his screen's size (`VW`, `VH`: exactly what his camera shows) (other games ignore
 them; no extra message), and when he keeps his map with nobody near (`S.here`
-empty) his game sends `snapshot([])` at most every 0.5 s, an unchanged list only once every 5 s, never while paused or on the
-title; it starts again on a map change and stops at view off or a welcome. With anyone near, the stream is the 8 a second it
+empty) his game sends `snapshot([])` at most every 0.5 s while it changes, never while paused or on the title; an unchanged
+list goes only as his keeper heartbeat, once a second (a keeper with nobody near sends an empty `mon` once a second whether
+watched or not; while he is watched that heartbeat carries `snapshot([])` instead of nothing, because an empty list would read
+on the teacher's screen as a stream that stopped listing his monsters, and each alone snapshot counts as the heartbeat); it
+starts again on a map change and stops at view off or a welcome. With anyone near, the stream is the 8 a second it
 always was. Limits: **3** kids told at once (`VIEW_STREAMS_MAX`; the 4th is told when one stops), **40,000** alone messages a
 Toronto day (`VIEW_DAY_MSGS`, counted in memory; at the 40,000th every told kid is told off until the next day). Every snapshot
 from a told kid is counted while no other knight on his map has sent a presence in the last 15 s (`FRIEND_FRESH_MS`, his game's
@@ -2749,8 +2752,11 @@ written a day.
 - `/teacher-map.json` is the Worker's own answer (0 Durable Object requests).
 - **Watch:** starting and stopping, 2 messages (0.1 requests). The frames it forwards are outgoing: free. His presence and his
   friends' streams are already received: 0 extra. The alone stream (only while watched, only alone on a map he keeps): at most
-  2 a second = 7,200 messages an hour = **360 requests an hour**, about 36 an hour when nothing near him moves. Measured on a local
-  world on 6 Oct 2026 (`tools/teacher-browser.mjs`, three runs): a kid alone in the Spider Den, spiders moving, watched for a
+  2 a second = 7,200 messages an hour = **360 requests an hour**, of which his keeper heartbeat (once a second, watched or not)
+  is 3,600 = 180 anyway: Watch adds at most **180 requests an hour**, and none when nothing near him moves. Measured on master
+  d523504 (feat/teacher-live, 7 Oct 2026, `tools/teacher-browser.mjs`, two runs): a minute unwatched 119 incoming messages, the
+  same minute watched 163 (spiders moving: +44, about 132 requests an hour) and 120 (spiders still: +1). Before the port (on fix/idle-requests, whose lone
+  keeper sent no heartbeat), on a local world on 6 Oct 2026 (`tools/teacher-browser.mjs`, three runs): a kid alone in the Spider Den, spiders moving, watched for a
   minute: 81 to 101 more incoming messages than the same minute unwatched (81 in the fix round's run), about 4,860 to 6,060 an hour = **243 to 303 requests
   an hour**, and no more rows written than unwatched;
   `tools/mmo-sim-teacher.js`: 20 snapshots in 10 s alone (7,200 an hour, 360 requests), and 0 extra with a friend near. The

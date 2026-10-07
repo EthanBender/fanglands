@@ -172,7 +172,7 @@ async function main() {
     const withAva = { toTeacher: vFrames() - f1, fromGame: monIn.n };
     line('Ava joins him: the teacher gets his game\'s usual 8 a second (' + withAva.toTeacher + ' in 5 s) and his game sends nothing extra for it (' + withAva.fromGame + ' messages, all of them its stream for Ava)', withAva.toTeacher >= 36 && withAva.toTeacher <= 41 && withAva.fromGame === withAva.toTeacher, withAva);
     const perHour = Math.round(alone.fromGame / 10 * 3600), req = Math.round(perHour / 20);
-    console.log('      Watch alone costs ' + perHour + ' incoming messages an hour = ' + req + ' Durable Object requests an hour (the cap is 7,200 = 360); with a friend near it costs 0 extra');
+    console.log('      Watch alone: ' + perHour + ' incoming messages an hour from his game = ' + req + ' Durable Object requests an hour (the cap is 7,200 = 360; unwatched, his keeper heartbeat sends 3,600 of them = 180 anyway); with a friend near it costs 0 extra');
     line('the alone stream is under its cap: ' + req + ' requests an hour of the 360 allowed', req <= 360 && fromSam() >= 0, { perHour, req });
     inbound.push = origPush;
     ev(B, 'INSTANCES.leave()'); ev(A, 'INSTANCES.leave()'); tick(30);
