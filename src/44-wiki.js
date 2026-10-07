@@ -165,6 +165,8 @@
     const again = type === 'the_fang' ? 'on every Echo' : type === 'gnasher' ? 'on every rematch' : 'after that';
     if (dk > 0) for (const id of DRAGON_KILLERS.DRAGON_ITEMS) if (ITEMS[id]) rows.push({ id, min: 1, max: 1, pct: dk * 100 / DRAGON_KILLERS.DRAGON_ITEMS.length, kind: 'extra', note: `1 in ${Math.round(1 / dk)} for any dragon item${echo && echo !== dk ? ` (the first ${type === 'gnasher' ? 'fight' : 'kill'}; 1 in ${Math.round(1 / echo)} ${again})` : ''}, then one of four` });
     for (const [id, a, b, p, note] of EXTRA_DROPS[type] || []) if (ITEMS[id]) rows.push({ id, min: a, max: b, pct: p, kind: 'extra', note });
+    // 54-megarare: a mega rare's own roll (its one table, MEGA_RARE.SOURCES), one time in `chance` on every kill
+    if (window.MEGA_RARE && typeof MEGA_RARE.dropsOf === 'function') for (const r of MEGA_RARE.dropsOf(type)) if (ITEMS[r.id]) rows.push({ id: r.id, min: 1, max: 1, pct: 100 / r.chance, kind: 'mega', note: `1 in ${r.chance}` });
     return rows;
   }
   function monsterBlurb(def, e) {
@@ -339,7 +341,7 @@
       for (const w of e.where) { const pid = slug(w.split(/[,—(]/)[0].trim()); out.push(d.places[pid] ? L(w, 'places', pid) : P(w)); }
       out.push(H('WHAT IT DROPS'));
       if (!e.drops.length) out.push(P('Nothing at all.', '#8b949e'));
-      const kinds = [['always', 'Every time'], ['table', 'One of these each kill'], ['rare', 'Rare'], ['extra', 'Special']];
+      const kinds = [['always', 'Every time'], ['table', 'One of these each kill'], ['rare', 'Rare'], ['mega', 'Mega rare'], ['extra', 'Special']];
       for (const [k, title] of kinds) { const rows = e.drops.filter(r => r.kind === k); if (!rows.length) continue; out.push(P(title + ':', '#8b949e'));
         for (const r of rows) { if (r.id === 'nothing') { out.push(P(`   Nothing · ${pct(r.pct)}%`, '#6e7681')); continue; } out.push(L(`${itemName(r.id)} × ${qtyText(r.min, r.max)} · ${pct(r.pct)}%${r.note ? ' · ' + r.note : ''}`, 'items', r.id, r.id)); } }
       if (e.again) out.push(P(e.again, '#8b949e'));
@@ -347,7 +349,11 @@
     }
     if (section === 'items') {
       const def = e.def || ITEMS[id] || {};
+      // a rarity above the rare drop (54-megarare) wears its tag at the top of the page
+      const rar = def.rarity && window.MEGA_RARE && MEGA_RARE.RARITY[def.rarity];
+      if (rar) out.push({ t: rar.name, rarity: def.rarity });
       out.push(P(itemBlurb(def), '#e6edf3'));
+      if (e.blurb) out.push(P(e.blurb));
       out.push(P(`Worth ${def.value} coins · stacks to ${def.stack >= 1e6 ? 'any number' : def.stack}`));
       if (def.weapon) out.push(P(`Weapon: strength +${def.weapon.str}, accuracy +${def.weapon.att}, swing every ${def.weapon.cd}s${def.weapon.perk ? ', perk: ' + def.weapon.perk : ''}${def.weapon.ranged ? ', shoots arrows' : ''}`));
       if (def.armour) out.push(P(`Worn on the ${def.armour.slot}: defence +${def.armour.def}${def.wings ? ' · has wings' : ''}`));
@@ -356,7 +362,7 @@
       if (def.heal) out.push(P(`Eat it to heal ${def.heal}`));
       if (def.capeSkill) out.push(P(`Skill cape: ${skillName(def.capeSkill)}`));
       out.push(H('HOW TO GET IT'));
-      if (!e.sources.length) out.push(P('Nobody knows yet. Keep exploring.', '#8b949e'));
+      if (!e.sources.length) out.push(P(rar ? 'Where it comes from: nobody has found one yet.' : 'Nobody knows yet. Keep exploring.', '#8b949e'));
       const drops = e.sources.filter(s => s.kind === 'drop').sort((a, b) => b.pct - a.pct);
       if (drops.length) { out.push(P('Dropped by:', '#8b949e')); for (const s of drops) out.push(L(`${monsterName(s.monster)} · ${pct(s.pct)}%${s.min !== undefined ? ' · × ' + qtyText(s.min, s.max) : ''}`, 'monsters', s.monster)); }
       const shops = e.sources.filter(s => s.kind === 'shop');
@@ -424,6 +430,7 @@
     const K = PANEL_KIT, lh = K.lineH(12.5), out = [], linkH = touch ? 44 : 26;
     for (const l of pageLines(section, id)) {
       if (l.head) { out.push({ kind: 'head', t: l.t, h: 26 }); continue; }
+      if (l.rarity) { out.push({ kind: 'rarity', t: l.t, h: 30, gap: 4 }); continue; }
       if (l.link) {
         const room = w - 16 - (l.icon ? 24 : 0) - 22, f = K.FB(12.5, 700), ww = HK.wrap(g, l.t.trim(), room, 2, f);
         out.push({ kind: 'link', t: l.t.trim(), lines: ww.lines, link: l.link, icon: l.icon, c: l.c, h: Math.max(linkH, ww.lines.length * lh + 8), gap: touch ? 8 : 4 });
@@ -526,6 +533,7 @@
       for (const b of pgs[wk.detailPage]) {
         if (b.kind === 'head') K.head(g, detX, y + 18, detW, b.t, { size: 12 });
         if (b.kind === 'text') HK.text(g, b.t, detX, y + lh - 4, { font: K.FB(12.5), color: colour(b.c), box: { x: detX, y, w: detW, h: lh }, fitId: 'wiki:text' });
+        if (b.kind === 'rarity') HK.rarityTag(g, detX, y + 3, b.t, 24, { box: { x: detX, y, w: detW, h: b.h }, fitId: 'wiki:rarity' });
         if (b.kind === 'link') {
           const label = `wikilink:${b.link.s}:${b.link.id}`, st = HK.stateOf(label), dd = st.pressed ? 1.5 : 0;
           HK.vellumPlate(g, detX, y + dd, detW, b.h, { edge: st.hover ? 'rgba(247,220,143,0.95)' : 'rgba(217,178,92,0.8)' });

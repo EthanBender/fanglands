@@ -334,6 +334,8 @@
     const what = `${commas(gave)} ${plural(def.name, gave)}`;
     notify(gave < qty ? `Gave ${what} (the rest did not fit).` : banked ? `Gave ${what} (${commas(banked)} went to your bank).` : `Gave ${what}.`);
     floatText(player.x, player.y - 34, `+${commas(gave)} ${def.name}`, def.color || GOLD); sfx('pickup');
+    // a mega rare (54-megarare) is handed over with its gold-and-purple MEGA RARE banner, and written in its log
+    if (window.MEGA_RARE && MEGA_RARE.isMega(id)) MEGA_RARE.given(id, gave, 'admin');
     save(); return { gave, packed, banked, refused: qty - gave };
   }
 
@@ -1022,9 +1024,14 @@
         const listed = buttons.some(b => b.label === 'admin:item:iron_bar') && !buttons.some(b => b.label === 'admin:item:wood');
         F.clickButton('admin:item:iron_bar'); F.clickButton('admin:qty:100'); notice = null; F.clickButton('admin:giveitem');
         const viaPanel = countItem('iron_bar') === 100 && !!notice && notice.text === 'Gave 100 iron bars.';
+        // a mega rare (54-megarare) given here comes with its MEGA RARE banner and a line in its log
+        player.inv = new Array(INV_SLOTS).fill(null); levelBanner = null; const n0 = window.MEGA_RARE ? MEGA_RARE.LOG.length : 0;
+        const rs = window.MEGA_RARE ? give('void_scythe', 1) : null, mb = levelBanner;
+        const mega = !window.MEGA_RARE || (!!rs && rs.gave === 1 && countItem('void_scythe') === 1 && !!mb && mb.style === 'mega' && mb.text === 'MEGA RARE' && mb.sub === 'Void Scythe' && MEGA_RARE.LOG.length === n0 + 1 && MEGA_RARE.LOG[n0].how === 'admin' && MEGA_RARE.LOG[n0].id === 'void_scythe');
+        levelBanner = null;
         const words = [plural('Iron bar', 2), plural('Wolf', 3), plural('Coins', 5), plural('Fang of the Fang', 2), plural('Goblin soldier', 1), plural('Cave spider', 4), plural('Raw shrimp', 9)].join('|');
         setSearch(''); S.view = null; closePanel(); player.inv = inv0; player.bank = bank0;
-        check(P + 'Give me an item: 250 iron bars with one pack slot free go 50 to the pack and 200 to the bank; with the bank full the rest is refused with the exact number; the panel searches, picks, sets 100 and gives', split && refused && listed && viaPanel && words === 'iron bars|wolves|coins|fangs of the Fang|goblin soldier|cave spiders|raw shrimp', { split, t1, refused, t2, listed, viaPanel, words }); }
+        check(P + 'Give me an item: 250 iron bars with one pack slot free go 50 to the pack and 200 to the bank; with the bank full the rest is refused with the exact number; the panel searches, picks, sets 100 and gives; the Void Scythe comes with its MEGA RARE banner and a line in the mega rare log', split && refused && listed && viaPanel && mega && words === 'iron bars|wolves|coins|fangs of the Fang|goblin soldier|cave spiders|raw shrimp', { split, t1, refused, t2, listed, viaPanel, mega, words }); }
 
       // ---- Teleport: the map's own button over the picture takes the tap; the knight lands on that tile; overworld only ----
       { refill(); closePanel(); const target = h.openSpot(ATLAS.world.tx(60), ATLAS.world.ty(30));

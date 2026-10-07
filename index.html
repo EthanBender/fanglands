@@ -20363,6 +20363,8 @@ window.SETTINGS = SETTINGS;
     const again = type === 'the_fang' ? 'on every Echo' : type === 'gnasher' ? 'on every rematch' : 'after that';
     if (dk > 0) for (const id of DRAGON_KILLERS.DRAGON_ITEMS) if (ITEMS[id]) rows.push({ id, min: 1, max: 1, pct: dk * 100 / DRAGON_KILLERS.DRAGON_ITEMS.length, kind: 'extra', note: `1 in ${Math.round(1 / dk)} for any dragon item${echo && echo !== dk ? ` (the first ${type === 'gnasher' ? 'fight' : 'kill'}; 1 in ${Math.round(1 / echo)} ${again})` : ''}, then one of four` });
     for (const [id, a, b, p, note] of EXTRA_DROPS[type] || []) if (ITEMS[id]) rows.push({ id, min: a, max: b, pct: p, kind: 'extra', note });
+    // 54-megarare: a mega rare's own roll (its one table, MEGA_RARE.SOURCES), one time in `chance` on every kill
+    if (window.MEGA_RARE && typeof MEGA_RARE.dropsOf === 'function') for (const r of MEGA_RARE.dropsOf(type)) if (ITEMS[r.id]) rows.push({ id: r.id, min: 1, max: 1, pct: 100 / r.chance, kind: 'mega', note: `1 in ${r.chance}` });
     return rows;
   }
   function monsterBlurb(def, e) {
@@ -20537,7 +20539,7 @@ window.SETTINGS = SETTINGS;
       for (const w of e.where) { const pid = slug(w.split(/[,—(]/)[0].trim()); out.push(d.places[pid] ? L(w, 'places', pid) : P(w)); }
       out.push(H('WHAT IT DROPS'));
       if (!e.drops.length) out.push(P('Nothing at all.', '#8b949e'));
-      const kinds = [['always', 'Every time'], ['table', 'One of these each kill'], ['rare', 'Rare'], ['extra', 'Special']];
+      const kinds = [['always', 'Every time'], ['table', 'One of these each kill'], ['rare', 'Rare'], ['mega', 'Mega rare'], ['extra', 'Special']];
       for (const [k, title] of kinds) { const rows = e.drops.filter(r => r.kind === k); if (!rows.length) continue; out.push(P(title + ':', '#8b949e'));
         for (const r of rows) { if (r.id === 'nothing') { out.push(P(`   Nothing · ${pct(r.pct)}%`, '#6e7681')); continue; } out.push(L(`${itemName(r.id)} × ${qtyText(r.min, r.max)} · ${pct(r.pct)}%${r.note ? ' · ' + r.note : ''}`, 'items', r.id, r.id)); } }
       if (e.again) out.push(P(e.again, '#8b949e'));
@@ -20545,7 +20547,11 @@ window.SETTINGS = SETTINGS;
     }
     if (section === 'items') {
       const def = e.def || ITEMS[id] || {};
+      // a rarity above the rare drop (54-megarare) wears its tag at the top of the page
+      const rar = def.rarity && window.MEGA_RARE && MEGA_RARE.RARITY[def.rarity];
+      if (rar) out.push({ t: rar.name, rarity: def.rarity });
       out.push(P(itemBlurb(def), '#e6edf3'));
+      if (e.blurb) out.push(P(e.blurb));
       out.push(P(`Worth ${def.value} coins · stacks to ${def.stack >= 1e6 ? 'any number' : def.stack}`));
       if (def.weapon) out.push(P(`Weapon: strength +${def.weapon.str}, accuracy +${def.weapon.att}, swing every ${def.weapon.cd}s${def.weapon.perk ? ', perk: ' + def.weapon.perk : ''}${def.weapon.ranged ? ', shoots arrows' : ''}`));
       if (def.armour) out.push(P(`Worn on the ${def.armour.slot}: defence +${def.armour.def}${def.wings ? ' · has wings' : ''}`));
@@ -20554,7 +20560,7 @@ window.SETTINGS = SETTINGS;
       if (def.heal) out.push(P(`Eat it to heal ${def.heal}`));
       if (def.capeSkill) out.push(P(`Skill cape: ${skillName(def.capeSkill)}`));
       out.push(H('HOW TO GET IT'));
-      if (!e.sources.length) out.push(P('Nobody knows yet. Keep exploring.', '#8b949e'));
+      if (!e.sources.length) out.push(P(rar ? 'Where it comes from: nobody has found one yet.' : 'Nobody knows yet. Keep exploring.', '#8b949e'));
       const drops = e.sources.filter(s => s.kind === 'drop').sort((a, b) => b.pct - a.pct);
       if (drops.length) { out.push(P('Dropped by:', '#8b949e')); for (const s of drops) out.push(L(`${monsterName(s.monster)} · ${pct(s.pct)}%${s.min !== undefined ? ' · × ' + qtyText(s.min, s.max) : ''}`, 'monsters', s.monster)); }
       const shops = e.sources.filter(s => s.kind === 'shop');
@@ -20622,6 +20628,7 @@ window.SETTINGS = SETTINGS;
     const K = PANEL_KIT, lh = K.lineH(12.5), out = [], linkH = touch ? 44 : 26;
     for (const l of pageLines(section, id)) {
       if (l.head) { out.push({ kind: 'head', t: l.t, h: 26 }); continue; }
+      if (l.rarity) { out.push({ kind: 'rarity', t: l.t, h: 30, gap: 4 }); continue; }
       if (l.link) {
         const room = w - 16 - (l.icon ? 24 : 0) - 22, f = K.FB(12.5, 700), ww = HK.wrap(g, l.t.trim(), room, 2, f);
         out.push({ kind: 'link', t: l.t.trim(), lines: ww.lines, link: l.link, icon: l.icon, c: l.c, h: Math.max(linkH, ww.lines.length * lh + 8), gap: touch ? 8 : 4 });
@@ -20724,6 +20731,7 @@ window.SETTINGS = SETTINGS;
       for (const b of pgs[wk.detailPage]) {
         if (b.kind === 'head') K.head(g, detX, y + 18, detW, b.t, { size: 12 });
         if (b.kind === 'text') HK.text(g, b.t, detX, y + lh - 4, { font: K.FB(12.5), color: colour(b.c), box: { x: detX, y, w: detW, h: lh }, fitId: 'wiki:text' });
+        if (b.kind === 'rarity') HK.rarityTag(g, detX, y + 3, b.t, 24, { box: { x: detX, y, w: detW, h: b.h }, fitId: 'wiki:rarity' });
         if (b.kind === 'link') {
           const label = `wikilink:${b.link.s}:${b.link.id}`, st = HK.stateOf(label), dd = st.pressed ? 1.5 : 0;
           HK.vellumPlate(g, detX, y + dd, detW, b.h, { edge: st.hover ? 'rgba(247,220,143,0.95)' : 'rgba(217,178,92,0.8)' });
@@ -26131,6 +26139,298 @@ window.SETTINGS = SETTINGS;
   });
 }
 
+// ---- src/54-megarare.js ----
+// ============================================================================
+// MEGA RARE — a rarity above the rare drop, and its first item: the Void Scythe
+// The owner (7 Oct 2026): "can you add a Sythe to the game to go with the necromancer outfit? we will work out where it
+// comes from later i just want it as a mega rare heres a insop pic" (the picture: ~/.fanglands/work/scythe/inspo.png,
+// a fan's "Void Scythe": a purple-to-orange crescent, black tendrils, an orange eye in a dark head, a dark shaft wrapped
+// in vines with gold runes, a purple orb at the end. Drawn here as our own scythe in the game's style, never traced).
+//
+// THE RULES (this file; kept in the server's copy). The pictures are 54-megarareart.js (stripped from it), the knight
+// holding and swinging it is 82-knightgear's 'scythe' family, the gold-and-purple banner and tag are 59-hudkit's
+// (`levelBanner.style 'mega'`, HK.rarityTag), the halo 80-icons' 'mega' tier, the book's tag and rows 44-wiki's.
+//   * An item is mega rare when its ITEMS entry says `rarity: 'mega'`. Nothing else is needed for the banner, the halo,
+//     the pack's words and the book's tag: a later mega rare is one ITEMS row and one SOURCES row.
+//   * WHERE IT COMES FROM is not decided. SOURCES (below) is the one place a drop source is added: a row
+//     { monster: '<MONSTER_DEFS type>', chance: N } rolls 1 kill in N of that monster, after its own drops. Empty, it
+//     rolls nothing and draws no random number, so nothing changes for anyone. The book reads the same rows.
+//   * Until then the owner hands it out: the admin's Give me an item (76-admin) lists every item, and a mega rare given
+//     there comes with its banner and a line in LOG. An admin can then trade it (78-trade) or drop it for a friend.
+//   * MEGA_RARE.announce(id, how, x, y) is the moment itself (the drop, the gift): the MEGA RARE banner with the
+//     item's name, gold and purple sparks where it happened, its own chime, and FLASH (54-megarareart's screen flash
+//     reads it, timed on `time`).
+//
+// THE VOID SCYTHE: a two-handed scythe at the top of the melee table. Strength 48 is the most of any weapon (the
+// Dragon spear 45, the Fang 40), accuracy 34 (the spear 44); it swings every 0.7 s like the warhammers, against the
+// spear's 0.5, so one on one the spear still hits harder over time, and the scythe's cleave (the battleaxes' wide
+// sweep) is what makes it the best in a crowd. Its necro power, 15, is the kit's best (the Bone stave 10).
+// window.MEGA_RARE = { RARITY, SOURCES, LOG, FLASH, isMega, dropsOf, announce, given }
+// ============================================================================
+const MEGA_RARE = (() => {
+  // the rarities above the rare drop: the banner's words, how long it stays up, the pack's word
+  const RARITY = {
+    mega: { key: 'mega', name: 'MEGA RARE', word: 'Mega rare', t: 4.5 },
+  };
+
+  Object.assign(ITEMS, {
+    void_scythe: {
+      name: 'Void Scythe', value: 20000, color: '#8f4dff', shape: 'battleaxe', stack: 1, rarity: 'mega',
+      weapon: { str: 48, att: 34, cd: 0.7, perk: 'cleave' }, necro: { power: 15 },
+    },
+  });
+  ITEMS.void_scythe.id = 'void_scythe';
+
+  // ---------- WHERE EACH ONE COMES FROM: the one table ----------
+  // { monster: '<MONSTER_DEFS type>', chance: N }: 1 kill in N of that monster drops it. "we will work out where it comes
+  // from later": none yet.
+  const SOURCES = {
+    void_scythe: [],
+  };
+
+  const isMega = id => !!(id && ITEMS[id] && ITEMS[id].rarity && RARITY[ITEMS[id].rarity]);
+  // the rows for one monster type: [{ id, chance }]
+  function dropsOf(type) {
+    const out = [];
+    for (const id in SOURCES) for (const r of SOURCES[id] || []) if (r && r.monster === type && r.chance >= 1 && ITEMS[id]) out.push({ id, chance: r.chance });
+    return out;
+  }
+  const anyRows = () => { for (const id in SOURCES) if (SOURCES[id] && SOURCES[id].length) return true; return false; };
+
+  // ---------- the moment ----------
+  const LOG = [];                               // { id, how: 'drop' | 'admin' | ..., n, at } for this session; never saved
+  const FLASH = { at: -1e9, id: null, x: 0, y: 0, n: 0 };
+  function announce(id, how, x, y) {
+    if (!isMega(id)) return false;
+    const def = ITEMS[id], R = RARITY[def.rarity];
+    levelBanner = { text: R.name, sub: def.name, t: R.t, style: def.rarity };
+    FLASH.at = time; FLASH.id = id; FLASH.x = x; FLASH.y = y; FLASH.n++;
+    burst(x, y, '#a24bff', 36, 200); burst(x, y, '#f5c542', 24, 150); burst(x, y, '#ff8a3d', 10, 110);
+    sfx('mega');
+    return true;
+  }
+  function given(id, n, how) {
+    if (!isMega(id)) return false;
+    LOG.push({ id, how: how || 'given', n: n | 0 || 1, at: time });
+    return announce(id, how || 'given', player.x, player.y);
+  }
+
+  // ---------- the roll: after the monster's own drops, each SOURCES row for it, one time in `chance` ----------
+  let TYPES = null;
+  const typeOf = def => {
+    if (!TYPES || !TYPES.has(def)) { TYPES = new Map(); for (const k in MONSTER_DEFS) TYPES.set(MONSTER_DEFS[k], k); }
+    return TYPES.get(def);
+  };
+  const _rollDrops = rollDrops;
+  rollDrops = function (def, x, y) {
+    const r = _rollDrops(def, x, y);
+    if (!anyRows()) return r;               // no source yet: no random number drawn, nothing changes
+    const type = typeOf(def);
+    if (type) for (const s of dropsOf(type)) {
+      if (Math.random() >= 1 / s.chance) continue;
+      drops.push({ x: x + rint(-14, 14), y: y + rint(-14, 14), id: s.id, qty: 1, t: 0, rare: true, mega: true });
+      LOG.push({ id: s.id, how: 'drop', n: 1, at: time, monster: type });
+      announce(s.id, 'drop', x, y);
+    }
+    return r;
+  };
+
+  // ---------- self-test ----------
+  const P = 'mega rare: ';
+  HOOKS.selfTest.push((check, F, h) => {
+    const melee = Object.keys(ITEMS).filter(id => ITEMS[id].weapon && !ITEMS[id].weapon.ranged && id !== 'void_scythe');
+    const top = Math.max(...melee.map(id => ITEMS[id].weapon.str));
+    const v = ITEMS.void_scythe, w = v && v.weapon;
+    const necro = Object.keys(ITEMS).filter(id => ITEMS[id].necro && id !== 'void_scythe').map(id => ITEMS[id].necro.power);
+    // the drop tables: no monster drops it, and the one table is empty
+    const inTables = Object.keys(MONSTER_DEFS).filter(k => { const d = MONSTER_DEFS[k].drops || {}; return [...(d.always || []), ...(d.table || []), ...((d.rare && d.rare.table) || [])].some(r => r[0] === 'void_scythe'); });
+    const spear = ITEMS.dragon_spear.weapon, perHit = (str, cd) => (2 + Math.floor(107 * (str + 64) / 300)) / cd;
+    check(P + 'the Void Scythe: a two-handed melee weapon with the most strength in the game (48), accuracy 34, a swing every 0.7 s with cleave; one on one the Dragon spear still out-hits it over time; necro power 15 (the kit\'s best), mega rare, 20,000 coins, and nothing drops it yet',
+      !!w && w.str === 48 && w.att === 34 && w.cd === 0.7 && w.perk === 'cleave' && !w.ranged && w.str > top && v.necro.power === 15 && v.necro.power > Math.max(...necro)
+      && v.rarity === 'mega' && isMega('void_scythe') && !isMega('dragon_spear') && v.value === 20000 && v.stack === 1 && v.id === 'void_scythe'
+      && perHit(spear.str, spear.cd) > perHit(w.str, w.cd) && SOURCES.void_scythe.length === 0 && !inTables.length && Object.keys(MONSTER_DEFS).every(k => !dropsOf(k).length),
+      { top, str: w && w.str, inTables, spearPerSec: +perHit(spear.str, spear.cd).toFixed(1), scythePerSec: +perHit(w.str, w.cd).toFixed(1) });
+
+    // the one table: a row rolls after the monster's own drops; empty, not one more random number is drawn
+    { const rnd = Math.random, d0 = drops.length, b0 = levelBanner, f0 = FLASH.n, l0 = LOG.length;
+      let calls = 0;
+      try {
+        Math.random = () => { calls++; return 0.5; };
+        rollDrops(MONSTER_DEFS.goblin, -9999, -9999); const plain = calls;
+        calls = 0; _rollDrops(MONSTER_DEFS.goblin, -9999, -9999); const core = calls;
+        drops.length = d0;
+        SOURCES.void_scythe.push({ monster: 'goblin', chance: 4 });
+        calls = 0; Math.random = () => { calls++; return 0.2; };          // under 1 in 4: it drops
+        levelBanner = null; rollDrops(MONSTER_DEFS.goblin, -9999, -9999);
+        const got = drops.slice(d0).filter(d => d.id === 'void_scythe'), lb = levelBanner;
+        const rowsOk = dropsOf('goblin').length === 1 && dropsOf('goblin')[0].chance === 4;
+        drops.length = d0; levelBanner = null;
+        Math.random = () => 0.3;                                          // over 1 in 4: it does not
+        rollDrops(MONSTER_DEFS.goblin, -9999, -9999); const none = !drops.slice(d0).some(d => d.id === 'void_scythe');
+        drops.length = d0;
+        check(P + 'the one table (SOURCES): empty, a kill draws exactly the random numbers it always did; a row { monster, chance: 4 } drops the scythe on a roll under 1 in 4 (marked mega, with the MEGA RARE banner, the flash and a log line) and not over it',
+          plain === core && got.length === 1 && got[0].mega === true && got[0].rare === true && got[0].qty === 1 && !!lb && lb.style === 'mega' && lb.text === 'MEGA RARE' && lb.sub === 'Void Scythe'
+          && FLASH.n === f0 + 1 && FLASH.id === 'void_scythe' && LOG.length === l0 + 1 && LOG[l0].how === 'drop' && LOG[l0].monster === 'goblin' && none && rowsOk,
+          { plain, core, got: got.length, banner: lb && lb.text, style: lb && lb.style, rowsOk, none });
+      } finally { Math.random = rnd; SOURCES.void_scythe.length = 0; drops.length = d0; levelBanner = null; if (b0) levelBanner = b0; LOG.length = l0; }
+    }
+    // the banner's words: only a mega rare announces, and the rarity's own name and time
+    { const b0 = levelBanner; levelBanner = null;
+      const no = announce('dragon_spear', 'test', 0, 0) === false && !levelBanner;
+      const yes = announce('void_scythe', 'test', player.x, player.y) && levelBanner && levelBanner.t === RARITY.mega.t;
+      levelBanner = null; if (b0) levelBanner = b0;
+      check(P + 'only an item marked mega rare raises the MEGA RARE banner', no && !!yes, { no, yes: !!yes }); }
+  });
+
+  return { RARITY, SOURCES, LOG, FLASH, isMega, dropsOf, announce, given };
+})();
+window.MEGA_RARE = MEGA_RARE;
+
+// ---- src/54-megarareart.js ----
+// ============================================================================
+// MEGA RARE — the pictures (54-megarare is the rules; this file is pictures only, stripped from the server's copy)
+//   * the Void Scythe's icon (pack, belt, bank, book): ICONS 'void_scythe', a diagonal scythe as in the owner's picture
+//   * a mega rare lying on the ground: the Void Scythe laid down full size (KNIGHTGEAR.weaponArt, the same drawing the
+//     knight holds), in a purple glow with a gold rim, sparks rising off it; any other mega rare: its icon, bigger, in
+//     the same glow
+//   * the flash: for 0.9 s after MEGA_RARE.announce (a drop, a gift) a purple and gold burst of light from where it
+//     happened, over the world and under the banner, read off MEGA_RARE.FLASH and `time` (never an update hook)
+//   * the words: the pack's sentence starts "Mega rare.", the book's page has the blurb below; its sound, SFX.mega
+// The gold-and-purple MEGA RARE banner and the book's tag are 59-hudkit's (style 'mega', HK.rarityTag), the halo
+// 80-icons' 'mega' tier.
+// ============================================================================
+{
+  const isMega = id => !!(window.MEGA_RARE && MEGA_RARE.isMega(id));
+
+  // ---------- the sound: a bright rising chime over a low hum ----------
+  if (typeof SFX === 'object' && SFX && !SFX.mega) SFX.mega = () => {
+    [392, 523, 659, 784, 988, 1319].forEach((f, i) => tone('triangle', f, f, 0.26, 0.055, i * 0.08));
+    tone('sine', 98, 82, 0.9, 0.06); tone('sine', 1568, 2093, 0.4, 0.03, 0.5);
+  };
+
+  // ---------- the words ----------
+  { const coreBlurb = itemBlurb; itemBlurb = def => def && isMega(def.id) ? `${MEGA_RARE.RARITY[def.rarity].word}. ${coreBlurb(def)}` : coreBlurb(def); }
+  if (window.WIKI) WIKI.add('items', {
+    id: 'void_scythe', name: ITEMS.void_scythe.name,
+    blurb: 'A long scythe from the void, held in both hands. Its blade glows purple and pink, and an orange eye watches from the top. One wide swing cuts every monster in front of you. It goes with the necromancer\'s robe, hood, wraps and lantern.',
+  });
+
+  // ---------- the icon: 18 units across, a scythe leaning from the bottom right up to its head, the blade sweeping left ----------
+  const ICON = (g, size, item) => {
+    g.lineCap = 'round';
+    // the shaft, outlined, wrapped in a black vine, two gold runes
+    g.strokeStyle = 'rgba(0,0,0,0.55)'; g.lineWidth = 3.4; g.beginPath(); g.moveTo(5.8, 6.8); g.lineTo(-0.2, -4.6); g.stroke();
+    g.strokeStyle = '#4a3d5e'; g.lineWidth = 2.4; g.beginPath(); g.moveTo(5.8, 6.8); g.lineTo(-0.2, -4.6); g.stroke();
+    g.strokeStyle = '#0b090f'; g.lineWidth = 1; g.beginPath(); g.moveTo(5, 6.6); g.lineTo(4.8, 4.6); g.lineTo(3.6, 4.2); g.lineTo(3.4, 1.6); g.lineTo(1.8, 0.8); g.lineTo(1.6, -1.8); g.stroke();
+    g.fillStyle = '#c9a03c'; g.beginPath(); g.arc(3.4, 2.4, 1, 0, 7); g.fill();
+    // the orange stripe at the butt, the purple orb
+    g.strokeStyle = '#ff8a3d'; g.lineWidth = 1.2; g.beginPath(); g.moveTo(4.6, 6.4); g.lineTo(6.2, 5.6); g.stroke();
+    g.fillStyle = '#a24bff'; g.strokeStyle = 'rgba(0,0,0,0.5)'; g.lineWidth = 1; g.beginPath(); g.arc(6.3, 7.2, 1.4, 0, 7); g.fill(); g.stroke();
+    // the back spike
+    g.fillStyle = '#d98ad8'; g.beginPath(); g.moveTo(0.4, -6.4); g.lineTo(3.8, -8.2); g.lineTo(1.8, -4.4); g.closePath(); g.fill();
+    // the blade: purple, pink at the head, a pale back edge
+    const bg = g.createLinearGradient(0, -7, -7, 6); bg.addColorStop(0, '#ffb08a'); bg.addColorStop(0.3, '#e872cc'); bg.addColorStop(1, '#8f4dff');
+    g.fillStyle = bg; g.strokeStyle = 'rgba(0,0,0,0.5)'; g.lineWidth = 1;
+    g.beginPath(); g.moveTo(0.2, -7.8); g.quadraticCurveTo(-9, -8.6, -7.4, 6.2); g.quadraticCurveTo(-3.4, -2.2, -0.6, -3.6); g.closePath(); g.fill(); g.stroke();
+    g.strokeStyle = 'rgba(244,232,255,0.75)'; g.beginPath(); g.moveTo(-2, -7.4); g.quadraticCurveTo(-7.9, -7.6, -7.2, 2.6); g.stroke();
+    // the dark head and its orange eye
+    g.fillStyle = '#2a2632'; g.strokeStyle = 'rgba(0,0,0,0.55)';
+    g.beginPath(); g.moveTo(-2.2, -4.2); g.lineTo(-1.6, -7.4); g.lineTo(1.4, -7.6); g.lineTo(1.8, -4.4); g.closePath(); g.fill(); g.stroke();
+    g.fillStyle = '#ff8a1a'; g.beginPath(); g.ellipse(-0.2, -6, 1.3, 1, 0, 0, 7); g.fill();
+    // two black tendrils on the blade
+    g.strokeStyle = '#0b090f'; g.lineWidth = 1;
+    g.beginPath(); g.moveTo(-2.6, -6); g.quadraticCurveTo(-5.6, -4, -5, -1.6); g.arc(-4, -1.6, 1, Math.PI, Math.PI * 2.4); g.stroke();
+    g.beginPath(); g.moveTo(-6.6, -6.8); g.quadraticCurveTo(-7.8, -4.4, -6.2, -3.2); g.stroke();
+  };
+  HOOKS.world.push(() => { if (window.ICONS && ICONS.set) ICONS.set('void_scythe', ICON); });
+
+  // ---------- on the ground ----------
+  // a soft purple glow with a gold rim under it, a few sparks rising (each on its own clock: no random numbers)
+  function groundGlow(g, x, y, r, p) {
+    const gr = g.createRadialGradient(x, y, 2, x, y, r);
+    gr.addColorStop(0, `rgba(162,75,255,${(0.42 + p * 0.16).toFixed(3)})`); gr.addColorStop(0.7, `rgba(162,75,255,${(0.16 + p * 0.08).toFixed(3)})`);
+    gr.addColorStop(0.86, `rgba(245,197,66,${(0.22 + p * 0.12).toFixed(3)})`); gr.addColorStop(1, 'rgba(245,197,66,0)');
+    g.fillStyle = gr; g.beginPath(); g.ellipse(x, y, r, r * 0.62, 0, 0, 7); g.fill();
+  }
+  function sparks(g, x, y) {
+    for (let i = 0; i < 4; i++) {
+      const k = ((time * 0.6 + i * 0.25) % 1), sx = x + Math.sin(i * 2.3 + time * 1.3) * 14 + (i - 1.5) * 6, sy = y - 4 - k * 26;
+      g.globalAlpha = (1 - k) * 0.85; g.fillStyle = i % 2 ? '#f5c542' : '#c79bff';
+      g.beginPath(); g.arc(sx, sy, 1.4 - k * 0.6, 0, 7); g.fill();
+    }
+    g.globalAlpha = 1;
+  }
+  const _drawDrop = drawDrop;
+  drawDrop = function (g, d) {
+    if (!d || !isMega(d.id)) return _drawDrop(g, d);
+    const y = d.y + Math.sin((d.t || 0) * 3) * 1.2, p = 0.5 + 0.5 * Math.sin(time * 3);
+    g.save();
+    groundGlow(g, d.x, d.y + 2, 34, p);
+    const K = window.KNIGHTGEAR;
+    if (K && K.weaponArt && ITEMS[d.id].weapon) {
+      // the scythe laid down, its blade up: a little shadow, then the weapon's own drawing at 0.82
+      g.fillStyle = 'rgba(0,0,0,0.3)'; g.beginPath(); g.ellipse(d.x, d.y + 7, 24, 4, -0.08, 0, 7); g.fill();
+      g.save(); g.translate(d.x, y + 2); g.rotate(-0.2); g.scale(0.82, -0.82); g.translate(-12, 0);
+      K.weaponArt(g, d.id, time);
+      g.restore();
+    } else {
+      g.fillStyle = 'rgba(0,0,0,0.25)'; g.beginPath(); g.ellipse(d.x, d.y + 7, 9, 3, 0, 0, 7); g.fill();
+      drawItemIcon(g, d.id, d.x, y, 24);
+    }
+    sparks(g, d.x, d.y);
+    g.restore();
+  };
+
+  // ---------- the flash ----------
+  const FLASH_FOR = 0.9;
+  HOOKS.hud.push(g => {
+    const F = window.MEGA_RARE && MEGA_RARE.FLASH;
+    if (!F || !F.id || typeof time !== 'number') return;
+    const k = (time - F.at) / FLASH_FOR;
+    if (!(k >= 0 && k < 1)) return;
+    const cx = typeof cam === 'object' && cam ? F.x - cam.x : VW / 2, cy = typeof cam === 'object' && cam ? F.y - cam.y : VH / 2;
+    const R = Math.max(VW, VH) * (0.35 + k * 0.75), a = (1 - k) * (1 - k);
+    g.save();
+    const gr = g.createRadialGradient(cx, cy, 0, cx, cy, R);
+    gr.addColorStop(0, `rgba(255,236,190,${(0.55 * a).toFixed(3)})`); gr.addColorStop(0.25, `rgba(162,75,255,${(0.38 * a).toFixed(3)})`);
+    gr.addColorStop(0.7, `rgba(90,30,180,${(0.16 * a).toFixed(3)})`); gr.addColorStop(1, 'rgba(90,30,180,0)');
+    g.fillStyle = gr; g.fillRect(0, 0, VW, VH);
+    // a gold ring racing out from it
+    g.strokeStyle = `rgba(245,197,66,${(0.8 * a).toFixed(3)})`; g.lineWidth = 3 + 6 * (1 - k);
+    g.beginPath(); g.arc(cx, cy, 20 + k * Math.max(VW, VH) * 0.5, 0, 7); g.stroke();
+    g.restore();
+  });
+
+  // ---------- self-test ----------
+  const P = 'mega rare art: ';
+  HOOKS.selfTest.push((check, F, h) => {
+    // the icon: registered, its own drawing, inside the icon box; the halo is the mega tier's (purple and gold)
+    const icon = !!(window.ICONS && ICONS.has('void_scythe'));
+    const m = icon ? ICONS.measure('void_scythe') : null;
+    const tier = window.ICONS ? ICONS.tier('void_scythe') : null;
+    const a = window.ICONS ? ICONS.audit() : null;
+    const alone = !!a && !(a.implicated || []).includes('void_scythe') && !(a.missing || []).includes('void_scythe');
+    check(P + 'the Void Scythe has its own icon inside the 18-unit box, and wears the mega tier\'s purple-and-gold halo (above unique)',
+      icon && !!m && m.reach <= ICONS.SAFE + 0.5 && !!tier && tier.key === 'mega' && tier.order > ICONS.TIERS.unique.order && tier.glow === '#f5c542' && tier.glow2 === '#a24bff' && alone && ICONS.broken().length === 0,
+      { icon, reach: m && +m.reach.toFixed(2), tier: tier && tier.key, alone, broken: window.ICONS ? ICONS.broken() : null });
+    // the words: the pack's sentence, the book's blurb and tag
+    const blurb = itemBlurb(ITEMS.void_scythe), page = window.WIKI ? WIKI.get('items', 'void_scythe') : null;
+    check(P + 'the pack says "Mega rare." first; the book\'s page has its blurb and no source yet; a plain item\'s sentence is unchanged',
+      blurb === 'Mega rare. Weapon: strength +48, accuracy +34, cleave.' && !!page && /held in both hands/.test(page.blurb || '') && page.sources.length === 0 && itemBlurb(ITEMS.iron_sword) === 'Weapon: strength +9, accuracy +8.',
+      { blurb, page: !!page, sources: page && page.sources.length });
+    // the banner: gold words on the purple tag, the item's name under it in pale violet; it fits a phone's lane
+    if (window.HK && HK.banner && HK.audit) {
+      const run = (w, small) => { const log = []; HK.banner(HK.audit.fitCtx(log), { x: 0, y: 0, w, h: 48 }, { kind: 'level', style: 'mega', title: 'MEGA RARE', sub: 'Void Scythe', small }); return log; };
+      const wide = run(560, false), narrow = run(300, true);
+      const ok = L => L.some(r => r.s === 'MEGA RARE' && r.fill === '#ffd76a') && L.some(r => r.s === 'Void Scythe' && r.fill === '#e9d5ff') && L.every(r => r.x - (r.w || 0) / 2 >= -1);
+      check(P + 'the MEGA RARE banner draws its gold words and the item\'s name, wide and on a phone', ok(wide) && ok(narrow), { wide: wide.map(r => r.s + ' ' + r.fill), narrow: narrow.map(r => r.s) });
+    }
+    // on the ground: drawn as itself without a throw; a plain drop goes on to the old drawing
+    { let threw = null; try { const L = []; const c = HK.audit.fitCtx(L); const at = { x: player.x, y: player.y }; drawDrop(c, Object.assign({ id: 'void_scythe', qty: 1, t: 0.4, mega: true }, at)); drawDrop(c, Object.assign({ id: 'iron_sword', qty: 1, t: 0 }, at)); } catch (e) { threw = String(e && e.message || e); }
+      check(P + 'a dropped Void Scythe draws (laid down in its glow) and a plain drop still draws the old way', !threw, { threw }); }
+  });
+}
+
 // ---- src/55-riding.js ----
 // ============================================================================
 // RIDING ALONG — three things the owner asked for while playing
@@ -28066,12 +28366,36 @@ const HK = (() => {
     const f = FS(600, sz), lines = tw(g, sub, f) > room ? wrap(g, sub, room, 2, f).lines : [String(sub)];
     lines.forEach((l, i) => text(g, l, cx, top + realPx(f) * (1 + i * 1.2), { font: f, align: 'center', color: col, halo: 4, haloColor: `rgba(10,8,6,${halo})`, box: r, fitId: 'banner:sub' }));
   }
-  // BANNER: an area name (kind 'area') or a level-up / event headline (kind 'level'), in its lane, faded by alpha
+  // RARITY TAG: the gold-and-purple plate a rarity above the rare drop wears (54-megarare's MEGA RARE): a purple
+  // swallowtail ribbon with a gold edge and gold words, `h` tall, starting at x (align 'center': centred on x). It is what
+  // the MEGA RARE banner stands on, and the wiki's tag on such an item's page. Returns its width.
+  function rarityTag(g, x, y, label, h, o = {}) {
+    const size = Math.max(10, Math.round(h * 0.6)), f = FC(800, size), n = Math.min(h * 0.38, 12);
+    const w = tw(g, label, f) + n * 2 + h * 0.9, x0 = o.align === 'center' ? x - w / 2 : x;
+    const path = () => { g.beginPath(); g.moveTo(x0, y); g.lineTo(x0 + w, y); g.lineTo(x0 + w - n, y + h / 2); g.lineTo(x0 + w, y + h); g.lineTo(x0, y + h); g.lineTo(x0 + n, y + h / 2); g.closePath(); };
+    shadowed(g, () => { path(); g.fillStyle = '#1a0830'; g.fill(); }, 8, 2);
+    const gr = g.createLinearGradient(x0, 0, x0 + w, 0); gr.addColorStop(0, '#3b1466'); gr.addColorStop(0.5, '#7433c4'); gr.addColorStop(1, '#3b1466');
+    path(); g.fillStyle = gr; g.fill(); g.strokeStyle = '#f5c542'; g.lineWidth = 1.5; g.stroke();
+    g.beginPath(); g.moveTo(x0 + n + 2, y + 3); g.lineTo(x0 + w - n - 2, y + 3); g.moveTo(x0 + n + 2, y + h - 3); g.lineTo(x0 + w - n - 2, y + h - 3); g.strokeStyle = 'rgba(245,197,66,0.45)'; g.lineWidth = 1; g.stroke();
+    // a gold spark at each end, twinkling
+    const tk = o.still ? 1 : 0.7 + 0.3 * Math.sin(now() / 160);
+    for (const sx of [x0 + n + h * 0.22, x0 + w - n - h * 0.22]) { const s = h * 0.17 * tk; g.fillStyle = '#ffe9a3'; g.beginPath(); g.moveTo(sx, y + h / 2 - s * 1.6); g.lineTo(sx + s * 0.45, y + h / 2); g.lineTo(sx, y + h / 2 + s * 1.6); g.lineTo(sx - s * 0.45, y + h / 2); g.closePath(); g.fill(); }
+    text(g, label, x0 + w / 2, y + h / 2 + realPx(f) * 0.36, { font: f, align: 'center', color: '#ffd76a', halo: 3, haloColor: 'rgba(26,6,48,0.9)', box: o.box || { x: x0, y, w, h }, fitId: o.fitId || 'rarity' });
+    return w;
+  }
+  // BANNER: an area name (kind 'area') or a level-up / event headline (kind 'level'), in its lane, faded by alpha.
+  // A level banner with style 'mega' (`levelBanner = { text, sub, t, style: 'mega' }`, 54-megarare) is the gold-and-purple
+  // MEGA RARE banner: its words on the rarity tag, the item's name under it in pale violet.
   function banner(g, r, o) {
     const phone = r.w < 420 || VW < 640;
     g.save(); g.globalAlpha *= cl(o.alpha == null ? 1 : o.alpha, 0, 1);
     const cx = r.x + r.w / 2;
-    if (o.kind === 'area') {
+    if (o.style === 'mega') {
+      let h = Math.min(r.h - 4, o.small ? (phone ? 20 : 24) : phone ? 28 : 38);
+      while (h > 20 && tw(g, o.title, FC(800, Math.max(10, Math.round(h * 0.6)))) + Math.min(h * 0.38, 12) * 2 + h * 0.9 > r.w) h -= 1;
+      rarityTag(g, cx, r.y, o.title, h, { align: 'center', box: r, fitId: 'banner' });
+      if (o.sub) subLines(g, o.sub, cx, r.y + h + 2, r, o.small ? 12 : 14, '#e9d5ff', 0.85);
+    } else if (o.kind === 'area') {
       let size = o.small ? 18 : phone ? 22 : 30; while (size > 14 && tw(g, o.title, FC(800, size)) > r.w - 8) size -= 1;
       const ty = r.y + size;
       text(g, o.title, cx, ty, { font: FC(800, size), align: 'center', color: T.ink, halo: 6, haloColor: 'rgba(10,8,6,0.8)', box: r, fitId: 'banner' });
@@ -29262,7 +29586,7 @@ const HK = (() => {
   function drawBanners(g, L) {
     const phone = L.fam === 'phoneP' || L.fam === 'phoneL';
     const list = [];
-    if (typeof levelBanner !== 'undefined' && levelBanner) list.push({ kind: 'level', title: levelBanner.text, sub: levelBanner.sub, t: levelBanner.t });
+    if (typeof levelBanner !== 'undefined' && levelBanner) list.push({ kind: 'level', title: levelBanner.text, sub: levelBanner.sub, t: levelBanner.t, style: levelBanner.style || null });
     // (a place's name waits while a page is open: on a phone it was drawn over the quest page; it runs down as before)
     if (typeof areaBanner !== 'undefined' && areaBanner && !(typeof panel !== 'undefined' && panel)) list.push({ kind: 'area', title: String(areaBanner.name).toUpperCase(), sub: areaBanner.sub, t: areaBanner.t });
     // the banners waiting in bannerQueue (04-state) are not drawn here: they come up one at a time after the live one
@@ -29279,10 +29603,10 @@ const HK = (() => {
       rr(g, lane.x + 3, lane.y + 3, lane.w - 6, lane.h - 6, 3); g.strokeStyle = 'rgba(217,178,92,0.55)'; g.lineWidth = 1; g.stroke();
       g.restore();
       const tall = lane.h >= 60;
-      banner(g, { x: lane.x + 6, y: lane.y + (tall ? Math.max(4, (lane.h - (b.sub ? 54 : 30)) / 2) : 2), w: lane.w - 12, h: lane.h - 4 }, { kind: b.kind, title: b.title, sub: tall ? b.sub : null, alpha: a, small: !tall });
+      banner(g, { x: lane.x + 6, y: lane.y + (tall ? Math.max(4, (lane.h - (b.sub ? 54 : 30)) / 2) : 2), w: lane.w - 12, h: lane.h - 4 }, { kind: b.kind, title: b.title, sub: tall ? b.sub : null, alpha: a, small: !tall, style: b.style });
       return;
     }
-    list.slice(0, 2).forEach((b, i) => { const lane = L.banners[i]; if (lane) banner(g, lane, { kind: b.kind, title: b.title, sub: b.sub, alpha: alphaOf(b), small: i > 0 }); });
+    list.slice(0, 2).forEach((b, i) => { const lane = L.banners[i]; if (lane) banner(g, lane, { kind: b.kind, title: b.title, sub: b.sub, alpha: alphaOf(b), small: i > 0, style: b.style }); });
   }
 
   // ---- overlays drawn last: the long-press name tag, desktop tooltips, coach lines ----
@@ -29601,7 +29925,7 @@ const HK = (() => {
     // controls
     stud, ribbon, seal, badge, pouch, satchel, beltStrap, buckle, plateButton, bookTile, stickRing,
     // readouts
-    crest, crestMetrics, healthShield, questScroll, rolledScroll, plaque, meterBar, bossBanner, noticeRibbon, banner, flourish,
+    crest, crestMetrics, healthShield, questScroll, rolledScroll, plaque, meterBar, bossBanner, noticeRibbon, banner, rarityTag, flourish,
     vellumPlate, keycap, keycapW, tooltip, tag, brackets, talkPage, bookCover, bookPage, portrait, ramp,
     // geometry
     layout, layoutFor, bookLayoutFor, family, floorInsets, insets, bands, gapBetween, SAFE_ENV, cur: () => cur(),
@@ -40822,6 +41146,8 @@ window.RETALIATE = RETALIATE;
     const what = `${commas(gave)} ${plural(def.name, gave)}`;
     notify(gave < qty ? `Gave ${what} (the rest did not fit).` : banked ? `Gave ${what} (${commas(banked)} went to your bank).` : `Gave ${what}.`);
     floatText(player.x, player.y - 34, `+${commas(gave)} ${def.name}`, def.color || GOLD); sfx('pickup');
+    // a mega rare (54-megarare) is handed over with its gold-and-purple MEGA RARE banner, and written in its log
+    if (window.MEGA_RARE && MEGA_RARE.isMega(id)) MEGA_RARE.given(id, gave, 'admin');
     save(); return { gave, packed, banked, refused: qty - gave };
   }
 
@@ -41510,9 +41836,14 @@ window.RETALIATE = RETALIATE;
         const listed = buttons.some(b => b.label === 'admin:item:iron_bar') && !buttons.some(b => b.label === 'admin:item:wood');
         F.clickButton('admin:item:iron_bar'); F.clickButton('admin:qty:100'); notice = null; F.clickButton('admin:giveitem');
         const viaPanel = countItem('iron_bar') === 100 && !!notice && notice.text === 'Gave 100 iron bars.';
+        // a mega rare (54-megarare) given here comes with its MEGA RARE banner and a line in its log
+        player.inv = new Array(INV_SLOTS).fill(null); levelBanner = null; const n0 = window.MEGA_RARE ? MEGA_RARE.LOG.length : 0;
+        const rs = window.MEGA_RARE ? give('void_scythe', 1) : null, mb = levelBanner;
+        const mega = !window.MEGA_RARE || (!!rs && rs.gave === 1 && countItem('void_scythe') === 1 && !!mb && mb.style === 'mega' && mb.text === 'MEGA RARE' && mb.sub === 'Void Scythe' && MEGA_RARE.LOG.length === n0 + 1 && MEGA_RARE.LOG[n0].how === 'admin' && MEGA_RARE.LOG[n0].id === 'void_scythe');
+        levelBanner = null;
         const words = [plural('Iron bar', 2), plural('Wolf', 3), plural('Coins', 5), plural('Fang of the Fang', 2), plural('Goblin soldier', 1), plural('Cave spider', 4), plural('Raw shrimp', 9)].join('|');
         setSearch(''); S.view = null; closePanel(); player.inv = inv0; player.bank = bank0;
-        check(P + 'Give me an item: 250 iron bars with one pack slot free go 50 to the pack and 200 to the bank; with the bank full the rest is refused with the exact number; the panel searches, picks, sets 100 and gives', split && refused && listed && viaPanel && words === 'iron bars|wolves|coins|fangs of the Fang|goblin soldier|cave spiders|raw shrimp', { split, t1, refused, t2, listed, viaPanel, words }); }
+        check(P + 'Give me an item: 250 iron bars with one pack slot free go 50 to the pack and 200 to the bank; with the bank full the rest is refused with the exact number; the panel searches, picks, sets 100 and gives; the Void Scythe comes with its MEGA RARE banner and a line in the mega rare log', split && refused && listed && viaPanel && mega && words === 'iron bars|wolves|coins|fangs of the Fang|goblin soldier|cave spiders|raw shrimp', { split, t1, refused, t2, listed, viaPanel, mega, words }); }
 
       // ---- Teleport: the map's own button over the picture takes the tap; the knight lands on that tile; overworld only ----
       { refill(); closePanel(); const target = h.openSpot(ATLAS.world.tx(60), ATLAS.world.ty(30));
@@ -54066,7 +54397,8 @@ html.tv-on,html.tv-on body{background:${PAL.bg}}
 //   1. window.ICONS.set(id, fn) — a per-item drawing registry. A registered icon wins; an unregistered item
 //      still falls through to the core shape switch in src/08-draw.js, unchanged.
 //   2. window.ICONS.rarity(id) — five tiers worked out from the live tables (drop tables, shop stock, recipes,
-//      gathering, cooking), with value as the tiebreak. Rare and better get a coloured halo behind the icon.
+//      gathering, cooking), with value as the tiebreak, and a sixth above them, 'mega', that an item says itself
+//      (`rarity: 'mega'`, 54-megarare). Rare and better get a coloured halo behind the icon.
 //   3. window.ICONS.audit() — draws every item into a recording context, hashes the call sequence, and reports
 //      which items still draw the same thing. A self-test FAILS while any two match.
 //
@@ -54118,8 +54450,11 @@ html.tv-on,html.tv-on body{background:${PAL.bg}}
     rare: { key: 'rare', name: 'Rare', order: 2, glow: '#58a6ff', ring: '#1f6feb', strength: 0.3 },
     epic: { key: 'epic', name: 'Epic', order: 3, glow: '#b58cff', ring: '#7b3fe4', strength: 0.44 },
     unique: { key: 'unique', name: 'Unique', order: 4, glow: '#f5c542', ring: '#a9750a', strength: 0.6 },
+    // above them all, and never read off the tables: an item a feature marks `rarity: 'mega'` (54-megarare). Gold
+    // in the middle of the glow, purple at its edge, a gold ring: the MEGA RARE banner's colours.
+    mega: { key: 'mega', name: 'Mega rare', order: 5, glow: '#f5c542', glow2: '#a24bff', ring: '#f5c542', strength: 0.64 },
   };
-  const TIER_ORDER = ['common', 'uncommon', 'rare', 'epic', 'unique'];
+  const TIER_ORDER = ['common', 'uncommon', 'rare', 'epic', 'unique', 'mega'];
 
   // The exact odds rollDrops rolls at, the same maths src/44-wiki.js prints: always 100%, one row of the
   // weighted table by weight, the rare table one time in `chance` and then by weight. Plus the two feature
@@ -54201,6 +54536,8 @@ html.tv-on,html.tv-on body{background:${PAL.bg}}
   const TIER_CACHE = Object.create(null);
   function tierOf(id) {
     if (TIER_CACHE[id]) return TIER_CACHE[id];
+    const said = ITEMS[id] && ITEMS[id].rarity;
+    if (said && TIERS[said] && TIERS[said].order > TIERS.unique.order) return (TIER_CACHE[id] = TIERS[said]);
     const sc = score(id), v = (ITEMS[id] && ITEMS[id].value) || 0;
     let t = sc >= 40 ? TIERS.common : sc >= 12 ? TIERS.uncommon : sc >= 1.2 ? TIERS.rare : sc >= 0.1 ? TIERS.epic : TIERS.unique;
     if (v >= 900 && t.order < TIERS.uncommon.order) t = TIERS.uncommon;  // value is the tiebreak: nothing this dear is merely common
@@ -54222,7 +54559,8 @@ html.tv-on,html.tv-on body{background:${PAL.bg}}
       gr = g.createRadialGradient(0, 0, r * 0.3, 0, 0, r);
       const rgb = hexRgb(tier.glow);
       gr.addColorStop(0, `rgba(${rgb},0)`); gr.addColorStop(0.45, `rgba(${rgb},${tier.strength})`);
-      gr.addColorStop(0.72, `rgba(${rgb},${tier.strength * 0.75})`); gr.addColorStop(1, `rgba(${rgb},0)`);
+      const rgb2 = tier.glow2 ? hexRgb(tier.glow2) : rgb;
+      gr.addColorStop(0.72, `rgba(${rgb2},${tier.strength * 0.75})`); gr.addColorStop(1, `rgba(${rgb2},0)`);
       m.set(key, gr);
     }
     return gr;
@@ -54624,7 +54962,7 @@ html.tv-on,html.tv-on body{background:${PAL.bg}}
     get: id => REG[id] || null,
     has: id => !!REG[id],
     ids: () => Object.keys(REG),
-    rarity: id => tierOf(id).key,                        // 'common' | 'uncommon' | 'rare' | 'epic' | 'unique'
+    rarity: id => tierOf(id).key,                        // 'common' | 'uncommon' | 'rare' | 'epic' | 'unique' | 'mega'
     tier: id => tierOf(id),                              // the whole tier: name, order, glow, ring
     tierName: id => tierOf(id).name,
     supply: id => Object.assign({ score: +score(id).toFixed(3), value: (ITEMS[id] || {}).value || 0 }, supply()[id] || blank),
@@ -56770,6 +57108,9 @@ html.tv-on,html.tv-on body{background:${PAL.bg}}
 //  3. Facing forward or side-on, "the sword should be in front": the weapon is in front of the shoulder and body.
 //     Facing away, the hands, the weapon and the shield or lantern are all BEHIND his body (an upright tip shows over his
 //     shoulder; the cape and its badge show on his back).
+//     The Void Scythe (54-megarare, 7 Oct 2026) stands upright like the spear, the hand at the waist: side-on its blade
+//     curves forward; facing us or away it is turned over his head. Its swing is a wider two-handed sweep (both hands on
+//     the shaft, the off hand leaves his side), and the blade turns back over in his hand as it eases to rest.
 //  4. Robes and cloaks are slim and open at the front, never "a brick": the necromancer robe has a dark lining with
 //     runes, a cord belt and a tattered hem; the silk and shadow cloaks are two panels over the tunic, the belt showing.
 //  5. More detail and more of a look of its own for every piece: every metal its own helm, shield, blade and armour
@@ -56810,7 +57151,7 @@ html.tv-on,html.tv-on body{background:${PAL.bg}}
 // POSE. Where the weapon points and where the hand is ease from frame to frame. It lives in a WeakMap keyed by the
 // entity, never on it: the player object is saved whole into every save.
 //
-// window.KNIGHTGEAR = { draw, partsOf, gearKey, cleanGear, extent, fit, handAt, poseOf, STATS, PICS, WPICS, ... }
+// window.KNIGHTGEAR = { draw, weaponArt, partsOf, gearKey, cleanGear, extent, fit, handAt, poseOf, STATS, PICS, WPICS, ... }
 // ============================================================================
 const KNIGHTGEAR = (() => {
   // ---------- the clock and the colours of the knight being drawn ----------
@@ -56890,14 +57231,14 @@ const KNIGHTGEAR = (() => {
   const shieldFam = id => !id ? null : id === 'soul_lantern' ? 'lantern' : 'shield';
   const SHAPES = { sword: 1, dagger: 1, axe: 1, battleaxe: 1, warhammer: 1, bow: 1 };
   const shapeFam = s => SHAPES[s] ? s : 'sword';
-  const weaponFam = id => !id ? null : /spear/.test(id) ? 'spear' : id === 'fang_of_the_fang' ? 'fang' : id === 'bone_stave' ? 'stave' : id === 'skull_mace' ? 'mace' : shapeFam(ITEMS[id] && ITEMS[id].shape);
+  const weaponFam = id => !id ? null : /spear/.test(id) ? 'spear' : id === 'fang_of_the_fang' ? 'fang' : id === 'bone_stave' ? 'stave' : id === 'skull_mace' ? 'mace' : id === 'void_scythe' ? 'scythe' : shapeFam(ITEMS[id] && ITEMS[id].shape);
   const gemOf = id => !id ? null : /^sunstone/.test(id) ? '#ffcf5a' : /^stormstone/.test(id) ? '#efe8ff' : null;
   // which item slot an item goes in (the obsidian helm's armour slot is 'head': it is a helm)
   const slotOf = it => !it ? null : it.weapon ? 'weapon' : it.armour ? (it.armour.slot === 'head' ? 'helm' : it.armour.slot) : null;
   const SLOTS = ['helm', 'body', 'legs', 'shield', 'cape', 'weapon'];
   // pieces whose drawing moves with the clock (a picture of them is made at four phases)
   const ANIMATED = new Set(['mithril_helm', 'stormstone_helm', 'obsidian_helm', 'godly_helm', 'necro_robe', 'silk_cloak', 'shadow_cloak', 'hover_armour', 'stormstone_body', 'soul_lantern', 'stormstone_shield', 'gale_cloak']);
-  const WANIMATED = new Set(['mithril_sword', 'mithril_dagger', 'skysinger', 'sunstone_sword', 'stormstone_sword', 'bone_stave', 'dragon_spear']);
+  const WANIMATED = new Set(['mithril_sword', 'mithril_dagger', 'skysinger', 'sunstone_sword', 'stormstone_sword', 'bone_stave', 'dragon_spear', 'void_scythe']);
 
   // ---------- reading a look: the six pieces ----------
   // part = { id, fam, tier, color } (id null for a piece known only by its colour)
@@ -57571,6 +57912,8 @@ const KNIGHTGEAR = (() => {
       ell(g, 29, 0, 3.6, 3.4); g.fillStyle = '#efe9d8'; g.fill(); outline(g, 0.5);
       g.fillStyle = '#2a2420'; ell(g, 30.2, -1.2, 0.8, 0.9); g.fill(); ell(g, 30.2, 1.2, 0.8, 0.9); g.fill();
       const p = (0.4 + Math.sin(T * 3) * 0.2).toFixed(3); const gl = g.createRadialGradient(29, 0, 0, 29, 0, 7); gl.addColorStop(0, `rgba(160,255,200,${p})`); gl.addColorStop(1, 'rgba(160,255,200,0)'); g.fillStyle = gl; ell(g, 29, 0, 7, 7); g.fill();
+    } else if (fam === 'scythe') {
+      drawScythe(g);
     } else if (fam === 'spear') {
       haft(-18, 30);
       g.beginPath(); g.moveTo(29, -2.6); g.quadraticCurveTo(35, -3.6, 41, 0); g.quadraticCurveTo(35, 3.6, 29, 2.6); g.closePath(); g.fillStyle = c; g.fill(); outline(g, 0.6);
@@ -57591,6 +57934,60 @@ const KNIGHTGEAR = (() => {
       if (pull > 0.5) { g.strokeStyle = '#8a6a3a'; g.lineWidth = 1; g.beginPath(); g.moveTo(1.5 - pull, 0); g.lineTo(22, 0); g.stroke(); g.fillStyle = '#c9ccd3'; g.beginPath(); g.moveTo(22, -1.6); g.lineTo(25.5, 0); g.lineTo(22, 1.6); g.closePath(); g.fill(); g.fillStyle = '#e5484d'; g.beginPath(); g.moveTo(1.5 - pull, 0); g.lineTo(3.5 - pull, -1.6); g.lineTo(5 - pull, 0); g.lineTo(3.5 - pull, 1.6); g.closePath(); g.fill(); }
       g.restore();
     }
+  }
+  // THE VOID SCYTHE (54-megarare; the owner's inspiration picture, ~/.fanglands/work/scythe/inspo.png, drawn our own way):
+  // a dark shaft wrapped in a black vine with small gold runes, dark bands with an orange stripe at the butt and under
+  // the head, a purple orb at the butt, a dark metal head with an orange slit eye, and the crescent blade, peach at the
+  // head through pink to purple at the tip with a pale back edge, black tendrils curling over the head and the blade's
+  // root. In the weapon's own frame (+x up the shaft from the hand); the blade is on the +y side (the side a swing
+  // leads with); paintHeld turns it over (scale y -1) to rest over his head facing us or away.
+  function drawScythe(g) {
+    const sway = Math.sin(T * 3) * 0.6, pulse = 0.5 + Math.sin(T * 2.4) * 0.5;
+    // the orb's glow, behind everything
+    { const gl = g.createRadialGradient(-11.6, 0, 0, -11.6, 0, 6); gl.addColorStop(0, `rgba(180,110,255,${(0.35 + pulse * 0.25).toFixed(3)})`); gl.addColorStop(1, 'rgba(180,110,255,0)'); g.fillStyle = gl; ell(g, -11.6, 0, 6, 6); g.fill(); }
+    // the shaft
+    rr(g, -9.4, -1.35, 42, 2.7, 1.2); g.fillStyle = '#251e30'; g.fill(); outline(g, 0.5);
+    g.strokeStyle = 'rgba(255,255,255,0.13)'; g.lineWidth = 0.5; g.beginPath(); g.moveTo(-8, -0.6); g.lineTo(31, -0.6); g.stroke();
+    // the vine wound round it
+    g.strokeStyle = '#0b090f'; g.lineWidth = 0.8; g.lineCap = 'round'; g.beginPath();
+    for (let u = -6; u <= 29; u += 1) { const v = Math.sin(u * 0.62) * 1.5; if (u === -6) g.moveTo(u, v); else g.lineTo(u, v); }
+    g.stroke();
+    // gold runes between the turns of the vine
+    g.strokeStyle = '#e0b546'; g.lineWidth = 0.5;
+    for (const x of [-3, 2, 7, 12, 17, 22]) { g.beginPath(); g.moveTo(x - 0.8, -0.8); g.lineTo(x, 0); g.lineTo(x - 0.8, 0.8); g.stroke(); }
+    // the two dark bands, each with an orange stripe
+    for (const bx of [-10, 30.2]) { rr(g, bx, -1.95, 3.2, 3.9, 0.6); g.fillStyle = '#15111b'; g.fill(); outline(g, 0.4); g.fillStyle = '#ff8a3d'; g.fillRect(bx + 1.2, -1.95, 0.8, 3.9); }
+    // the orb at the butt
+    ell(g, -12.2, 0, 2.5, 2.5); { const og = g.createRadialGradient(-12.8, -0.8, 0.3, -12.2, 0, 2.6); og.addColorStop(0, '#e9d5ff'); og.addColorStop(0.45, '#a24bff'); og.addColorStop(1, '#4b1890'); g.fillStyle = og; } g.fill(); outline(g, 0.5);
+    // the back spike, the other side of the head
+    g.beginPath(); g.moveTo(37.2, -2.2); g.lineTo(40.2, -8.2); g.lineTo(34.4, -2.6); g.closePath();
+    { const sg = g.createLinearGradient(36, -2, 40, -8); sg.addColorStop(0, '#f0a0b8'); sg.addColorStop(1, '#9c5cf0'); g.fillStyle = sg; } g.fill(); outline(g, 0.5);
+    // the blade: the back (outer edge) round to the tip, then the cutting edge home
+    g.beginPath(); g.moveTo(38, 1.4); g.quadraticCurveTo(50, 14, 30.5, 28); g.quadraticCurveTo(35.4, 14.5, 32.4, 2.8); g.closePath();
+    { const bg = g.createLinearGradient(35, 2, 31, 27); bg.addColorStop(0, '#ffb38a'); bg.addColorStop(0.3, '#e77ac8'); bg.addColorStop(0.65, '#9a52f5'); bg.addColorStop(1, '#5a22c8'); g.fillStyle = bg; } g.fill(); outline(g, 0.6);
+    // the pale back edge, and a glint down the cutting edge
+    g.strokeStyle = 'rgba(244,232,255,0.9)'; g.lineWidth = 0.7; g.beginPath(); g.moveTo(38.6, 3); g.quadraticCurveTo(48, 14.4, 31.4, 26.6); g.stroke();
+    g.strokeStyle = `rgba(255,214,250,${(0.25 + pulse * 0.35).toFixed(3)})`; g.lineWidth = 0.5; g.beginPath(); g.moveTo(33.4, 4.2); g.quadraticCurveTo(35, 14.4, 31.6, 24.4); g.stroke();
+    // the head: dark metal, an orange slit eye
+    g.beginPath(); g.moveTo(32.8, -2.9); g.lineTo(38.6, -2.5); g.lineTo(40.8, 0); g.lineTo(38.6, 2.6); g.lineTo(32.8, 2.9); g.closePath();
+    { const hg = g.createLinearGradient(0, -3, 0, 3); hg.addColorStop(0, '#5a5566'); hg.addColorStop(0.5, '#34303d'); hg.addColorStop(1, '#1d1a24'); g.fillStyle = hg; } g.fill(); outline(g, 0.5);
+    { const eg = g.createRadialGradient(36.6, 0, 0, 36.6, 0, 4); eg.addColorStop(0, `rgba(255,150,60,${(0.45 + pulse * 0.3).toFixed(3)})`); eg.addColorStop(1, 'rgba(255,150,60,0)'); g.fillStyle = eg; ell(g, 36.6, 0, 4, 4); g.fill(); }
+    ell(g, 36.6, 0, 2, 1.35); g.fillStyle = '#ff8a1a'; g.fill(); g.strokeStyle = '#2a0c00'; g.lineWidth = 0.4; g.stroke();
+    ell(g, 36.6, 0, 0.45, 1.2); g.fillStyle = '#2a0a00'; g.fill();
+    // the black tendrils: one curling off the head, one over the blade's root, one on the blade, one down the shaft
+    g.strokeStyle = '#0b090f'; g.lineWidth = 0.9; g.lineCap = 'round';
+    g.beginPath(); g.moveTo(34.2, -2.6); g.quadraticCurveTo(32 + sway * 0.4, -6.4, 34.8, -6.9); g.arc(34.8, -5.9, 1, -Math.PI / 2, Math.PI * 1.3); g.stroke();
+    g.beginPath(); g.moveTo(33.6, 2.4); g.quadraticCurveTo(37.5, 4.2, 39.2 + sway * 0.3, 7.6); g.arc(38.2 + sway * 0.3, 7.8, 1, 0, Math.PI * 1.4); g.stroke();
+    g.beginPath(); g.moveTo(42.2, 10.6); g.quadraticCurveTo(39.8, 13, 40.4 + sway * 0.3, 15.6); g.arc(39.4 + sway * 0.3, 15.6, 1, 0, Math.PI * 1.5); g.stroke();
+    g.lineWidth = 0.8; g.beginPath(); g.moveTo(30, 1.6); g.quadraticCurveTo(27.5, 2.6 + sway * 0.3, 26, 1.2); g.arc(26, 0.3, 0.9, Math.PI / 2, Math.PI * 1.8); g.stroke();
+  }
+  // a weapon drawn on its own, in its own frame (the hand at 0, 0; +x up the shaft): 54-megarareart lays the Void Scythe
+  // on the ground with it. t: the clock its moving parts read (default the game's).
+  function weaponArt(g, id, t) {
+    if (!id || !ITEMS[id] || slotOf(ITEMS[id]) !== 'weapon') return false;
+    const T0 = T; T = typeof t === 'number' ? t : time;
+    try { drawWeapon(g, part(id, 'weapon'), -1); } finally { T = T0; }
+    return true;
   }
   // NOT IN THE SAMPLE (ported minimally, flagged to the owner): the work tools and the fishing rod, in the same outline style
   // heat (0 to 1): how hot a held stone is (its glow)
@@ -57634,7 +58031,7 @@ const KNIGHTGEAR = (() => {
   // how a knight stands with each kind of weapon (angles in his own frame: 0 = to his right, + = down the screen)
   function restAngle(fam, side) {
     if (fam === 'axe' || fam === 'battleaxe' || fam === 'warhammer' || fam === 'mace') return side ? -1.2 : -1.12;
-    if (fam === 'spear' || fam === 'stave') return side ? -1.4 : -1.48;
+    if (fam === 'spear' || fam === 'stave' || fam === 'scythe') return side ? -1.4 : -1.48;
     if (fam === 'bow') return side ? -0.08 : 0;
     // swords, daggers and the Fang: held upright too, blade up beside the shoulder (owner: "should be up like the battle axes")
     return side ? -1.2 : -1.12;
@@ -57645,21 +58042,32 @@ const KNIGHTGEAR = (() => {
   function angDiff(a, b) { let d = (b - a) % (Math.PI * 2); if (d > Math.PI) d -= Math.PI * 2; if (d < -Math.PI) d += Math.PI * 2; return d; }
   const POSE = new WeakMap();
   // at rest: the weapon's angle and the hand at his waist, for this facing and step
+  // `blade`: which side of the shaft a blade on one side is drawn (1 = the side a swing leads with, -1 = turned over). Only
+  // the scythe's differs: side-on its curve faces forward, facing us or away it rests turned over his head.
   function restPose(S, fam) {
     const side = !S.back && Math.abs(S.fxm) > 0.7 && Math.abs(S.fy) < 0.6, rh = fam === 'bow' ? REST_HAND.bow : REST_HAND.up;
-    return { wa: restAngle(fam, side) + S.step * 0.1, hx: rh.x, hy: rh.y + S.step * 0.5 };
+    return { wa: restAngle(fam, side) + S.step * 0.1, hx: rh.x, hy: rh.y + S.step * 0.5, blade: fam === 'scythe' && !side ? -1 : 1 };
   }
+  // how far a swing turns (from, to, about where he faces): the scythe's two-handed sweep is wider than a sword's cut
+  const ARC = { scythe: [-2, 1.7] }, ARC0 = [-1.4, 1.2];
+  const arcOf = fam => ARC[fam] || ARC0;
+  // a two-handed swing: both hands on the shaft, the off hand further down it (the shield or lantern stays where it hangs)
+  const twoHanded = (S, P) => !!P.weapon && P.weapon.fam === 'scythe' && S.swing >= 0 && !S.block;
   // once a draw per knight: the weapon's angle and the hand ease back to rest after a swing (dt from the game clock)
   function pose(e, S, fam) {
     let rec = POSE.get(e);
     const swing = S.swing, ang = S.ang;
     let target, tx, ty;
     // the hand: round the shoulder while he swings, down at his waist at rest
-    if (swing >= 0) { target = fam === 'bow' ? ang : ang + lerp(-1.4, 1.2, kEase(swing)); tx = SHOULDER.x + Math.cos(target) * REACH; ty = SHOULDER.y + Math.sin(target) * REACH; }
-    else { const r = restPose(S, fam); target = r.wa; tx = r.hx; ty = r.hy; }
-    if (!rec) { rec = { wa: target, hx: tx, hy: ty, mirror: S.mirror, t: time }; POSE.set(e, rec); return rec; }
+    let blade = 1;
+    if (swing >= 0) { const [a0, a1] = arcOf(fam); target = fam === 'bow' ? ang : ang + lerp(a0, a1, kEase(swing)); tx = SHOULDER.x + Math.cos(target) * REACH; ty = SHOULDER.y + Math.sin(target) * REACH; }
+    else { const r = restPose(S, fam); target = r.wa; tx = r.hx; ty = r.hy; blade = r.blade; }
+    if (!rec) { rec = { wa: target, hx: tx, hy: ty, blade, mirror: S.mirror, t: time }; POSE.set(e, rec); return rec; }
     const dt = clamp(time - rec.t, 0, 0.05), k = Math.min(1, dt * 11);
     rec.t = time;
+    if (typeof rec.blade !== 'number') rec.blade = blade;
+    // the blade turns over in his hand as it eases back to rest (it does not jump to the other side)
+    if (swing >= 0) rec.blade = 1; else if (rec.mirror !== S.mirror) rec.blade = blade; else rec.blade += (blade - rec.blade) * k;
     if (swing >= 0 || rec.mirror !== S.mirror) { rec.wa = target; rec.hx = tx; rec.hy = ty; }
     else { rec.wa += angDiff(rec.wa, target) * k; rec.hx += (tx - rec.hx) * k; rec.hy += (ty - rec.hy) * k; }
     rec.mirror = S.mirror;
@@ -57680,10 +58088,19 @@ const KNIGHTGEAR = (() => {
   // mirrored facing left): 26-boats' pot rope starts there. null before he is drawn.
   function handAt(e) { const r = e && POSE.get(e); return r ? { x: (r.mirror ? -r.hx : r.hx) * 1.08, y: r.hy * 1.08 } : null; }
 
-  function drawTrail(g, ang, swing) {
-    const a0 = ang - 1.4, a1 = ang + lerp(-1.4, 1.2, kEase(swing));
-    g.save(); g.translate(SHOULDER.x, SHOULDER.y); g.strokeStyle = `rgba(255,255,255,${(0.42 * (1 - swing)).toFixed(3)})`; g.lineWidth = 5; g.lineCap = 'round';
-    g.beginPath(); g.arc(0, 0, 28, a0, a1); g.stroke(); g.restore();
+  function drawTrail(g, ang, swing, fam) {
+    const [f0, f1] = arcOf(fam), a0 = ang + f0, a1 = ang + lerp(f0, f1, kEase(swing));
+    g.save(); g.translate(SHOULDER.x, SHOULDER.y); g.lineCap = 'round';
+    if (fam === 'scythe') {
+      // the scythe's sweep: a wide violet crescent out where the blade goes, a pink-gold edge inside it
+      const a = 1 - swing;
+      g.strokeStyle = `rgba(150,80,255,${(0.42 * a).toFixed(3)})`; g.lineWidth = 9; g.beginPath(); g.arc(0, 0, 38, a0, a1); g.stroke();
+      if (a1 > a0 + 0.2) { g.strokeStyle = `rgba(255,190,150,${(0.55 * a).toFixed(3)})`; g.lineWidth = 2.4; g.beginPath(); g.arc(0, 0, 33, a0 + 0.15, a1); g.stroke(); }
+    } else {
+      g.strokeStyle = `rgba(255,255,255,${(0.42 * (1 - swing)).toFixed(3)})`; g.lineWidth = 5;
+      g.beginPath(); g.arc(0, 0, 28, a0, a1); g.stroke();
+    }
+    g.restore();
   }
 
   // ---------- the knight ----------
@@ -57729,7 +58146,7 @@ const KNIGHTGEAR = (() => {
     if (S.back) {
       if (stage !== 'rest') {
         if (up) raisedShield(g, S, P);
-        else { g.save(); g.translate(0, S.bob); if (P.shield) drawShield(g, P.shield, false); drawOffHand(g, P.body, S.step); g.restore(); }
+        else { g.save(); g.translate(0, S.bob); if (P.shield) drawShield(g, P.shield, false); if (!twoHanded(S, P)) drawOffHand(g, P.body, S.step); g.restore(); }
       }
       if (stage === 'behind') return;
     } else if (P.cape) drawCape(g, P.cape, S.step, false);
@@ -57741,7 +58158,7 @@ const KNIGHTGEAR = (() => {
     drawShoulders(g, P.body);
     if (!S.back) {
       if (GIRL) girlBraid(g, S.side, false);
-      if (!up) { drawOffHand(g, P.body, S.step); if (P.shield) drawShield(g, P.shield, false); }
+      if (!up) { if (!twoHanded(S, P)) drawOffHand(g, P.body, S.step); if (P.shield) drawShield(g, P.shield, false); }
       if (GIRL && showsHair(P.helm)) girlHairBehind(g);
     }
     drawHead(g, P.helm, S.fxm, S.fy, S.back);
@@ -57767,15 +58184,17 @@ const KNIGHTGEAR = (() => {
     const rec = S.rec;
     if (W) {
       g.save(); g.translate(rec.hx, rec.hy + S.bob); g.rotate(rec.wa);
+      if (typeof rec.blade === 'number' && rec.blade !== 1) g.scale(1, rec.blade);
       if (!(wpic && wpic(g, W, S.swing))) drawWeapon(g, W, S.swing);
       g.restore();
     }
     g.save(); g.translate(0, S.bob);
+    if (W && twoHanded(S, P)) drawWeaponArm(g, P.body, rec.hx - Math.cos(rec.wa) * 10, rec.hy - Math.sin(rec.wa) * 10);
     if (W) drawWeaponArm(g, P.body, rec.hx, rec.hy);
     else if (S.swing >= 0 && look.fists) drawWeaponArm(g, P.body, SHOULDER.x + Math.cos(S.ang) * (4 + S.swing * 12), SHOULDER.y + Math.sin(S.ang) * (4 + S.swing * 12));
     else drawWeaponArm(g, P.body, REST_HAND.up.x - 0.4, REST_HAND.up.y - 0.6 + S.step * 1.4);
     g.restore();
-    if (W && S.swing >= 0 && S.swing < 0.9 && W.fam !== 'bow') { g.save(); g.translate(0, S.bob); drawTrail(g, S.ang, S.swing); g.restore(); }
+    if (W && S.swing >= 0 && S.swing < 0.9 && W.fam !== 'bow') { g.save(); g.translate(0, S.bob); drawTrail(g, S.ang, S.swing, W.fam); g.restore(); }
   }
   function holdOf(e, S, look) { return look.tool || look.rod ? toolPose(e, S, look) : null; }
 
@@ -57878,11 +58297,11 @@ const KNIGHTGEAR = (() => {
     // at rest once the weapon has eased to within a little of where it rests: walking, the rest itself moves with the
     // step (0.1 a step) and the ease always trails it, so a near miss is the rest (else every walking knight with a
     // weapon would need a second set of pictures without it)
-    if (!hold && S.swing < 0) { const r = restPose(S, fam); if (!W || (Math.abs(angDiff(S.rec.wa, r.wa)) < 0.22 && Math.abs(S.rec.hx - r.hx) < 1.2 && Math.abs(S.rec.hy - r.hy) < 1.2)) rest = r; }
+    if (!hold && S.swing < 0) { const r = restPose(S, fam); if (!W || (Math.abs(angDiff(S.rec.wa, r.wa)) < 0.22 && Math.abs(S.rec.hx - r.hx) < 1.2 && Math.abs(S.rec.hy - r.hy) < 1.2 && Math.abs((typeof S.rec.blade === 'number' ? S.rec.blade : 1) - r.blade) < 0.2)) rest = r; }
     // walking, the step itself moves the clock on (4 pictures a walk, not 32); standing, the clock's own 4 phases
     const anim = !moving && (animatedBody(P) || (!!rest && !!W && WANIMATED.has(W.id))), ph = anim ? Math.floor(time * 4) % PHASES : 0;
     const tPic = moving ? sb * 0.29 : ph * 0.37 + 0.2;
-    const key = gearKey(P) + '|' + (rest ? 'R' + (look.fists ? 'f' : '') : '') + '|' + (GIRL ? 'g' + HAIR + RIB : 'b' + HAIR) + '|' + TUNIC + SKIN + '|' + pdir + '|' + sb + '|' + ph + '|' + ss;
+    const key = gearKey(P) + '|' + (rest ? 'R' + (look.fists ? 'f' : '') : twoHanded(S, P) ? '2' : '') + '|' + (GIRL ? 'g' + HAIR + RIB : 'b' + HAIR) + '|' + TUNIC + SKIN + '|' + pdir + '|' + sb + '|' + ph + '|' + ss;
     let p = lruGet(PICS, key);
     if (!p) {
       T = tPic;
@@ -58271,6 +58690,26 @@ const KNIGHTGEAR = (() => {
         const near = (p, x, y) => !!p && Math.abs(p.x - x) <= 0.3 && Math.abs(p.y - y) <= 0.3;
         const nums = near(REST_HAND.up, 10.4, 4.8) && near(REST_HAND.bow, 10.8, 3.6);
         check(P0 + 'at rest every weapon family (' + Object.keys(fams).length + ') stands upright with the hand at his waist (REST_HAND 10.4, 4.8; the bow at his side, 10.8, 3.6), drawn below the shoulder plates at the belt at all four facings; a swing lifts the hand round the shoulder and half a second after it the hand is back at the waist', nums && !bad.length && Object.keys(fams).length >= 10, { nums, rest: REST_HAND, bad, fams: Object.keys(fams) }); }
+
+      // 3b. the Void Scythe (54-megarare): side-on its blade faces forward; facing us or away it rests turned over his head;
+      // a swing leads with the blade, both hands on the shaft (the off hand leaves his side); after it the blade turns
+      // back over in his hand, never jumping
+      if (ITEMS.void_scythe) {
+        const look = lookWith({ weapon: 'void_scythe' }), sides = [];
+        for (const fc of FACES) { const e = ent(fc); time = 200; draw(recorder().g, e, look, null); sides.push(+POSE.get(e).blade.toFixed(2)); }
+        const count = r => ({ hands: r.ops.filter(o => /^ellipse \S+ \S+ 2\.2 2\.2/.test(o)).length, off: r.ops.filter(o => /^ellipse -10\.4 \S+ 2\.0 2\.0/.test(o)).length });
+        const e = ent(FACES[1]); time = 300; const r0 = recorder(); draw(r0.g, e, look, null); const still = count(r0);
+        e.attackT = 0.11; time += 1 / 60; const r1 = recorder(); draw(r1.g, e, look, null); const swing = count(r1), lead = POSE.get(e).blade;
+        e.attackT = 0; for (let i = 0; i < 30; i++) { time += 1 / 60; draw(recorder().g, e, look, null); }
+        const sideBack = POSE.get(e).blade;
+        const d = ent(FACES[0]); time = 400; draw(recorder().g, d, look, null); d.attackT = 0.11; time += 1 / 60; draw(recorder().g, d, look, null);
+        d.attackT = 0; const turn = [];
+        for (let i = 0; i < 30; i++) { time += 1 / 60; draw(recorder().g, d, look, null); turn.push(POSE.get(d).blade); }
+        const smooth = turn.every((b, i) => i === 0 || Math.abs(b - turn[i - 1]) < 0.35) && turn.some(b => b > -0.9 && b < 0.9) && turn[turn.length - 1] < -0.95;
+        check(P0 + 'the Void Scythe rests with its blade forward side-on and turned over his head facing us or away; a swing leads with the blade, two hands on the shaft and none at his side; after it the blade turns back over smoothly',
+          sides.join() === '-1,1,-1,1' && still.off === 1 && swing.off === 0 && swing.hands === still.hands + 1 && lead === 1 && Math.abs(sideBack - 1) < 0.01 && smooth,
+          { sides, still, swing, lead, sideBack: +sideBack.toFixed(2), turn: turn.filter((b, i) => i % 5 === 0).map(b => +b.toFixed(2)) });
+      }
 
       // 4. what is in front and what is behind: facing us, the weapon after the body, shoulders and head, the shield after
       // the body; facing away, both hands, the weapon and the shield before the body
@@ -58744,7 +59183,7 @@ const KNIGHTGEAR = (() => {
     } finally { time = time0; DPR = dpr0; T = 0; }
   });
 
-  return { draw, partsOf, gearKey, cleanGear, extent, fit, handAt, poseOf: e => POSE.get(e), STATS, PICS, WPICS, clearPics, picCap: () => picCap, KG, SLOTS, REST_HAND, SHOULDER, REACH };
+  return { draw, weaponArt, partsOf, gearKey, cleanGear, extent, fit, handAt, poseOf: e => POSE.get(e), STATS, PICS, WPICS, clearPics, picCap: () => picCap, KG, SLOTS, REST_HAND, SHOULDER, REACH };
 })();
 window.KNIGHTGEAR = KNIGHTGEAR;
 

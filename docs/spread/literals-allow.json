@@ -874,7 +874,7 @@
   {"file": "59-hudkit.js", "literal": "y - 14", "decl": "w", "reason": "HUD kit: screen pixels and emblem drawing, no map coordinates"},
   {"file": "59-hudkit.js", "literal": "11", "decl": "ls", "reason": "HUD kit: screen pixels and emblem drawing, no map coordinates"},
   {"file": "59-hudkit.js", "literal": "[0, 4]", "decl": "pureMatrix", "reason": "HUD kit: screen pixels and emblem drawing, no map coordinates"},
-  {"file": "59-hudkit.js", "literal": "[0, 4]", "line": 2942, "reason": "HUD kit: screen pixels and emblem drawing, no map coordinates"},
+  {"file": "59-hudkit.js", "literal": "[0, 4]", "context": "for (const chat of [0, 4])", "reason": "HUD kit: screen pixels and emblem drawing, no map coordinates"},
   {"file": "78-monsterart.js", "literal": "{ a: -0.4, x: 10, y: 4 }", "decl": "rest", "reason": "monster sprite drawing in sprite units, no map coordinates"},
   {"file": "78-monsterart.js", "literal": "x < 10", "decl": "ppl_guardTorso", "reason": "monster sprite drawing in sprite units, no map coordinates"},
   {"file": "78-monsterart.js", "literal": "hy - 11", "decl": "ppl_kettleHat", "reason": "monster sprite drawing in sprite units, no map coordinates"},

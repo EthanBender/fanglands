@@ -1117,12 +1117,36 @@ const HK = (() => {
     const f = FS(600, sz), lines = tw(g, sub, f) > room ? wrap(g, sub, room, 2, f).lines : [String(sub)];
     lines.forEach((l, i) => text(g, l, cx, top + realPx(f) * (1 + i * 1.2), { font: f, align: 'center', color: col, halo: 4, haloColor: `rgba(10,8,6,${halo})`, box: r, fitId: 'banner:sub' }));
   }
-  // BANNER: an area name (kind 'area') or a level-up / event headline (kind 'level'), in its lane, faded by alpha
+  // RARITY TAG: the gold-and-purple plate a rarity above the rare drop wears (54-megarare's MEGA RARE): a purple
+  // swallowtail ribbon with a gold edge and gold words, `h` tall, starting at x (align 'center': centred on x). It is what
+  // the MEGA RARE banner stands on, and the wiki's tag on such an item's page. Returns its width.
+  function rarityTag(g, x, y, label, h, o = {}) {
+    const size = Math.max(10, Math.round(h * 0.6)), f = FC(800, size), n = Math.min(h * 0.38, 12);
+    const w = tw(g, label, f) + n * 2 + h * 0.9, x0 = o.align === 'center' ? x - w / 2 : x;
+    const path = () => { g.beginPath(); g.moveTo(x0, y); g.lineTo(x0 + w, y); g.lineTo(x0 + w - n, y + h / 2); g.lineTo(x0 + w, y + h); g.lineTo(x0, y + h); g.lineTo(x0 + n, y + h / 2); g.closePath(); };
+    shadowed(g, () => { path(); g.fillStyle = '#1a0830'; g.fill(); }, 8, 2);
+    const gr = g.createLinearGradient(x0, 0, x0 + w, 0); gr.addColorStop(0, '#3b1466'); gr.addColorStop(0.5, '#7433c4'); gr.addColorStop(1, '#3b1466');
+    path(); g.fillStyle = gr; g.fill(); g.strokeStyle = '#f5c542'; g.lineWidth = 1.5; g.stroke();
+    g.beginPath(); g.moveTo(x0 + n + 2, y + 3); g.lineTo(x0 + w - n - 2, y + 3); g.moveTo(x0 + n + 2, y + h - 3); g.lineTo(x0 + w - n - 2, y + h - 3); g.strokeStyle = 'rgba(245,197,66,0.45)'; g.lineWidth = 1; g.stroke();
+    // a gold spark at each end, twinkling
+    const tk = o.still ? 1 : 0.7 + 0.3 * Math.sin(now() / 160);
+    for (const sx of [x0 + n + h * 0.22, x0 + w - n - h * 0.22]) { const s = h * 0.17 * tk; g.fillStyle = '#ffe9a3'; g.beginPath(); g.moveTo(sx, y + h / 2 - s * 1.6); g.lineTo(sx + s * 0.45, y + h / 2); g.lineTo(sx, y + h / 2 + s * 1.6); g.lineTo(sx - s * 0.45, y + h / 2); g.closePath(); g.fill(); }
+    text(g, label, x0 + w / 2, y + h / 2 + realPx(f) * 0.36, { font: f, align: 'center', color: '#ffd76a', halo: 3, haloColor: 'rgba(26,6,48,0.9)', box: o.box || { x: x0, y, w, h }, fitId: o.fitId || 'rarity' });
+    return w;
+  }
+  // BANNER: an area name (kind 'area') or a level-up / event headline (kind 'level'), in its lane, faded by alpha.
+  // A level banner with style 'mega' (`levelBanner = { text, sub, t, style: 'mega' }`, 54-megarare) is the gold-and-purple
+  // MEGA RARE banner: its words on the rarity tag, the item's name under it in pale violet.
   function banner(g, r, o) {
     const phone = r.w < 420 || VW < 640;
     g.save(); g.globalAlpha *= cl(o.alpha == null ? 1 : o.alpha, 0, 1);
     const cx = r.x + r.w / 2;
-    if (o.kind === 'area') {
+    if (o.style === 'mega') {
+      let h = Math.min(r.h - 4, o.small ? (phone ? 20 : 24) : phone ? 28 : 38);
+      while (h > 20 && tw(g, o.title, FC(800, Math.max(10, Math.round(h * 0.6)))) + Math.min(h * 0.38, 12) * 2 + h * 0.9 > r.w) h -= 1;
+      rarityTag(g, cx, r.y, o.title, h, { align: 'center', box: r, fitId: 'banner' });
+      if (o.sub) subLines(g, o.sub, cx, r.y + h + 2, r, o.small ? 12 : 14, '#e9d5ff', 0.85);
+    } else if (o.kind === 'area') {
       let size = o.small ? 18 : phone ? 22 : 30; while (size > 14 && tw(g, o.title, FC(800, size)) > r.w - 8) size -= 1;
       const ty = r.y + size;
       text(g, o.title, cx, ty, { font: FC(800, size), align: 'center', color: T.ink, halo: 6, haloColor: 'rgba(10,8,6,0.8)', box: r, fitId: 'banner' });
@@ -2313,7 +2337,7 @@ const HK = (() => {
   function drawBanners(g, L) {
     const phone = L.fam === 'phoneP' || L.fam === 'phoneL';
     const list = [];
-    if (typeof levelBanner !== 'undefined' && levelBanner) list.push({ kind: 'level', title: levelBanner.text, sub: levelBanner.sub, t: levelBanner.t });
+    if (typeof levelBanner !== 'undefined' && levelBanner) list.push({ kind: 'level', title: levelBanner.text, sub: levelBanner.sub, t: levelBanner.t, style: levelBanner.style || null });
     // (a place's name waits while a page is open: on a phone it was drawn over the quest page; it runs down as before)
     if (typeof areaBanner !== 'undefined' && areaBanner && !(typeof panel !== 'undefined' && panel)) list.push({ kind: 'area', title: String(areaBanner.name).toUpperCase(), sub: areaBanner.sub, t: areaBanner.t });
     // the banners waiting in bannerQueue (04-state) are not drawn here: they come up one at a time after the live one
@@ -2330,10 +2354,10 @@ const HK = (() => {
       rr(g, lane.x + 3, lane.y + 3, lane.w - 6, lane.h - 6, 3); g.strokeStyle = 'rgba(217,178,92,0.55)'; g.lineWidth = 1; g.stroke();
       g.restore();
       const tall = lane.h >= 60;
-      banner(g, { x: lane.x + 6, y: lane.y + (tall ? Math.max(4, (lane.h - (b.sub ? 54 : 30)) / 2) : 2), w: lane.w - 12, h: lane.h - 4 }, { kind: b.kind, title: b.title, sub: tall ? b.sub : null, alpha: a, small: !tall });
+      banner(g, { x: lane.x + 6, y: lane.y + (tall ? Math.max(4, (lane.h - (b.sub ? 54 : 30)) / 2) : 2), w: lane.w - 12, h: lane.h - 4 }, { kind: b.kind, title: b.title, sub: tall ? b.sub : null, alpha: a, small: !tall, style: b.style });
       return;
     }
-    list.slice(0, 2).forEach((b, i) => { const lane = L.banners[i]; if (lane) banner(g, lane, { kind: b.kind, title: b.title, sub: b.sub, alpha: alphaOf(b), small: i > 0 }); });
+    list.slice(0, 2).forEach((b, i) => { const lane = L.banners[i]; if (lane) banner(g, lane, { kind: b.kind, title: b.title, sub: b.sub, alpha: alphaOf(b), small: i > 0, style: b.style }); });
   }
 
   // ---- overlays drawn last: the long-press name tag, desktop tooltips, coach lines ----
@@ -2652,7 +2676,7 @@ const HK = (() => {
     // controls
     stud, ribbon, seal, badge, pouch, satchel, beltStrap, buckle, plateButton, bookTile, stickRing,
     // readouts
-    crest, crestMetrics, healthShield, questScroll, rolledScroll, plaque, meterBar, bossBanner, noticeRibbon, banner, flourish,
+    crest, crestMetrics, healthShield, questScroll, rolledScroll, plaque, meterBar, bossBanner, noticeRibbon, banner, rarityTag, flourish,
     vellumPlate, keycap, keycapW, tooltip, tag, brackets, talkPage, bookCover, bookPage, portrait, ramp,
     // geometry
     layout, layoutFor, bookLayoutFor, family, floorInsets, insets, bands, gapBetween, SAFE_ENV, cur: () => cur(),
