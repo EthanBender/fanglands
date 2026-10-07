@@ -70638,7 +70638,7 @@ const MOUNT_LOOK = (() => {
     const lv = agLv();
     if (lv >= STEPS_LV) WALK_OVER.add(STEPS); else WALK_OVER.delete(STEPS);
     hintT = Math.max(0, hintT - dt);
-    if (hintT > 0 || player.dead || player.mech) return;
+    if (hintT > 0 || player.dead || player.mech || window.__instance) return;   // the steps are the overworld's: an instance's map is another place
     for (const st of WS.STAIRS) { if (lv >= st.lv) continue;
       if (dist(player.x, player.y, tc(st.x), tc(st.y)) < 1.6 * TILE) { notify(`Steps cut in the rock face. Agility ${st.lv} climbs the scarp here.`); hintT = 12; break; } }
   });
