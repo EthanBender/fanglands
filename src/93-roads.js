@@ -1016,6 +1016,22 @@
       for (let i = 0; i < NET.length; i++) { if (!NET[i]) continue; net++; const t = map[i]; if (t === T_ROAD) road++; else if (t === T.DIRT) track++; else if (OPENT.has(t)) open++; else cross++; }
       check(P + `the network is one: a flood over its own tiles alone (the ROAD, the tracks' dirt and the crossings they adopt: bridges, gates, the places' streets; never open ground) from the cave mouth reaches every one of the ${places.length} places' ports, but the ${Object.keys(OFF_ROAD).length} listed with their reason (the islands and the east by boat, the reserved plots); open ground is under a twentieth of it (the worn steps to a door and a track's corners)`,
         missed.length === 0 && q.length === net && places.length >= 25 && open / net < 0.05 && road > 1000, { missed, places: places.length, flood: q.length, net, road, track, crossings: cross, open, components: S.components, offRoad: OFF_ROAD }); }
+    // 1b. the ROAD itself is one: a flood over ROAD tiles alone (crossing only what a road meets on its way: a place's own
+    //     ground, which a road meets at its gate and leaves by another; the Ash Road's old track across the ash, the
+    //     Ashfields' open-ground rule; a bridge or a gate on its line) from the cave mouth takes in every ROAD tile and
+    //     every port on the six main roads (spec §13 STAGE 6); the tracks, kept tracks, are check 1's
+    { const BR = new Set(['BRIDGE', 'GATE', 'CITY_GATE', 'DOCK'].map(Tn).filter(v => v >= 0));
+      const ok = i => map[i] === T_ROAD || (PROTECT[i] && !SOLID.has(map[i])) || (NET[i] && (inAF(i % MAP_W, (i / MAP_W) | 0) || BR.has(map[i]) || (window.DECO && DECO.isBridge(i))));
+      const seen = new Uint8Array(MAP_W * MAP_H), q = [], [mx, my] = A.port('cave.mouth').map(Math.round);
+      let s0 = -1; for (let r = 0; r <= 4 && s0 < 0; r++) for (let dy = -r; dy <= r && s0 < 0; dy++) for (let dx = -r; dx <= r; dx++) { const i = (my + dy) * MAP_W + mx + dx; if (inMap(mx + dx, my + dy) && ok(i)) { s0 = i; break; } }
+      if (s0 >= 0) { seen[s0] = 1; q.push(s0); }
+      for (let k = 0; k < q.length; k++) { const c = q[k], x = c % MAP_W, y = (c / MAP_W) | 0; for (const [dx, dy] of N4) { const nx = x + dx, ny = y + dy; if (!inMap(nx, ny)) continue; const j = ny * MAP_W + nx; if (!seen[j] && ok(j)) { seen[j] = 1; q.push(j); } } }
+      const near = p => { for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) { const x = Math.round(p[0]) + dx, y = Math.round(p[1]) + dy; if (inMap(x, y) && seen[y * MAP_W + x]) return true; } return false; };
+      const ports = new Set(); for (const id of A.MAIN_ROADS) for (const p of A.TRACKS[id]) if (p[0] === 'port') ports.add(p[1]);
+      const missed = [...ports].filter(k => !near(A.port(k)));
+      let roadAll = 0, roadIn = 0; for (let i = 0; i < map.length; i++) if (map[i] === T_ROAD) { roadAll++; if (seen[i]) roadIn++; }
+      check(P + `a flood over ROAD tiles alone (through a place's own ground where a road meets it at its gate, the Ash Road's track across the ash, a bridge) from the cave mouth takes in all ${roadAll} ROAD tiles and reaches every one of the ${ports.size} ports on the six main roads`,
+        s0 >= 0 && !missed.length && roadIn === roadAll && ports.size >= 18, { missed, roadAll, roadIn, ports: ports.size }); }
     // 2. it reads as a road: one surface three wide with a kerbed verge along it, on the line of the track Stage 4 laid
     { let edges = 0, kerbed = 0, roadN = 0; for (let i = 0; i < map.length; i++) { if (map[i] !== T_ROAD) continue; roadN++; const x = i % MAP_W, y = (i / MAP_W) | 0; for (const [dx, dy] of N4) { const t = map[(y + dy) * MAP_W + x + dx]; if (t === T_ROAD) continue; edges++; if (t === T_VERGE || t === TD_PROP() || (window.DECO && t === DECO.id) || t === T.SIGN) kerbed++; } }
       const off = []; for (const id of A.MAIN_ROADS) { const R = RD.roads[id], pl = A.track(id); let far = 0;
@@ -1188,8 +1204,9 @@
     // 16. the A* time budget: the whole roads pass is cheap (spec §7's boot budget holds the world; this pass is a small
     //     part of it), each search bounded to its leg's box plus 24
     check(P + `the roads pass takes ${S.passMs} ms in all (its ${S.legs} A* searches ${S.aStarMs} ms, ${S.pops} cells settled): under 250 ms, the searches under 120 ms`, S.passMs < 250 && S.aStarMs < 120 && !S.failed.length, { passMs: S.passMs, aStarMs: S.aStarMs, pops: S.pops, legs: S.legs, failed: S.failed });
-    // 17. the horse on the road: a ride down the Sea Road on the mare takes its length over 7.3 tiles a second, within 10%
-    { const r = RD.ride('r2_sea', F);
-      check(P + `the mare on the road: a ride down the Sea Road (${r && r.tiles} tiles) takes ${r && r.secs} s, its length over 7.3 tiles a second (${r && r.want} s) within 10%`, !!r && r.done && !r.err && Math.abs(r.off) <= 10, r); }
+    // 17. the horse on the road: a ride down every main road on the mare takes its length over 7.3 tiles a second, within 10%
+    { const rides = A.MAIN_ROADS.map(id => RD.ride(id, F)), bad = rides.filter(r => !r || !r.done || r.err || Math.abs(r.off) > 10);
+      check(P + `the mare on the road: a ride down each of the six main roads (${rides.map(r => r && (RD.roads[r.id].name.replace(/^The /, '') + ' ' + r.tiles + ' tiles ' + r.secs + ' s')).join(', ')}) takes its length over 7.3 tiles a second within 10%`,
+        rides.length === 6 && !bad.length, { rides }); }
   });
 }
