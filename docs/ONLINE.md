@@ -1599,8 +1599,8 @@ alarms + socket messages / 20, per hour; "hidden" is an emulated background tab 
 | an iPad put down and picked up, 5 times in 120 s | 150, 450, 4,856, **842** | 150, 450, 2,548, **727** |
 
 Two paused knights cost nothing: the keeper streams to a friend only while the friend is near and heard (a paused page sends
-no presence, so after a few seconds the keeper's game no longer counts him near and sends nothing), no alarm watches a quiet
-keeper, and the World naps. The keeper-paused row is the one the taken-out round-1 rule had brought to 389: a paused keeper
+no presence; on the fake clock the paused keeper's last snapshot to a paused friend goes 14 s after both paused, on master as
+here), no alarm watches a quiet keeper, and the World naps 10 s after that. The keeper-paused row is the one the taken-out round-1 rule had brought to 389: a paused keeper
 beside a friend who plays still streams 8 snapshots a second, as on master, and that is now the largest idle cost left.
 
 The iPad row was first written as 449 alarms an hour before (963 billed) and 150 after (577): the "before" alarms were the
