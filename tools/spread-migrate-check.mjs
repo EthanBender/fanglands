@@ -162,16 +162,20 @@ ev(String.raw`
     const mb = CHECK.machines(before), ma = CHECK.machines(after), mk = [...new Set(Object.keys(mb).concat(Object.keys(ma)))];
     const mBad = mk.filter(k => (mb[k] || 0) !== (ma[k] || 0));
     if (mBad.length) fail.push('machines ' + mBad.map(k => k + ' ' + (mb[k] || 0) + '->' + (ma[k] || 0)).join(', '));
-    if (after.player.mech) fail.push('still riding');
+    // a world-1 save goes back to spawn; a save already on the new map (worldV 2, only swept by a later worldRev) keeps its
+    // place ("the knight stays where he is"), so only "inside something" is a failure for it
+    const already = ((before && before.worldV) | 0) >= 2;
+    if (after.player.mech && !already) fail.push('still riding');
     const hadMare = !!(before.player && ((before.player.horse && before.player.horse.owned) || (before.player.mech && before.player.mech.kind === 'horse'))) || CHECK.mares(before) > 0;
     const h = after.player.horse, mares = CHECK.mares(after);
-    if (hadMare && !(mares === 1 && h && Array.isArray(h.at) && tileAt(h.at[0], h.at[1]) === MOUNTS.tiles.HORSE)) fail.push('the mare is not tied: ' + JSON.stringify({ mares, at: h && h.at }));
+    if (hadMare && !already && !(mares === 1 && h && Array.isArray(h.at) && tileAt(h.at[0], h.at[1]) === MOUNTS.tiles.HORSE)) fail.push('the mare is not tied: ' + JSON.stringify({ mares, at: h && h.at }));
+    if (hadMare && already && CHECK.mares(after) !== CHECK.mares(before)) fail.push('mares ' + CHECK.mares(before) + ' -> ' + CHECK.mares(after));
     if (!hadMare && mares) fail.push('a mare from nowhere');
     // where he wakes
     const wt = [Math.floor(player.x / TILE), Math.floor(player.y / TILE)], town = !!(before.player && before.player.visitedVillage) || (before.quest || {}).stage >= 5;
-    const sp = town ? VILLAGE_SPAWN : SPAWN, near = Math.hypot(player.x - sp.x, player.y - sp.y) <= 4 * TILE;
+    const sp = town ? VILLAGE_SPAWN : SPAWN, near = already || Math.hypot(player.x - sp.x, player.y - sp.y) <= 4 * TILE;
     if (collides(player.x, player.y, player.r, playerWho()) || !near) fail.push('wakes at ' + wt + (near ? ' inside something' : ' far from spawn'));
-    if (after.player.home || after.player.bedSpawn) fail.push('home or bed kept');
+    if (!already && (after.player.home || after.player.bedSpawn)) fail.push('home or bed kept');
     // the remade tiles stand at their cells (a remade old diff's tile is on the new map where its frame puts it)
     const remadeBad = R ? R.list.filter(e => e[3] === 'remade' && tileAt(e[4][0], e[4][1]) !== T[e[2]]) : [];
     if (remadeBad.length) fail.push('remade tiles missing: ' + remadeBad.slice(0, 4).map(e => e[2] + '@' + e[4]).join(', '));
