@@ -141,8 +141,25 @@
     }
     save();
   }
-  // still "at" a moored place: in its region, on the grey water, inside a dungeon (16-instances), or anywhere inside its stay rect (the Far Shore has towns with their own regions)
-  const atMoor = L => { if (window.__instance || player.region === L.name || player.region === 'The Grey Sea') return true; if (!L.stay) return false; const tx = Math.floor(player.x / TILE), ty = Math.floor(player.y / TILE); return tx >= L.stay.x0 && tx <= L.stay.x1 && ty >= L.stay.y0 && ty <= L.stay.y1; };
+  // the east side (the Far Shore, the Grub Fields and the Redcut since the Great Spread): every land tile joined to the Far Shore's landing
+  // without crossing water. It is ferry-only (the strait and the Sound), so Harl waits at the Far Shore while the knight stands
+  // anywhere on it, and a knight found on it with Harl elsewhere gets him back (kids walked south to the Redcut, Harl rowed home
+  // without them, and they were stranded). Made on first use after each new world (a 4-way flood over every tile that is not water).
+  const EAST = { mask: null };
+  HOOKS.world.push(() => { EAST.mask = null; });
+  const eastMask = () => {
+    if (EAST.mask) return EAST.mask;
+    const m = new Uint8Array(MAP_W * MAP_H), [sx, sy] = ATLAS.port('far_shore.landing'), stack = [idx(sx, sy)], step = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+    m[idx(sx, sy)] = 1;
+    while (stack.length) { const i = stack.pop(), x = i % MAP_W, y = (i / MAP_W) | 0;
+      for (const [dx, dy] of step) { const nx = x + dx, ny = y + dy; if (!inMap(nx, ny)) continue; const j = idx(nx, ny); if (m[j] || map[j] === T.WATER) continue; m[j] = 1; stack.push(j); } }
+    return (EAST.mask = m);
+  };
+  // Harl is at the Far Shore for a knight standing on the east side (true when it moved him there)
+  const rescueEast = q => { if (q.sailing || player.dead || q.where === 'farshore' || !onEast()) return false; q.where = 'farshore'; return true; };
+  const onEast = () => { if (window.__instance) return false; const tx = Math.floor(player.x / TILE), ty = Math.floor(player.y / TILE); return inMap(tx, ty) && eastMask()[idx(tx, ty)] === 1; };
+  // still "at" a moored place: in its region, on the grey water, inside a dungeon (16-instances), anywhere inside its stay rect (the Far Shore has towns with their own regions), or, for the Far Shore, anywhere on the east side
+  const atMoor = L => { if (window.__instance || player.region === L.name || player.region === 'The Grey Sea') return true; if (L === LOC.farshore && onEast()) return true; if (!L.stay) return false; const tx = Math.floor(player.x / TILE), ty = Math.floor(player.y / TILE); return tx >= L.stay.x0 && tx <= L.stay.x1 && ty >= L.stay.y0 && ty <= L.stay.y1; };
   const wreckGoblins = () => monsters.filter(m => (m.type === 'brute' || m.type === 'sapper') && inRegion(IRON.region, Math.floor(m.home.x / TILE), Math.floor(m.home.y / TILE)));
 
   // ---------- world ----------
@@ -238,6 +255,8 @@
     const q = bq();
     // Harl rows home if the knight leaves an island without him (died there, hovered off, an old save): nobody is stranded at an empty dock
     if (!q.sailing && !player.dead && q.where !== 'dock' && LOC[q.where] && !atMoor(LOC[q.where])) { q.where = 'dock'; save(); }
+    // a knight on the east side with Harl anywhere else (walked off before this fix, hovered over, an old save): Harl is at the Far Shore for him
+    if (rescueEast(q)) save();
     if (q.sailing) {
       const s = q.sailing;
       if (typeof s.fx !== 'number') { arrive(); return; }
@@ -545,6 +564,17 @@
       check('boats: the Grey Sea fills the east strip (water, a sandy shore, two islands)', regionAt(BW.tx(190), BW.ty(30)).name === 'The Grey Sea' && tileAt(BW.tx(190), BW.ty(30)) === T.WATER && water / total > 0.6 && tileAt(...SHORE_T) === T.SAND && regionAt(...GI.p(178, 13)).name === 'Gull Isle' && tileAt(...GI.p(178, 13)) === T.SAND && regionAt(...IC.p(187, 50)).name === 'Ironclad Isle' && tileAt(...IC.p(187, 50)) === T.DIRT, { water, total, shore: tileAt(...SHORE_T) }); }
     { const path = F.bfs(...BT_TD.p(141, 32), LOC.dock.land.x, LOC.dock.land.y); check("boats: the road from Thistledown's east gate to the dock is walkable", !!path && path.length > 30, { len: path && path.length }); }
     { q.sailing = null; q.where = 'dock'; const p = harlPos(); check('boats: Old Harl waits on the dock, his boat moored at the end', p.x === tc(LOC.dock.harl.x) && p.y === tc(LOC.dock.harl.y) && tileAt(LOC.dock.harl.x, LOC.dock.harl.y) === B_DOCK && tileAt(LOC.dock.boat.x, LOC.dock.boat.y) === B_BOAT && tileAt(LOC.dock.land.x, LOC.dock.land.y) === B_DOCK, { tx: p.x / TILE, ty: p.y / TILE }); }
+    // the east side: Harl never leaves a knight there (the Redcut is east of the Sound, south of the Far Shore). No frames run
+    // here: the knight is only placed, so no region banner, Voice line or first-visit flag fires for the checks after this one
+    { const keep = { x: player.x, y: player.y, where: q.where, sailing: q.sailing }, m = eastMask(), at = id => { const p = ATLAS.port(id); return m[idx(p[0], p[1])] === 1; };
+      const place = id => { const p = ATLAS.port(id); player.x = tc(p[0]); player.y = tc(p[1]); };
+      q.sailing = null; place('redcut.marlow'); const waits = atMoor(LOC.farshore);
+      q.where = 'dock'; const back = rescueEast(q) && q.where === 'farshore';
+      place('dock.planks'); q.where = 'dock'; const mainland = !rescueEast(q) && q.where === 'dock';
+      const land = { landing: at('far_shore.landing'), gate: at('far_shore.city_gate'), redcut: at('redcut.mouth'), marlow: at('redcut.marlow'), dock: at('dock.planks'), square: at('thistledown.square'), cave: at('cave.mouth') };
+      check('boats: Harl waits at the Far Shore while the knight is anywhere on the east side (the Redcut too), and comes back for a knight found there without him; the east side is the Far Shore and the Redcut, never the mainland',
+        waits && back && mainland && land.landing && land.gate && land.redcut && land.marlow && !land.dock && !land.square && !land.cave, { waits, back, mainland, land });
+      q.where = keep.where; q.sailing = keep.sailing; player.x = keep.x; player.y = keep.y; }
     // walk the road, talk to Harl
     { F.tp(...BT_TD.p(141, 32)); const w = F.walkTo(LOC.dock.land.x, LOC.dock.land.y, 3000); const a = talkHarl();
       check('boats: walk the road to the dock; E on Harl opens the ferry panel', typeof w === 'number' && typeof a === 'number' && panel === 'ferry' && dialog.queue.concat(dialog.cur || []).some(d => d.who === 'Old Harl'), { w, a, panel, region: player.region }); }

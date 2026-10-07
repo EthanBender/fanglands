@@ -13,6 +13,8 @@
 //           words (kept out for bad words, 403, with until = ms when they may come back: login, every /api call and /ws;
 //           PUT /api/save alone still goes through, so the last push before the kick is never lost)
 //   admins  admin (only an admin may, 403)  nopin (no pinned backup, 404)
+//   owner   the Teachers section of an owner knight's Admin panel (/api/owner/teachers*): admin (a player, 403), owner (an
+//           admin not named in OWNER_KNIGHTS, 403), then /admin's own Teachers answers (name, pass, taken, nope)
 // Finished trades are rows of the trades table (store.js), listed for the parent page at GET /api/admin/trades.
 //   accounts (an admin's game, docs/ONLINE.md "Accounts")  unknown (no such knight, 404)  self (your own secret word:
 //           the parent page does that, 403)  isadmin (another admin's, 403)  pass (under 4 or over 200, 400)
@@ -42,7 +44,7 @@ import { SimBook } from './sim/book.js';
 import { SimHost, WORLDGEN_FREE } from './sim/host.js';
 import { cleanSwitches, WORLD_MAPS, WORLD_READY, WORLD_EMPTY, MODES } from './sim/worlds.js';
 import ATLAS_JSON from './atlas.json' with { type: 'json' };
-import { migrateTeachers, TeacherBook, teacherCall, teacherAdminCall, teacherLogin } from './teachers.js';
+import { migrateTeachers, TeacherBook, teacherCall, teacherAdminCall, teacherLogin, ownerTag } from './teachers.js';
 import { Watch } from './watch.js';
 
 // the Atlas the world judges by (docs/ONLINE.md, "The shared world", Stage 1): made by tools/atlas.mjs from the game it ships with
@@ -89,7 +91,7 @@ export class World {
     this.room = new Room({
       hooks: this.watch.hooks,
       now: () => this.now(),
-      log: (name, text, at, masked) => this.logChat(name, text, at, masked),
+      log: (name, text, at, masked, teacher) => this.logChat(name, text, at, masked, teacher),
       wake: ms => this.ctx.storage.setAlarm(Date.now() + ms).catch(e => console.error('alarm', e)),
       store: this.store,
       random: cryptoRandom,
@@ -222,6 +224,8 @@ export class World {
     if (path === '/api/accounts/reset' && method === 'POST') return await this.resetForAdmin(req);
     if (path === '/api/accounts/strikes' && method === 'POST') return await this.clearStrikesForAdmin(req);
     if (path === '/api/accounts/rename' && method === 'POST') return await this.renameForAdmin(req);
+    // the Teachers section of an OWNER knight's Admin panel: the same calls as /admin's Teachers (teachers.js)
+    if (path === '/api/owner/teachers' || path.startsWith('/api/owner/teachers/')) return await this.ownerTeachers(req, url, path.slice('/api/owner/'.length), method);
     throw oops(404, 'no such call', 'nope');
   }
 
@@ -468,6 +472,24 @@ export class World {
     return json({ save: pin.json, at: ver.at, ver: ver.ver });
   }
 
+  // ---------- Teachers from the game: an OWNER knight's Admin panel (docs/ONLINE.md, "The teacher view") ----------
+  // Owner (7 Oct 2026): "Can you not put them in my admin tab in game?" Not every admin: only a knight named in OWNER_KNIGHTS
+  // (online/wrangler.toml [vars], comma-separated, any case) whose role is 'admin' in the database, both checked on every call.
+  // A player gets the knight's 403 admin; another admin 403 owner; no session 401 auth. mod_log says "<knight> (in game)".
+  ownerKnights() { return String(this.env.OWNER_KNIGHTS || '').split(',').map(n => n.replace(/\s+/g, ' ').trim().toLowerCase()).filter(Boolean); }
+  isOwnerKnight(s) { return !!s && roleWord(s.role) === 'admin' && this.ownerKnights().includes(String(s.name_lc || '').toLowerCase()); }
+  ownerSession(req) {
+    const s = this.adminSession(req);
+    if (!this.isOwnerKnight(s)) throw oops(403, "only the owner's knight can do that", 'owner');
+    return s;
+  }
+  async ownerTeachers(req, url, call, method) {
+    const s = this.ownerSession(req);
+    const r = await teacherAdminCall(this, req, url, call, method, ownerTag(s.name));
+    if (!r) throw oops(404, 'no such call', 'nope');
+    return r;
+  }
+
   // ---------- Accounts: every knight, on line or not, for an admin's game (docs/ONLINE.md, "Accounts") ----------
   // The caller's session must belong to a knight whose role is 'admin' in the database, checked on every call.
   accountsForAdmin(req) {
@@ -557,10 +579,13 @@ export class World {
 
   // ---------- the chat log ----------
   // masked: the word filter starred something in it; its id goes in chat_masked (teachers.js) so the teacher view flags it
-  logChat(name, text, at, masked) {
+  // teacher: a teacher's line from the teacher view (room.js teacherSay); its id goes in chat_teacher, so the teacher view and
+  // /admin's chat log draw it as the teacher's
+  logChat(name, text, at, masked, teacher) {
     this.sql.exec('INSERT INTO chat (at, name, text) VALUES (?, ?, ?)', at, name, text);
     if (masked) this.sql.exec('INSERT OR IGNORE INTO chat_masked (id) SELECT MAX(id) FROM chat');
-    if (++this.chatWrites % 500 === 0) { this.sql.exec('DELETE FROM chat WHERE id NOT IN (SELECT id FROM chat ORDER BY id DESC LIMIT ?)', CHAT_KEPT); this.sql.exec('DELETE FROM chat_masked WHERE id < (SELECT MIN(id) FROM chat)'); }
+    if (teacher) this.sql.exec('INSERT OR IGNORE INTO chat_teacher (id) SELECT MAX(id) FROM chat');
+    if (++this.chatWrites % 500 === 0) { this.sql.exec('DELETE FROM chat WHERE id NOT IN (SELECT id FROM chat ORDER BY id DESC LIMIT ?)', CHAT_KEPT); this.sql.exec('DELETE FROM chat_masked WHERE id < (SELECT MIN(id) FROM chat)'); this.sql.exec('DELETE FROM chat_teacher WHERE id < (SELECT MIN(id) FROM chat)'); }
   }
 
   // ---------- the socket ----------
@@ -623,8 +648,9 @@ export class World {
     if (call === 'online' && method === 'GET') return json(this.room.online());
     if (call === 'chat' && method === 'GET') {
       const limit = Math.max(1, Math.min(5000, parseInt(url.searchParams.get('limit'), 10) || 500));
-      const rows = this.rows('SELECT at, name, text FROM chat ORDER BY id DESC LIMIT ?', limit).reverse();
-      return json(rows.map(r => ({ at: r.at, n: r.name, text: r.text })));
+      const rows = this.rows('SELECT c.at, c.name, c.text, (t.id IS NOT NULL) AS teacher FROM chat c LEFT JOIN chat_teacher t ON t.id = c.id ORDER BY c.id DESC LIMIT ?', limit).reverse();
+      // a teacher's line (the teacher view's chat box) says so; every other line is exactly {at, n, text}
+      return json(rows.map(r => r.teacher ? { at: r.at, n: r.name, text: r.text, teacher: true } : { at: r.at, n: r.name, text: r.text }));
     }
     if (call === 'invite' && method === 'GET') return json({ invite: this.invite() });
     if (call === 'invite' && post) {

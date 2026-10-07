@@ -9,6 +9,8 @@ cd "$(dirname "$0")/.."
 # Cloudflare deletes its DNS records (kids on fanglands.com get "server not found", cached for up to 30 minutes).
 grep -q '^pattern = "fanglands.com"$' online/wrangler.toml || { echo "refusing: online/wrangler.toml does not serve fanglands.com (merge master first)"; exit 1; }
 grep -q '^HANDOVER = "\(on\|off\)"$' online/wrangler.toml || { echo "refusing: online/wrangler.toml has no HANDOVER switch (merge master first)"; exit 1; }
+# the owner's knights (the Teachers section of the game's Admin panel): a deploy without the line would take it away from him
+grep -q '^OWNER_KNIGHTS = "[^"]\{2,\}"$' online/wrangler.toml || { echo "refusing: online/wrangler.toml has no OWNER_KNIGHTS line (merge master first)"; exit 1; }
 ./build.sh
 node tools/headless.js
 node --test online/test/
@@ -27,6 +29,8 @@ if [ -f tools/teacher-browser.mjs ]; then
   if [ "${TEACHER_BROWSER:-}" = "1" ] && curl -sf --max-time 3 http://127.0.0.1:8787/api/status > /dev/null; then node tools/teacher-browser.mjs
   else echo "teacher-browser: not run (set TEACHER_BROWSER=1 with this tree's local world on 127.0.0.1:8787; see tools/teacher-browser.mjs)"; fi
 fi
+# the Teachers section of the owner's in-game Admin panel, in a real browser, under the same switch and the same local world
+if [ -f tools/teachers-in-game-browser.mjs ] && [ "${TEACHER_BROWSER:-}" = "1" ] && curl -sf --max-time 3 http://127.0.0.1:8787/api/status > /dev/null; then node tools/teachers-in-game-browser.mjs; fi
 # the shared world (docs/ONLINE.md, "The shared world"): each gate runs once its stage has built it; a red one never deploys
 [ -f tools/sim-suite.mjs ] && node tools/sim-suite.mjs
 grep -q -- "'--sim'" tools/mmo-sim.js && node tools/mmo-sim.js --sim

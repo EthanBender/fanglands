@@ -436,6 +436,13 @@ test('14. the export holds teachers and teacher_acts and never teacher_sessions;
   assert.ok(Array.isArray(ex.teachers) && ex.teachers.length === 1 && ex.teachers[0].hash && ex.teachers[0].salt);
   assert.ok(Array.isArray(ex.teacher_acts) && ex.teacher_acts.length === 1);
   assert.ok(!('teacher_sessions' in ex));
+  // the chat log's marks travel with it: a teacher's line and its starred word keep their ids in the export
+  clock.t += 2000; K.act(W.w, scr, { t: 'w_say', text: 'what the fuck' });
+  const ex2 = (await parent(W.w, 'GET', '/api/admin/export')).data;
+  const said = ex2.chat.find(c => c.name === 'Mrs Smith');
+  assert.ok(said, JSON.stringify(ex2.chat));
+  assert.deepEqual(ex2.chat_teacher.map(r => r.id), [said.id]);
+  assert.deepEqual(ex2.chat_masked.map(r => r.id), [said.id]);
   const all = JSON.stringify(ex) + K.snapshot(W.db, []);
   assert.ok(!all.includes(W.T.pass), 'the password is stored somewhere');
   assert.ok(!all.includes(W.token), 'the token is stored somewhere');

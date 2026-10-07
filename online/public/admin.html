@@ -301,7 +301,7 @@
     const box = $('chat'); const stick = box.scrollTop + box.clientHeight >= box.scrollHeight - 8 || box.childElementCount === 0;
     box.innerHTML = '';
     if (!list.length) box.textContent = 'Nothing said yet.';
-    for (const c of list) { const d = document.createElement('div'); const t = document.createElement('span'); t.className = 't'; t.textContent = when(c.at) + '  '; const n = document.createElement('span'); n.className = admins.has(c.n) ? 'n admin' : 'n'; n.textContent = c.n + ': '; d.append(t, n, document.createTextNode(c.text)); box.appendChild(d); }
+    for (const c of list) { const d = document.createElement('div'); const t = document.createElement('span'); t.className = 't'; t.textContent = when(c.at) + '  '; const n = document.createElement('span'); n.className = admins.has(c.n) || c.teacher ? 'n admin' : 'n'; n.textContent = c.n + (c.teacher ? ' (teacher)' : '') + ': '; d.append(t, n, document.createTextNode(c.text)); box.appendChild(d); }
     if (stick) box.scrollTop = box.scrollHeight;
   }
 

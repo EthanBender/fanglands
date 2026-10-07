@@ -156,7 +156,7 @@ between knights on the same map; chat and the roster go to everyone.
 | `who` | `list: [{n, map, region, lv, role}]` | everyone online; sent on join/leave and at most every 2 s |
 | `p` | `n` + the presence fields + `role` | a knight on your map moved; `role` is the server's word, never the sender's |
 | `left` | `n, map` | that knight left your map (or the game) |
-| `chat` | `n, text, at, role` | already filtered |
+| `chat` | `n, text, at, role` (+ `teacher: true`) | already filtered; a teacher's own line from the teacher screen comes as `role: 'admin'` with `teacher: true` under her name (*The teacher view*) |
 | `keeper` | `map, n, server?` | the keeper of your map changed (you may have become it); `server: true` when the keeper is the world itself (`n` is `'@world:<map>'`, Stage 2) |
 | `mon` | `n, list, k?, at?` | the keeper's snapshot (you are not the keeper); from the world itself also its tick `k` and the world's clock `at` in ms (Stage 2) |
 | `snap` | `map` | (to the keeper, and only to a game whose `caps` has `snap`) the world is taking your map over: answer once with `mon` `full: true` listing every monster you run (Stage 2) |
@@ -2659,6 +2659,8 @@ teacher_acts      (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, te
                    act TEXT NOT NULL, target TEXT, target_lc TEXT, until INTEGER NOT NULL DEFAULT 0, prev INTEGER NOT NULL DEFAULT 0,
                    undone_at INTEGER NOT NULL DEFAULT 0, undone_by TEXT)
 chat_masked       (id INTEGER PRIMARY KEY)      the id of each chat row the word filter starred something in (none for the rest)
+chat_teacher      (id INTEGER PRIMARY KEY)      the id of each chat row a teacher said from the teacher screen (none for the rest)
+                  (both are in `GET /api/admin/export` as `chat_masked` and `chat_teacher`, beside `chat`)
 accounts          + sent_off_until INTEGER NOT NULL DEFAULT 0   + sent_off_by TEXT NOT NULL DEFAULT ''
 settings          'chat_pause' = {until, by, act}     'teacher_notice' = 'on' | 'off' (missing = on)
 ```
@@ -2700,6 +2702,57 @@ river" "Maple river"); a link at the top ("Teachers (add a teacher)") jumps to t
 accounts and the chat log. **Teachers belong to one world.** The section says which world the page is (the MAIN world at
 fanglands.com, also gorkscape.ca; the TEST world at test.fanglands.com), and the "Added" line tells the teacher THIS world's
 game address: the test world's page no longer sends a teacher to fanglands.com, where no such teacher exists.
+
+### Teachers in the game (an owner's knight, `/api/owner/teachers*`)
+
+Owner (7 Oct 2026): *"My understanding was that under my mud goal profile I could create the teacher in game in the settings.
+Is that not the case? Do you have the controls on a subdomain don't you? Can you not put them in my admin tab in game?"*
+
+The game's Admin panel has a **Teachers** tab (`src/79-ownerteachers.js`, after Accounts) that does everything /admin's
+Teachers section does: the list (name, added, last signed in, watching now, actions today, wrong tries today, a sign-in
+waiting), Add teacher (a name box, a password box, *Make one up*, *Add teacher*; Enter in either box adds), *New password*,
+*Turn off* / *Turn on*, *Lift the wait*, today's teacher actions still in force with *Undo*, and the "Tell players when a
+teacher is watching" switch. Same calls, same answers, same words: the refusals are /admin's ("Not added. The password needs
+at least 10 letters (spaces count); this one has 9. Type a longer one, or press Make one up."), in bold red; a new password is
+shown once in /admin's words ("Added Mrs Smith. The password is maple-river-lantern-42 (it is not shown again). Tell Mrs
+Smith: go to fanglands.com, type Mrs Smith in Knight's name and this password in Secret word, and press Play.") with a
+**Copy** button (it copies "Fanglands teacher sign-in. Go to fanglands.com, type Mrs Smith in Knight's name and
+maple-river-lantern-42 in Secret word, and press Play."). *New password* and *Turn off* take a second tap ("Tap again"), where
+/admin asks with a confirm box.
+
+**Who.** Not every admin: only an OWNER knight, an admin whose name is in `OWNER_KNIGHTS` (`online/wrangler.toml` `[vars]`,
+comma-separated, any case; `"MudGoll"`; the test world's copy names its own owner account, `"mudgoll"`, deploy-test.sh).
+`deploy.sh` refuses a tree without the line. The world checks, on **every** call, that the session's knight has role `admin`
+in the database **and** is named in `OWNER_KNIGHTS`; a missing or empty `OWNER_KNIGHTS` is nobody. The game asks
+`GET /api/owner/teachers` once when an admin opens the Admin panel: a list back = the tab is there; a refusal = no tab. The
+tab hiding itself is a convenience, never the lock.
+
+| Call (knight token: `Authorization: Bearer <token>`) | Same as | Refused |
+|---|---|---|
+| `GET /api/owner/teachers` | `GET /api/admin/teachers` | no token or a dead one 401 `auth`; a teacher's token 401 `auth`; a player 403 `admin` ("only an admin can do that"); an admin not in `OWNER_KNIGHTS` 403 `owner` ("only the owner's knight can do that") |
+| `POST /api/owner/teachers` `{name, pass}` | `POST /api/admin/teachers` | the same, then /admin's own: 400 `name` / `pass`, 409 `taken` |
+| `POST /api/owner/teachers/pass` `{id, pass}` | `.../teachers/pass` | the same, 404 `nope` |
+| `POST /api/owner/teachers/off` `{id}`, `/on` `{id, pass}`, `/lift` `{id}` | `.../off`, `/on`, `/lift` | the same |
+| `POST /api/owner/teachers/undo` `{act}` | `.../undo` | the same, 409 `changed` / `over` |
+| `POST /api/owner/teachers/notice` `{on}` | `.../notice` | the same |
+
+Only these: `teacher-acts`, and every other `/api/admin/*` call, have no `/api/owner/` twin (404). Each call writes the same
+`mod_log` row as /admin's, with `by: "<knight> (in game)"` ("MudGoll (in game) added the teacher Mrs Smith" in What admins
+did; an Undo is `unmute` / `letback` / `chat_on` by "MudGoll (in game)", detail `undo`); a teacher's screen still reads "Ethan
+turned Sam's chat back on." The meter counts these calls as the admin's (`isAdminPath`).
+
+**What never reaches a knight's page.** No password, hash or salt: the list carries none (`TeacherBook.list` reads neither),
+no answer echoes a password, and mod_log holds none. The one exception is the new password the owner's own page made (*Make
+one up*, *New password*, *Turn on*: `crypto.getRandomValues`, three of the 200 words and two digits), shown once in the tab:
+it lives only in that tab's memory while it is on screen (never localStorage, a cookie, a URL or a log), and leaving the tab,
+closing the panel, a lost line or a demotion forgets it and anything half typed in the boxes.
+
+**On the page.** The section is real page elements (two `<input>`s at 16 px so Safari does not zoom, buttons at least 44 px,
+one scrolling column) laid over the panel's page while the tab is drawn, built with `createElement` and `textContent` only
+(no HTML from anywhere); while a box or a button there has the keyboard, no key reaches the game (78-accounts' capture-phase
+guard), Enter in a box adds and Escape lets go. It fits the panel on a laptop (1280x800), an iPad sideways (1024x768) and
+upright (768x1024): `tools/teachers-in-game-browser.mjs` checks it in a real Chromium against a local world (the same switch
+as the teacher view: `TEACHER_BROWSER=1`), and `online/test/owner-teachers.test.mjs` checks the world's half.
 
 ### Signing in, the ticket, the socket
 
@@ -2814,7 +2867,7 @@ uses no grid rows, no `vh` and no fixed column widths:
   px; on a very short window the panes scroll). A picked knight's card slides up as a sheet with Close in place of the switch and
   the list; pausing chat is the bar's **Pause chat** menu; the bottom keeps the safe-area inset.
 - **Chat:** "Chat · the last hour", All lines / Only flagged; the list; the footer "Pause chat for everyone:" 5 minutes / 15 minutes
-  / 1 hour (while paused "Chat is paused until 10:52 am." Turn chat back on) and "Admins can still talk while chat is paused."
+  / 1 hour (while paused "Chat is paused until 10:52 am." Turn chat back on) and "Admins and teachers can still talk while chat is paused."
   Under 420 px of chat (a ResizeObserver), the footer folds into the bar's Pause chat menu. A starred line has an amber left bar
   and "Words hidden"; the word filter's events a red bar; a tap on a line picks its knight.
 - **Map:** the canvas is the pane (a ResizeObserver sizes its pixels to the pane x the device pixel ratio, at most 2). The whole
@@ -2966,13 +3019,27 @@ teacher screen.
   themselves and say "Chat is back on." A pause is never open-ended.
 - **The kid's sentences**: "A teacher muted your chat for 10 minutes. You can still play." / "... for 1 hour ..." / "A teacher
   muted your chat for the rest of today. You can still play." "A teacher turned your chat back on." Old games say their usual
-  admin sentence. Muted lines are not relayed and not logged, as for any mute. A kid is never told a teacher's name.
+  admin sentence. Muted lines are not relayed and not logged, as for any mute. A kid is never told a teacher's name (a mute,
+  a send-off and a pause are always "a teacher"; only the teacher's own chat line, below, carries her name).
+- **The teacher's own line** (owner, 7 Oct: *"the teacher should be able to message in chat as well. They should be able to
+  type messages and it should just come up as admin which is the name of the account that I created"*): a box under the
+  teacher screen's chat ("Say to all, as Admin", 44 px, 16 px type; Enter or Send; shown wide, narrow and folded). The page
+  sends `{t:'w_say', req, text}`; the Watch (`doSay`) takes the name from the teacher's session, never from the frame, and
+  `Room.teacherSay` runs the kids' word filter and 120-letter cap on it (starred, never a strike), logs it in `chat` under the
+  teacher's name with its id in `chat_teacher`, and sends every knight `{t:'chat', n: <teacher's name>, text, at, role:
+  'admin', teacher: true}`: every page draws it in the admins' gold under that name, an older page too (it reads `role`; it
+  never knew `teacher`). A pause never stops it (as an admin's line); a teacher has no mute. At most one line every 1.5 s and
+  20 a minute per teacher (`w_no slow`: "Wait a moment before the next line."); an empty line is `w_no empty`, and one over 400 letters as sent is `w_no long` ("That line is too long. Make it shorter."; the page's box stops at 120). No
+  `teacher_acts` row and no `mod_log` row: the chat log is its record. A knight's socket never reaches it (`w_say` on a
+  knight's socket is ignored by the Room, and a kid's `chat` is always his own name and role, whatever else it carries).
+  The screens get it as `w_chat` with `teacher: true` (drawn "Admin TEACHER: ..."); /admin's chat log marks it "Admin
+  (teacher): ..." in gold (`GET /api/admin/chat` rows carry `teacher: true` for these lines only).
 - **"A teacher is watching."** (owner decision D1, on by default; the switch is on /admin): while at least one screen is open,
   every knight gets `{t:'watching', on: true}` when the count goes from 0 to 1 and after each `welcome`, and `{on: false}` when
   it goes back to 0 (the switch turned off while screens are open sends `on: false` too). The game shows a grey "A teacher is
   watching." at the top of the Friends list while it is on, and one grey chat line "A teacher is watching Fanglands right
   now." at most once every 30 minutes on a device. No names, no count. Watch adds nothing to what a kid is told (R2-2).
-- **Never given to teachers**: kick, ban, reset, rename, strikes, roles, saves, rollback, gifts, spawn, parties, sending chat,
+- **Never given to teachers**: kick, ban, reset, rename, strikes, roles, saves, rollback, gifts, spawn, parties,
   offline accounts, `mod_log`, trades, the invite code, backups, switches, any control in a watched game.
 
 What the owner reads in *What admins did*: "Mrs Smith (teacher) signed in to the teacher view"; "Mrs Smith (teacher) watched
@@ -2989,7 +3056,7 @@ table tags "Sent off today (Mrs Smith)".
 | `w_hello` | `me, expires, now, tz: 'America/Toronto', notice` | sent on open |
 | `w_all` | `at, knights, inside, gone, chatPause, acts, sentOff, chat` | once on open. `chat`: the last 60 minutes, at most 100 lines, `{at, n, text, role, masked}` (`masked` from `chat_masked`, so a line starred before the screen opened is still flagged); the page draws "Earlier, before you opened this" over them. `gone`: `[{n, at}]`, logins ended in the last 30 minutes |
 | `w_k` | `at, knights, inside, gone` | built only on the back of what the World already handles (a knight's presence, join, leave, a map change, a mute change), at most once per 1,000 ms (a join or a leave at once), skipped when identical to the last one sent unless that went out 8 s ago; no timer, no alarm |
-| `w_chat` | `at, n, text, role, masked` | the same line the kids got, plus the filter's `masked` |
+| `w_chat` | `at, n, text, role, masked` (+ `teacher: true`) | the same line the kids got, plus the filter's `masked`; a teacher's own line (w_say) also carries `teacher: true` (as do its rows in `w_all.chat`, from `chat_teacher`) |
 | `w_event` | `at, kind, n, text` | `strike` ("The word filter warned Sam.", never the typed line, never a count), `words` ("The word filter sent Sam out for 24 hours."), `kick` / `ban` ("An admin sent Leo out of the world."), `mute_admin` ("Leo is muted by an admin."), `teacher` (a teacher's action, in words) |
 | `w_acts` | `acts, sentOff, chatPause` | after every teacher action |
 | `w_ok` / `w_no` | `req, text` / `req, code, text` | the answer to one control |
@@ -3007,7 +3074,7 @@ the action (`chop*` "Chopping trees"; `mine*`, `coalface`, `rm_vein`, `rm_giant`
 horse"), "Walking", "Standing still". `since`: when the knight came on. `away`: no presence for 30 s. `muted`: `{left, by:
 'teacher' | 'admin'}` or `null`. `sentOff`: until, or 0. `inside`: `[{place, names}]`.
 
-Page to server: `w_mute`, `w_off`, `w_pause`, `w_chaton`, `w_undo`, `w_view`, `w_unview` and the ping text. Anything else is
+Page to server: `w_mute`, `w_off`, `w_pause`, `w_chaton`, `w_undo`, `w_view`, `w_unview`, `w_say` and the ping text. Anything else is
 ignored.
 
 ### The free plan, with arithmetic
