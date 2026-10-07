@@ -513,7 +513,9 @@ const viewMsgs = s => s.all('view').map(m => m.on);
 test('W1. w_vstart is built from memory: 0 SQL beyond the lock (the second watch in 10 minutes, whose mod_log row is throttled)', async () => {
   const counter = { writes: 0, all: 0 };
   const W = await world(['Sam', 'Leo'], { counter });
-  const sam = await K.online(W.w, W.tok.Sam, { x: 6000 }, VIEW_CAPS), leo = await K.online(W.w, W.tok.Leo, { x: 6100 }, VIEW_CAPS);
+  // Sam is on the map first, so he keeps it (on master two knights arriving at one moment are ordered by name: Leo first)
+  const sam = await K.online(W.w, W.tok.Sam, { x: 6000 }, VIEW_CAPS); clock.t += 10;
+  const leo = await K.online(W.w, W.tok.Leo, { x: 6100 }, VIEW_CAPS);
   const scr = await K.screen(W.w, W.token);
   const first = K.view(W.w, scr, 'Sam');
   assert.equal(first.t, 'w_vstart'); assert.equal(first.n, 'Sam'); assert.equal(first.map, 'over'); assert.equal(first.keeper.n, 'Sam');
