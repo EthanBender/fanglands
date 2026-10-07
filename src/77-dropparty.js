@@ -928,7 +928,7 @@
       NET.disconnect(); NET.enabled = true; NET.token = 'party-test'; NET.useFake(fake); NET.connect();
       reset(); dialog.cur = null; dialog.queue.length = 0; closePanel(); h.peace(true);
       player.dead = false; player.mech = null; player.r = 13; player.hp = player.maxHp; player.inv = empty();
-      const o = h.openSpot(40, 24); F.tp(o.x, o.y); F.step([]);
+      const o = h.openSpot(ATLAS.world.tx(40), ATLAS.world.ty(24)); F.tp(o.x, o.y); F.step([]);
 
       // 1. the six hats
       { const ids = COLOURS.map(c => HATS[c]);
@@ -963,7 +963,7 @@
         const s = pickSpots(20, 5);
         const good = Array.isArray(s) && s.length === 20 && new Set(s.map(t => t.join())).size === 20 && s.every(([tx, ty]) => (tx - o.x) ** 2 + (ty - o.y) ** 2 <= 25 && !(tx === o.x && ty === o.y) && G.has(tileAt(tx, ty)) && !collides(tc(tx), tc(ty), 13, 'person') && tileAt(tx, ty) !== T.WATER);
         const few = pickSpots(3, 4), many = pickSpots(80, 10);
-        const sea = pickSpots(10, 3, { x: tc(180), y: tc(40) });
+        const sea = pickSpots(10, 3, { x: tc(ATLAS.frame('ironclad_isle').x(180)), y: tc(ATLAS.frame('ironclad_isle').y(40)) });   // the sea inside Ironclad Isle's box
         check(P + 'pickSpots: distinct plain-ground tiles a knight can stand on, inside the spread, never under the knight; 5 to 50 of them; none (null) out at sea', good && Array.isArray(few) && few.length === 5 && Array.isArray(many) && many.length <= 50 && many.length >= 5 && sea === null && G.has(T.GRASS) && !G.has(T.WATER) && !G.has(T.PLANK) && !G.has(T.SOIL), { n: s && s.length, good, few: few && few.length, many: many && many.length, sea }); }
 
       // 5. the panel: only an admin gets Throw; the role message turns it on

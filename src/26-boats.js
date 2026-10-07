@@ -17,31 +17,43 @@
   const WET = new Set([T.WATER, B_BOAT, B_LOBSTER, B_SEAROCK]);
 
   // ---------- geometry ----------
-  const SEA = { x0: 162, y0: 0, x1: 199, y1: 95 };
+  // Every overworld position reads the Atlas (the spread spec, §9.1): the sea, its rocks and gulls are the stretched
+  // world; each mooring, island and wreck is its place's frame (dock, gull_isle, ironclad_isle, far_shore), with ports
+  // where the Atlas names the point; the road to the dock is TRACKS.road_east_lane + road_dock_lane.
+  const BW = ATLAS.world, DK = ATLAS.frame('dock'), GI = ATLAS.frame('gull_isle'), IC = ATLAS.frame('ironclad_isle'), FS = ATLAS.frame('far_shore');
+  const XY = ([x, y]) => ({ x, y });
+  const BT_TD = ATLAS.frame('thistledown');   // the self-test sets off from just outside its east gate
+  const SEA = { x0: BW.tx(162), y0: BW.ty(0), x1: BW.tx(199), y1: BW.ty(95) };   // the Grey Sea: a world rect (39-worldblend's SEA)
+  const SHORE_T = [SEA.x0, BW.ty(40)];   // the shore tile the self-test asserts is sand: the same world point 39-worldblend keeps sand (its SHORE)
   const SAIL_T = 2; // seconds on the water
   const rect = (x0, y0, x1, y1) => { const out = []; for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) out.push([x, y]); return out; };
   // every place Harl moors: the planks, his boat at the end, where he stands, where you step off, the lantern post
   const LOC = {
-    dock: { name: 'the dock', blurb: 'The mainland, and the road back to Thistledown.', dock: rect(162, 13, 166, 15), boat: { x: 167, y: 14 }, harl: { x: 165, y: 14 }, land: { x: 164, y: 14 }, lantern: { x: 166, y: 13 }, face: { x: -1, y: 0 } },
-    gull: { name: 'Gull Isle', price: 10, blurb: 'Palms, lobster, and a hermit who hates company.', dock: rect(171, 12, 172, 14), boat: { x: 170, y: 13 }, harl: { x: 172, y: 13 }, land: { x: 173, y: 13 }, lantern: { x: 171, y: 12 }, face: { x: 1, y: 0 } },
-    ironclad: { name: 'Ironclad Isle', price: 25, combat: 8, blurb: 'A goblin wreck. Five of them still guard it.', dock: rect(178, 49, 179, 51), boat: { x: 177, y: 50 }, harl: { x: 179, y: 50 }, land: { x: 180, y: 50 }, lantern: { x: 178, y: 49 }, face: { x: 1, y: 0 },
+    dock: { name: 'the dock', blurb: 'The mainland, and the road back to Thistledown.', dock: rect(...DK.box([162, 13, 166, 15])), boat: XY(ATLAS.port('dock.boat')), harl: DK.pt({ x: 165, y: 14 }), land: XY(ATLAS.port('dock.planks')), lantern: DK.pt({ x: 166, y: 13 }), face: { x: -1, y: 0 } },
+    // all of Gull Isle's mooring is the isle's (01-atlas OWNERS: it moves as one with the isle)
+    gull: { name: 'Gull Isle', price: 10, blurb: 'Palms, lobster, and a hermit who hates company.', dock: rect(...GI.box([171, 12, 172, 14])), boat: XY(ATLAS.port('gull_isle.boat')), harl: GI.pt({ x: 172, y: 13 }), land: GI.pt({ x: 173, y: 13 }), lantern: GI.pt({ x: 171, y: 12 }), face: { x: 1, y: 0 } },
+    ironclad: { name: 'Ironclad Isle', price: 25, combat: 8, blurb: 'A goblin wreck. Five of them still guard it.', dock: rect(...IC.box([178, 49, 179, 51])), boat: IC.pt({ x: 177, y: 50 }), harl: IC.pt({ x: 179, y: 50 }), land: IC.pt({ x: 180, y: 50 }), lantern: IC.pt({ x: 178, y: 49 }), face: { x: 1, y: 0 },
       refuse: "Ironclad's crawling with goblins, knight. Come back when you can hold your own. Combat level eight." },
     // the far side of the sea: Grubmarket and Castle Gnash (src/33-goblincity.js carves the land and owns everything east of the strait).
     // stay: Harl waits while the knight is anywhere in this rect (its towns are their own regions, so the region-name check alone would row him home)
-    farshore: { name: 'The Far Shore', price: 40, combat: 10, blurb: 'Goblin country. A market, a castle, and a tinker with ideas.', dock: rect(204, 29, 205, 31), boat: { x: 203, y: 30 }, harl: { x: 205, y: 30 }, land: { x: 206, y: 30 }, lantern: { x: 204, y: 29 }, face: { x: 1, y: 0 },
-      stay: { x0: 200, y0: 1, x1: 258, y1: 96 }, refuse: "The Far Shore is goblin country, knight. All of it. Combat level ten, or I row you straight back." },
+    farshore: { name: 'The Far Shore', price: 40, combat: 10, blurb: 'Goblin country. A market, a castle, and a tinker with ideas.', dock: rect(...FS.box([204, 29, 205, 31])), boat: FS.pt({ x: 203, y: 30 }), harl: FS.pt({ x: 205, y: 30 }), land: XY(ATLAS.port('far_shore.landing')), lantern: FS.pt({ x: 204, y: 29 }), face: { x: 1, y: 0 },
+      stay: FS.rect({ x0: 200, y0: 1, x1: 258, y1: 96 }), refuse: "The Far Shore is goblin country, knight. All of it. Combat level ten, or I row you straight back." },
   };
-  const GULL = { cx: 178.5, cy: 13, rx: 6, ry: 6.5, region: { name: 'Gull Isle', sub: 'Palms, lobster and a hermit', x0: 169, y0: 5, x1: 186, y1: 21 } };
-  const IRON = { cx: 187.5, cy: 50, rx: 8.5, ry: 9, dirt: true, region: { name: 'Ironclad Isle', sub: 'A goblin wreck, and what it guards', x0: 176, y0: 39, x1: 197, y1: 61 } };
-  const HUT = { id: 'pete_hut', x: 180, y: 9, w: 4, h: 4, name: "Salt Pete's Shack", roof: '#5a6a4a', door: 2, f: [[T.BED, 1, 1], [T.SHELF, 2, 1]] };
-  const PALMS = [[175, 10], [178, 8], [174, 13], [176, 16], [180, 17], [183, 14], [177, 18]];
-  const FIRE_T = { x: 178, y: 15 }, PETE_T = { x: 181, y: 14 }, BOTTLE_T = { x: 175, y: 17 };
-  const LOBSTER_ROWS = [[14, 1], [16, 1], [16, -1], [9, -1]]; // [row, direction from the island centre] → first water off the shore
-  const HULL_T = { x: 188, y: 46 }, STRONGBOX_T = { x: 188, y: 49 };
-  const WRECK_PLANKS = [[186, 46], [190, 45], [185, 48], [191, 48], [187, 52]];
-  const WRECK_WALLS = [[184, 53], [185, 53], [184, 54], [191, 54], [192, 54], [192, 53]];
-  const WRECK_BRUTES = [[185, 47], [191, 47], [188, 53]], WRECK_SAPPERS = [[184, 50], [192, 50]];
-  const SEAROCKS = [[168, 6], [170, 24], [176, 27], [186, 25], [194, 9], [196, 31], [170, 44], [173, 57], [190, 67], [180, 73], [196, 81], [168, 87], [186, 91], [178, 36], [166, 60], [193, 39], [167, 30]];
+  // each island's centre and region in its own frame; F: its frame, so the shore's wobble is read in its OLD coordinates
+  // and the island keeps its shape wherever it goes
+  const GULL = { F: GI, cx: GI.x(178.5), cy: GI.y(13), rx: 6, ry: 6.5, region: GI.rect({ name: 'Gull Isle', sub: 'Palms, lobster and a hermit', x0: 169, y0: 5, x1: 186, y1: 21 }) };
+  const IRON = { F: IC, cx: IC.x(187.5), cy: IC.y(50), rx: 8.5, ry: 9, dirt: true, region: IC.rect({ name: 'Ironclad Isle', sub: 'A goblin wreck, and what it guards', x0: 176, y0: 39, x1: 197, y1: 61 }) };
+  const HUT = GI.pt({ id: 'pete_hut', x: 180, y: 9, w: 4, h: 4, name: "Salt Pete's Shack", roof: '#5a6a4a', door: 2, f: [[T.BED, 1, 1], [T.SHELF, 2, 1]] });
+  const PALMS = GI.pts([[175, 10], [178, 8], [174, 13], [176, 16], [180, 17], [183, 14], [177, 18]]);
+  const FIRE_T = GI.pt({ x: 178, y: 15 }), PETE_T = XY(ATLAS.port('gull_isle.pete')), BOTTLE_T = GI.pt({ x: 175, y: 17 });
+  const LOBSTER_ROWS = [[14, 1], [16, 1], [16, -1], [9, -1]].map(([row, dir]) => [GI.y(row), dir]); // [row on Gull Isle, direction from the island centre] → first water off the shore
+  const HULL_T = XY(ATLAS.port('ironclad_isle.hull')), STRONGBOX_T = IC.pt({ x: 188, y: 49 });
+  const WRECK_PLANKS = IC.pts([[186, 46], [190, 45], [185, 48], [191, 48], [187, 52]]);
+  const WRECK_WALLS = IC.pts([[184, 53], [185, 53], [184, 54], [191, 54], [192, 54], [192, 53]]);
+  const WRECK_BRUTES = IC.pts([[185, 47], [191, 47], [188, 53]]), WRECK_SAPPERS = IC.pts([[184, 50], [192, 50]]);
+  // rocks and foam in the open sea (world, whole tiles), bar the two inside an island's box, which move with it
+  const wtile = q => [Math.round(q[0]), Math.round(q[1])];
+  const SEAROCKS = [GI.p(168, 6), ...BW.pts([[170, 24], [176, 27], [186, 25], [194, 9], [196, 31], [170, 44], [173, 57], [190, 67], [180, 73], [196, 81], [168, 87], [186, 91], [178, 36], [166, 60]]).map(wtile), IC.p(193, 39), wtile(BW.p(167, 30))];
   const inSea = (tx, ty) => tx >= SEA.x0 && tx <= SEA.x1 && ty >= SEA.y0 && ty <= SEA.y1;
   const inRegion = (r, tx, ty) => tx >= r.x0 && tx <= r.x1 && ty >= r.y0 && ty <= r.y1;
 
@@ -133,10 +145,12 @@
   // ---------- world ----------
   HOOKS.world.push((rnd, api) => {
     const isHut = (x, y) => buildingAt(x, y) === HUT;
-    // the sea, with a sandy shore against the mainland
-    for (let y = SEA.y0; y <= SEA.y1; y++) for (let x = SEA.x0; x <= SEA.x1; x++) { if (isHut(x, y)) continue; api.setTile(x, y, x <= SEA.x0 + 1 ? T.SAND : T.WATER); }
+    // the sea, with a sandy shore against the mainland. The shore's straight start is the Grey Sea's west coast, pinned
+    // through the dock's planks (ATLAS.PINS 'sea', §3): wherever the dock goes, the coast meets it (no offset until 4a)
+    for (let y = SEA.y0; y <= SEA.y1; y++) { const sx = Math.round(BW.pin('sea', SEA.x0, y));
+      for (let x = sx; x <= SEA.x1; x++) { if (isHut(x, y)) continue; api.setTile(x, y, x <= sx + 1 ? T.SAND : T.WATER); } }
     // the islands: an ellipse with a wobbly edge; Ironclad has a dirt heart
-    const isle = (I, x, y) => { const dx = (x - I.cx) / I.rx, dy = (y - I.cy) / I.ry; return dx * dx + dy * dy + Math.sin(x * 1.7 + y * 0.9) * 0.12; };
+    const isle = (I, x, y) => { const dx = (x - I.cx) / I.rx, dy = (y - I.cy) / I.ry; return dx * dx + dy * dy + Math.sin(I.F.ix(x) * 1.7 + I.F.iy(y) * 0.9) * 0.12; };
     for (const I of [GULL, IRON]) for (let y = I.region.y0; y <= I.region.y1; y++) for (let x = I.region.x0; x <= I.region.x1; x++) {
       if (isHut(x, y)) continue; const d = isle(I, x, y);
       if (d < 1) api.setTile(x, y, I.dirt && d < 0.5 ? T.DIRT : T.SAND);
@@ -145,9 +159,17 @@
     const ensureLand = (x, y, t = T.SAND) => { for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (api.tileAt(x + dx, y + dy) === T.WATER) api.setTile(x + dx, y + dy, t); };
     // the road from Thistledown's east gate: north along the village fence, then east along y 14 to the shore
     const clearable = new Set([T.GRASS, T.DIRT, T.TREE, T.OAK, T.ROCK, T.IRON, T.COAL, T.FLOWERS, T.MUSHROOM, T.STUMP, T.RUBBLE]);
-    const lane = []; for (let y = 14; y <= 32; y++) lane.push([141, y]); for (let x = 141; x <= 161; x++) lane.push([x, 14]);
+    // (the lanes are the tracks themselves, tile by tile: the lane down the fence is road_east_lane, the road east to the
+    // shore road_dock_lane; the verge is the row either side of the road east, and the column east of the fence lane's
+    // first six tiles)
+    const tiles = id => { const pl = ATLAS.track(id), out = [];
+      for (let s = 1; s < pl.length; s++) { const [ax, ay] = pl[s - 1], [bx, by] = pl[s], n = Math.max(1, Math.round(Math.max(Math.abs(bx - ax), Math.abs(by - ay))));
+        for (let k = s === 1 ? 0 : 1; k <= n; k++) out.push([Math.round(ax + (bx - ax) * k / n), Math.round(ay + (by - ay) * k / n)]); }
+      return out; };
+    const fence = tiles('road_east_lane'), east = tiles('road_dock_lane');
+    const lane = [...fence, ...east];
     for (const [x, y] of lane) if (clearable.has(api.tileAt(x, y))) api.setTile(x, y, T.DIRT);
-    const verge = []; for (let x = 141; x <= 161; x++) verge.push([x, 13], [x, 15]); for (let y = 14; y <= 19; y++) verge.push([142, y]);
+    const verge = []; for (const [x, y] of east) verge.push([x, y - 1], [x, y + 1]); for (const [x, y] of fence.slice(0, 6)) verge.push([x + 1, y]);
     for (const [x, y] of verge) if ([T.TREE, T.OAK, T.ROCK, T.IRON, T.COAL].includes(api.tileAt(x, y))) api.setTile(x, y, T.GRASS);
     // docks and boats
     for (const k in LOC) { const L = LOC[k]; for (const [x, y] of L.dock) api.setTile(x, y, B_DOCK); api.setTile(L.boat.x, L.boat.y, B_BOAT); api.setTile(L.land.x, L.land.y, k === 'dock' ? B_DOCK : T.SAND); }
@@ -463,7 +485,7 @@
     } });
     // gulls over the grey water
     if (cam.x + VW > SEA.x0 * TILE) for (let k = 0; k < 3; k++) {
-      const gx = tc(170 + k * 9) + Math.cos(time * 0.35 + k * 2.1) * 160, gy = tc(20 + k * 26) + Math.sin(time * 0.5 + k) * 70;
+      const gx = tc(BW.x(170 + k * 9)) + Math.cos(time * 0.35 + k * 2.1) * 160, gy = tc(BW.y(20 + k * 26)) + Math.sin(time * 0.5 + k) * 70;
       if (gx < cam.x - 20 || gx > cam.x + VW + 20 || gy < cam.y - 20 || gy > cam.y + VH + 20) continue;
       items.push({ y: 1e9 - 5, draw: () => drawGull(g, gx, gy, 1.2, Math.sin(time * 6 + k) * 3) });
     }
@@ -519,11 +541,11 @@
     const talkHarl = () => { const L = LOC[q.where]; const a = F.goAdjacent(L.harl.x, L.harl.y, 2500); F.face(L.harl.x, L.harl.y); closePanel(); drain(); F.press('KeyE'); F.sim(2, []); return a; };
     // the sea
     { let water = 0, total = 0; for (let y = SEA.y0; y <= SEA.y1; y++) for (let x = SEA.x0; x <= SEA.x1; x++) { total++; if (tileAt(x, y) === T.WATER) water++; }
-      check('boats: the Grey Sea fills the east strip (water, a sandy shore, two islands)', regionAt(190, 30).name === 'The Grey Sea' && tileAt(190, 30) === T.WATER && water / total > 0.6 && tileAt(162, 40) === T.SAND && regionAt(178, 13).name === 'Gull Isle' && tileAt(178, 13) === T.SAND && regionAt(187, 50).name === 'Ironclad Isle' && tileAt(187, 50) === T.DIRT, { water, total, shore: tileAt(162, 40) }); }
-    { const path = F.bfs(141, 32, LOC.dock.land.x, LOC.dock.land.y); check("boats: the road from Thistledown's east gate to the dock is walkable", !!path && path.length > 30, { len: path && path.length }); }
-    { q.sailing = null; q.where = 'dock'; const p = harlPos(); check('boats: Old Harl waits on the dock, his boat moored at the end', p.x === tc(165) && p.y === tc(14) && tileAt(165, 14) === B_DOCK && tileAt(167, 14) === B_BOAT && tileAt(164, 14) === B_DOCK, { tx: p.x / TILE, ty: p.y / TILE }); }
+      check('boats: the Grey Sea fills the east strip (water, a sandy shore, two islands)', regionAt(BW.tx(190), BW.ty(30)).name === 'The Grey Sea' && tileAt(BW.tx(190), BW.ty(30)) === T.WATER && water / total > 0.6 && tileAt(...SHORE_T) === T.SAND && regionAt(...GI.p(178, 13)).name === 'Gull Isle' && tileAt(...GI.p(178, 13)) === T.SAND && regionAt(...IC.p(187, 50)).name === 'Ironclad Isle' && tileAt(...IC.p(187, 50)) === T.DIRT, { water, total, shore: tileAt(...SHORE_T) }); }
+    { const path = F.bfs(...BT_TD.p(141, 32), LOC.dock.land.x, LOC.dock.land.y); check("boats: the road from Thistledown's east gate to the dock is walkable", !!path && path.length > 30, { len: path && path.length }); }
+    { q.sailing = null; q.where = 'dock'; const p = harlPos(); check('boats: Old Harl waits on the dock, his boat moored at the end', p.x === tc(LOC.dock.harl.x) && p.y === tc(LOC.dock.harl.y) && tileAt(LOC.dock.harl.x, LOC.dock.harl.y) === B_DOCK && tileAt(LOC.dock.boat.x, LOC.dock.boat.y) === B_BOAT && tileAt(LOC.dock.land.x, LOC.dock.land.y) === B_DOCK, { tx: p.x / TILE, ty: p.y / TILE }); }
     // walk the road, talk to Harl
-    { F.tp(141, 32); const w = F.walkTo(LOC.dock.land.x, LOC.dock.land.y, 3000); const a = talkHarl();
+    { F.tp(...BT_TD.p(141, 32)); const w = F.walkTo(LOC.dock.land.x, LOC.dock.land.y, 3000); const a = talkHarl();
       check('boats: walk the road to the dock; E on Harl opens the ferry panel', typeof w === 'number' && typeof a === 'number' && panel === 'ferry' && dialog.queue.concat(dialog.cur || []).some(d => d.who === 'Old Harl'), { w, a, panel, region: player.region }); }
     // Gull Isle, ten coins
     { makeRoom(4); h.give('coins', 100); const c0 = coins(); render(); const sx = player.x, sy = player.y; const c = F.clickButton('Gull'); const sailing = !!q.sailing && q.sailing.to === 'gull' && panel === 'sailing'; F.sim(20, ['KeyD']); const pinned = player.x === sx && player.y === sy && !!q.sailing; F.sim(130, []);

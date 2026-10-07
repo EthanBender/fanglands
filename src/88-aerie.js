@@ -923,8 +923,8 @@
 
     // ---- 2. the core's starting-cave scrim: still on the overworld cave, off every instance ----
     { const S = INSTANCE_LIGHT.stats;
-      F.tp(5, 7); const b0 = S.blocked, p0 = S.painted; render();
-      const overworldKept = S.blocked === b0 && S.painted === p0 && !INSTANCE_LIGHT.suppressing() && isCaveTile(5, 7);
+      const CAVE_IN = ATLAS.frame('cave').p(5, 7); F.tp(...CAVE_IN); const b0 = S.blocked, p0 = S.painted; render();
+      const overworldKept = S.blocked === b0 && S.painted === p0 && !INSTANCE_LIGHT.suppressing() && isCaveTile(...CAVE_IN);
       INSTANCES.enter('spider_den'); F.tp(10, 5); const b1 = S.blocked, p1 = S.painted; render();
       const denBlocked = S.blocked > b1 && S.painted === p1 && INSTANCE_LIGHT.suppressing();
       const denOverlay = overlays(); INSTANCES.leave();
@@ -1123,7 +1123,7 @@
     { INSTANCES.leave(); makeRoom(3); give('dragon_scale', 1); toldAnvil = false; drain();
       openPanel('station', 'anvil'); const told = !!notice && notice.text === GODLY_LINE; closePanel();
       toldAnvil = false; notice = null; strip('dragon_scale'); openPanel('station', 'anvil'); const quiet = !(notice && notice.text === GODLY_LINE); closePanel();
-      give('dragon_scale', 1); drain(); F.tp(93, 40); const spoke = HOOKS.talkBefore.shop({ id: 'brakka', name: 'Brakka the smith', role: 'shop', shop: 'smith' }); F.sim(2, []);
+      give('dragon_scale', 1); drain(); F.tp(...ATLAS.frame('thistledown').p(93, 40)); const spoke = HOOKS.talkBefore.shop({ id: 'brakka', name: 'Brakka the smith', role: 'shop', shop: 'smith' }); F.sim(2, []);
       const brakka = !!dialog.cur && /never marked it/.test(dialog.cur.text); void spoke; drain(); closePanel();
       check(A + 'Godly Plated is forged on the sky forge and nowhere else — no Godly recipe is left on the anvil, Halcyon still has all four, and the anvil and Brakka now say where it is made instead of saying nothing',
         told && quiet && brakka && !RECIPES.some(r => r.station === 'anvil' && /^godly_/.test(r.out)) && SKYCITY.FORGE.length === 4 && /sky forge in Aerie/.test(GODLY_LINE),

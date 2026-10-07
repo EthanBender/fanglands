@@ -191,7 +191,7 @@
     if (!bb) return;
     h.peace(true); projectiles = [];
     // a clear grass lane in the open fields: o.x-1 .. o.x+9, o.y-2 .. o.y+2
-    const o = h.openSpot(66, 52);
+    const o = h.openSpot(ATLAS.world.tx(66), ATLAS.world.ty(52));   // open Goblin Fields: the stretched world (the spread spec, section 9.1)
     const natural = [T.TREE, T.OAK, T.ROCK, T.IRON, T.COAL, T.FLOWERS, T.MUSHROOM, T.DIRT, T.STUMP, T.RUBBLE, T.SAND, T.SOIL];
     for (let yy = o.y - 2; yy <= o.y + 2; yy++) for (let xx = o.x - 1; xx <= o.x + 9; xx++) if (natural.includes(tileAt(xx, yy))) changeTile(xx, yy, T.GRASS);
     const wake = hp => { hf.beastKilled = false; bb.dead = false; bb.hp = hp; bb.x = tc(o.x + 5); bb.y = tc(o.y); bb.home = { x: bb.x, y: bb.y }; bb.state = 'idle'; bb.stunT = 0; bb.attackCd = 0; bb.angry = true; bb.facing = { x: -1, y: 0 }; bb.phase2 = false; bb.phase3 = false; bb.strikes = []; bb.enrage = 0; bb.volleys = 0; bb.strikeHits = 0; };

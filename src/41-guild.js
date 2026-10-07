@@ -18,16 +18,21 @@
 // ============================================================================
 {
   // ---------- places ----------
-  const HALL = { id: 'guild_hall', x: 150, y: 66, w: 7, h: 6, name: 'The Hollowford Guild', roof: '#7a2e2e', sign: 'GUILD', door: 3 };
+  // Every overworld position reads the Atlas (the spread spec, section 9.1): the hall stands on the port
+  // hollowford.guild_hall, its path and the staff's walk are Hollowford's frame, the escort ends at thistledown.board and
+  // the town's extent (the draw window) is the anchor's box, like 31-rebuild's HF_RECT.
+  const HFF = ATLAS.frame('hollowford');
+  const [HALL_X, HALL_Y] = ATLAS.port('hollowford.guild_hall');
+  const HALL = { id: 'guild_hall', x: HALL_X, y: HALL_Y, w: 7, h: 6, name: 'The Hollowford Guild', roof: '#7a2e2e', sign: 'GUILD', door: 3 };
   const T_GBOARD = addTile('GUILD_BOARD', { solid: true, tex: 'floor', mini: '#8a6a3a' });
   const T_GCHEST = addTile('GUILD_CHEST', { solid: true, tex: 'floor', mini: '#c9a02a' });
   INTERESTING_TILES.add(T_GBOARD); INTERESTING_TILES.add(T_GCHEST); // the core E highlight and reach
   HALL.f = [[T.SHELF, 1, 1], [T_GBOARD, 3, 1], [T_GCHEST, 5, 1], [T.TABLE, 1, 3], [T.RUG, 3, 3]];
   const BOARD_POS = { x: HALL.x + 3, y: HALL.y + 1 }, CHEST_POS = { x: HALL.x + 5, y: HALL.y + 1 }, DOOR_POS = { x: HALL.x + HALL.door, y: HALL.y + HALL.h - 1 };
-  const STEP_PATH = [[153, 72], [152, 72], [151, 72], [150, 72], [150, 73], [150, 74], [150, 75], [150, 76]]; // the doorstep down to the east street (y 77)
-  const WAYPOINTS = [[152, 68], [155, 68], [153, 70]]; // where the staff walk: in front of the board, the chest, and inside the door
-  const TOWN_BOARD = { x: 105, y: 27 };                // Thistledown's notice board (29-quests)
-  const HF_RECT = { x0: 122, y0: 66, x1: 156, y1: 92 };
+  const STEP_PATH = HFF.pts([[153, 72], [152, 72], [151, 72], [150, 72], [150, 73], [150, 74], [150, 75], [150, 76]]); // the doorstep down to the east street (y 77)
+  const WAYPOINTS = HFF.pts([[152, 68], [155, 68], [153, 70]]); // where the staff walk: in front of the board, the chest, and inside the door
+  const TOWN_BOARD = (([x, y]) => ({ x, y }))(ATLAS.port('thistledown.board'));   // Thistledown's notice board (29-quests)
+  const HF_RECT = (b => ({ x0: b[0], y0: b[1], x1: b[2], y1: b[3] }))(ATLAS.box('hollowford'));   // the town's place (the anchor's box): the draw window
   const inHall = (tx, ty) => tx >= HALL.x && tx < HALL.x + HALL.w && ty >= HALL.y && ty < HALL.y + HALL.h;
   const hallInside = (tx, ty) => tx > HALL.x && tx < HALL.x + HALL.w - 1 && ty > HALL.y && ty < HALL.y + HALL.h - 1;
 
@@ -390,9 +395,9 @@
     if (!quest.hollowford) quest.hollowford = { rewarded: false, beastKilled: false, wreck: null }; quest.hollowford.freed = true; quest.hollowford.beastKilled = true;
     if (!quest.rebuild) quest.rebuild = { progress: {}, done: {}, title: null, wellAt: -1e9, nudged: false }; if (!quest.rebuild.done) quest.rebuild.done = {};
     // before founding: a burned ruin on the east street; freed + first house founds the guild and rebuilds it as the hall
-    { quest.rebuild.done.house = false; F.tp(140, 78); F.sim(3, []); const ruin = tileAt(HALL.x, HALL.y) === T.HWALL && tileAt(BOARD_POS.x, BOARD_POS.y) !== T_GBOARD && !G().founded;
+    { quest.rebuild.done.house = false; F.tp(...HFF.p(140, 78)); F.sim(3, []); const ruin = tileAt(HALL.x, HALL.y) === T.HWALL && tileAt(BOARD_POS.x, BOARD_POS.y) !== T_GBOARD && !G().founded;
       quest.rebuild.done.house = true; levelBanner = null; F.sim(3, []);
-      const built = tileAt(HALL.x, HALL.y) === T.HWALL && tileAt(HALL.x + HALL.w - 1, HALL.y + HALL.h - 1) === T.HWALL && tileAt(152, 68) === T.FLOOR && tileAt(DOOR_POS.x, DOOR_POS.y) === T.DOOR && tileAt(BOARD_POS.x, BOARD_POS.y) === T_GBOARD && tileAt(CHEST_POS.x, CHEST_POS.y) === T_GCHEST && STEP_PATH.every(([x, y]) => tileAt(x, y) === T.DIRT) && !!F.bfs(DOOR_POS.x, DOOR_POS.y + 1, 140, 78);
+      const built = tileAt(HALL.x, HALL.y) === T.HWALL && tileAt(HALL.x + HALL.w - 1, HALL.y + HALL.h - 1) === T.HWALL && tileAt(...HFF.p(152, 68)) === T.FLOOR && tileAt(DOOR_POS.x, DOOR_POS.y) === T.DOOR && tileAt(BOARD_POS.x, BOARD_POS.y) === T_GBOARD && tileAt(CHEST_POS.x, CHEST_POS.y) === T_GCHEST && STEP_PATH.every(([x, y]) => tileAt(x, y) === T.DIRT) && !!F.bfs(DOOR_POS.x, DOOR_POS.y + 1, ...HFF.p(140, 78));
       check('guild: a burned ruin on the east street (150–156, 66–71) until the crypt is open and the first house stands; then Tam founds The Hollowford Guild: HWALL hall, FLOOR, DOOR (153,71), GUILD_BOARD (153,67), GUILD_CHEST (155,67), a dirt path to the street, banner', ruin && G().founded && built && !!levelBanner && levelBanner.text === 'THE HOLLOWFORD GUILD' && CAPE_SLOT === (EQUIP_SLOTS.includes('cape') ? 'cape' : 'body'), { ruin, founded: G().founded, built, banner: levelBanner && levelBanner.text, capeSlot: CAPE_SLOT }); drain(); }
     // the board opens the guild panel; the chest refuses below Warden
     { pressAt(BOARD_POS.x, BOARD_POS.y + 1, BOARD_POS.x, BOARD_POS.y); const labels = buttons.map(b => b.label.replace(/^disabled:/, '')); const opened = panel === 'guild' && ['Take: Escort', 'Deliver: Timber', 'Deliver: Scrap', 'Take: Wolves'].every(l => labels.includes(l));
@@ -409,7 +414,7 @@
       check('guild: Scrap run — 15 goblin scrap pay 150 coins (2 jobs done)', clicked && countItem('goblin_scrap') === 0 && (coins() === c0 + 150 || drops.some(d => d.id === 'coins' && d.qty === 150)) && G().jobsDone === 2, { clicked, scrap: countItem('goblin_scrap'), coins: coins() - c0, jobs: G().jobsDone }); drain(); closePanel(); }
     // Wolf patrol: kills before taking the job do not count; five after it pay; the third job makes a Member
     { const w = monsters.find(m => m.type === 'wolf'); const wolfAt = () => { w.dead = false; w.hp = 1; w.stunT = 0; w.state = 'idle'; w.x = player.x + 40; w.y = player.y; };
-      F.tp(60, 70); wolfAt(); hitMonster(w, 5, 0); F.sim(2, []); const before = !G().active && G().jobsDone === 2;
+      F.tp(ATLAS.world.tx(60), ATLAS.world.ty(70)); wolfAt(); hitMonster(w, 5, 0); F.sim(2, []); const before = !G().active && G().jobsDone === 2;
       open(); const took = F.clickButton('Take: Wolves'); closePanel(); F.sim(1, []); const active = !!G().active && G().active.id === 'wolf' && activeQuests().includes('guild') && /Wolves 0\/5/.test(questText('guild'));
       const c0 = coins(), x0 = player.skills.melee.xp; const counts = []; drain(); levelBanner = null;
       for (let k = 0; k < 5; k++) { wolfAt(); hitMonster(w, 5, 0); F.sim(2, []); counts.push(G().active ? G().active.kills : 'done'); }
@@ -430,14 +435,14 @@
       check('guild: three more runs make a Captain; Buy cape takes 500 coins for a Guild cape (def 8, cape slot when 38-agility adds it, else body); equipping it works', runs.every(Boolean) && captain && bought && inPack && def.armour.def === 8 && def.value === 500 && def.armour.slot === CAPE_SLOT && worn && !!levelBanner, { runs, captain, rank: G().rank, bought, inPack, worn, slot: def.armour.slot, def: gearBonus('def') - d0 }); drain(); }
     // rank 4: the staff work in the hall; the square copies step aside; E on one talks
     { const runs = [timberRun(), timberRun(), timberRun()]; closePanel(); const master = G().rank === 4 && G().jobsDone === 12 && !!levelBanner && levelBanner.text === 'GUILD RANK: GUILDMASTER';
-      F.tp(153, 69); F.sim(3, []); const start = staff.map(s => [s.px, s.py]); F.sim(420, []);
+      F.tp(...HFF.p(153, 69)); F.sim(3, []); const start = staff.map(s => [s.px, s.py]); F.sim(420, []);
       const moved = staff.length === 3 && staff.every((s, i) => dist(s.px, s.py, start[i][0], start[i][1]) > 20 || s.wp !== [0, 1, 2][i]) && staff.every(s => hallInside(Math.floor(s.px / TILE), Math.floor(s.py / TILE)));
       const names = staff.map(s => s.name).sort().join(',');
-      const s = staff[0]; s.px = tc(154); s.py = tc(69); s.waitT = 9; s.moving = false; drain(); F.tp(154, 70); F.face(154, 69); F.press('KeyE'); F.sim(2, []); const spoke = !!dialog.cur && dialog.cur.who === s.name && s.lines.includes(dialog.cur.text);
-      drain(); F.tp(137, 82); F.face(137, 81); F.press('KeyE'); F.sim(2, []); const squareGone = !(dialog.cur && ['Old Tam', 'Nell', 'Pip'].includes(dialog.cur.who));
+      const s = staff[0]; s.px = tc(HFF.x(154)); s.py = tc(HFF.y(69)); s.waitT = 9; s.moving = false; drain(); F.tp(...HFF.p(154, 70)); F.face(...HFF.p(154, 69)); F.press('KeyE'); F.sim(2, []); const spoke = !!dialog.cur && dialog.cur.who === s.name && s.lines.includes(dialog.cur.text);
+      drain(); F.tp(...HFF.p(137, 82)); F.face(...HFF.p(137, 81)); F.press('KeyE'); F.sim(2, []); const squareGone = !(dialog.cur && ['Old Tam', 'Nell', 'Pip'].includes(dialog.cur.who));
       check('guild: three more runs make a Guildmaster; Tam, Nell and Pip work in the hall, walking a loop between the board, the chest and the door (all three moved, all inside), E on one gets a line, and the square copies step aside', runs.every(Boolean) && master && moved && names === 'Nell,Old Tam,Pip' && spoke && squareGone, { runs, master, rank: G().rank, moved, names, spoke, squareGone, who: dialog.cur && dialog.cur.who, banner: levelBanner && levelBanner.text }); drain(); }
     // the world prompt on a staff member in the hall, and the board and the chest at every size
-    { const s = staff[0]; s.px = tc(154); s.py = tc(69); s.waitT = 99; s.moving = false; closePanel(); drain(); F.tp(154, 70); F.face(154, 69); render();
+    { const s = staff[0]; s.px = tc(HFF.x(154)); s.py = tc(HFF.y(69)); s.waitT = 99; s.moving = false; closePanel(); drain(); F.tp(...HFF.p(154, 70)); F.face(...HFF.p(154, 69)); render();
       const r = PEOPLE_UI.auditPrompt({ px: s.px, py: s.py, name: s.name }), face = HK.face('use');
       check('guild: facing a staff member in the hall draws the gold corners on them and a Talk tag beside them (no dashed ring), and the USE seat reads TALK', r.ok && !!face && face.ribbon === 'TALK', { ...r, face: face && face.ribbon });
       const gd = G(), act0 = gd.active, cd0 = { ...gd.cooldowns }, rank0 = gd.rank, chest0 = gd.chest.map(x => x ? { ...x } : null);
@@ -451,9 +456,9 @@
       back();
       check('guild: the Hollowford Guild board and the Guild chest wear the book frame at all 8 sizes, touch and mouse, Normal and Large text: job plates, the cape, pages and 44 px chest pouches on touch, 8 px apart, inside the panel, out of the notch and home-bar bands, every word inside its plate', a.frames === 128 && a.problems.length === 0, { frames: a.frames, total: a.total, problems: a.problems.slice(0, 10) }); }
     // Escort: Pip follows, snaps when far, and the job completes at Thistledown's notice board
-    { G().cooldowns.escort = -1e9; G().active = null; escort = null; F.tp(153, 69); open(); const took = F.clickButton('Take: Escort'); closePanel(); F.sim(2, []);
+    { G().cooldowns.escort = -1e9; G().active = null; escort = null; F.tp(...HFF.p(153, 69)); open(); const took = F.clickButton('Take: Escort'); closePanel(); F.sim(2, []);
       const near0 = !!escort && dist(escort.px, escort.py, player.x, player.y) < 3 * TILE && !!dialog.cur && dialog.cur.who === 'Pip';
-      F.tp(140, 78); F.sim(60, ['KeyA']); const follows = !!escort && dist(escort.px, escort.py, player.x, player.y) < 5 * TILE && activeQuests().includes('guild') && /Pip is with you/.test(questText('guild'));
+      F.tp(...HFF.p(140, 78)); F.sim(60, ['KeyA']); const follows = !!escort && dist(escort.px, escort.py, player.x, player.y) < 5 * TILE && activeQuests().includes('guild') && /Pip is with you/.test(questText('guild'));
       const c0 = coins(); drain(); F.tp(TOWN_BOARD.x, TOWN_BOARD.y + 2); F.sim(6, []);
       const done = !G().active && !escort && (coins() === c0 + 120 || drops.some(d => d.id === 'coins' && d.qty === 120)) && G().jobsDone === 13 && !!dialog.cur && dialog.cur.who === 'Pip';
       check('guild: Escort Pip — taking the job puts Pip at your side; he follows (snapping when far); at the notice board in Thistledown the job completes for 120 coins', took && near0 && follows && done, { took, near0, follows, done, active: G().active, coins: coins() - c0, jobs: G().jobsDone }); drain(); }

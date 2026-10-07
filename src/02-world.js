@@ -38,7 +38,8 @@ const REGIONS = [
   AT_QUARRY.rect({ name: 'Grey Quarry', sub: 'Iron and coal in the rock', x0: 46, y0: 1, x1: 62, y1: 14 }),
   AT_POND.rect({ name: "Miller's Pond", sub: 'Shrimp, and trout for the patient', x0: 36, y0: 30, x1: 50, y1: 44 }),
   AT_CAMP.rect({ name: 'Goblin Camp', sub: 'Their machines are here', x0: 145, y0: 18, x1: 159, y1: 42 }),
-  AT_WHOLE(AT_W.rect({ name: 'Wolfwood', sub: 'Keep to the paths', x0: 0, y0: 62, x1: 159, y1: 95 })),
+  // (Wolfwood's last row is the warden's line, the rim, on its pin through the warden's gate: 27-dragons' Ashfields box starts the row below)
+  Object.assign(AT_WHOLE(AT_W.rect({ name: 'Wolfwood', sub: 'Keep to the paths', x0: 0, y0: 62, x1: 159, y1: 95 })), { y1: Math.round(AT_W.pin('rim', AT_W.y(95), ATLAS.port('warden.gate')[0])) }),
   AT_WHOLE(AT_W.rect({ name: 'Goblin Fields', sub: 'The road east', x0: 21, y0: 0, x1: 159, y1: 61 })),
   { name: 'The Wilds', sub: 'Uncharted', x0: AT_W.tx(0), y0: AT_W.ty(0), x1: MAP_W - 1, y1: MAP_H - 1 },
 ];
@@ -157,6 +158,8 @@ function generateWorld() {
   for (let x = 0; x < MAP_W; x++) { if (x > CAVE_EXIT_X) setTile(x, 0, T.TREE); setTile(x, MAP_H - 1, T.TREE); }
   for (let y = 0; y < MAP_H; y++) { setTile(MAP_W - 1, y, T.TREE); if (y > CV.y(15)) setTile(0, y, T.TREE); }
   // ---- landmarks ----
+  // the cave mouth is the road's first tile: the scatter above may not stand a tree on it (the road's dither can miss it)
+  { const [mx, my] = ATLAS.port('cave.mouth'); if (SOLID.has(tileAt(mx, my))) setTile(mx, my, T.DIRT); }
   setTile(SIGN_TILE.x, SIGN_TILE.y, T.SIGN);
   for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (dx || dy) setTile(SIGN_TILE.x + dx, SIGN_TILE.y + dy, T.DIRT);
   { const [ax, ay] = ATLAS.port('cave.axe_stump'); setTile(ax, ay, T.AXESTUMP); setTile(ax - 1, ay, T.GRASS); setTile(ax + 1, ay, T.GRASS); }
@@ -205,7 +208,9 @@ function generateWorld() {
     if (b.door !== undefined) { const t = tileAt(b.x + b.door, b.y + b.h); if (SOLID.has(t)) setTile(b.x + b.door, b.y + b.h, T.DIRT); }
   }
   // animal pens west of the village (gates on the road side)
-  const pen = (x0, y0, x1, y1, gx, gy) => { for (let x = x0; x <= x1; x++) { setTile(x, y0, T.FENCE); setTile(x, y1, T.FENCE); } for (let y = y0; y <= y1; y++) { setTile(x0, y, T.FENCE); setTile(x1, y, T.FENCE); } for (let y = y0 + 1; y < y1; y++) for (let x = x0 + 1; x < x1; x++) setTile(x, y, T.GRASS); setTile(gx, gy, T.GATE); };
+  const pen = (x0, y0, x1, y1, gx, gy) => { for (let x = x0; x <= x1; x++) { setTile(x, y0, T.FENCE); setTile(x, y1, T.FENCE); } for (let y = y0; y <= y1; y++) { setTile(x0, y, T.FENCE); setTile(x1, y, T.FENCE); } for (let y = y0 + 1; y < y1; y++) for (let x = x0 + 1; x < x1; x++) setTile(x, y, T.GRASS); setTile(gx, gy, T.GATE);
+    // the step outside the gate stays open ground (the scatter above may have stood a tree or a rock on it)
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const x = gx + dx, y = gy + dy; if ((x < x0 || x > x1 || y < y0 || y > y1) && SOLID.has(tileAt(x, y))) setTile(x, y, T.GRASS); } };
   pen(...TD.box([72, 40, 80, 46]), ...TD.p(80, 43)); pen(...TD.box([72, 14, 80, 21]), ...TD.p(80, 17));
   // goblin camp: palisade with a west gap, scrap heaps, a fire
   // the palisade's west wall stands well clear of Thistledown's east wall (x 140): a 6-tile field between them, not 1

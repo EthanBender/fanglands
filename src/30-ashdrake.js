@@ -15,7 +15,12 @@
 // Feature file: registers everything through HOOKS, edits no core file. One block, no leaked names.
 // ============================================================================
 {
-  const AD_SPAWNS = [[52, 100], [56, 110], [74, 110], [80, 100]];   // round Dunstan's farm (58–79 × 96–107), on the ash
+  // Every overworld position reads the Atlas (the spread spec, section 9.1). The drakes live round Dunstan's farm and the
+  // self-test asserts it (within 20 columns of the farm, south of its top row), so their spawns are the warden's frame
+  // like the farm (27-dragons), not the stretched world: they stay round the farm wherever it goes. The forge and anvil
+  // are Thistledown's ports.
+  const AD_WD = ATLAS.frame('warden'), AD_TD = ATLAS.frame('thistledown'), AD_W = ATLAS.world;
+  const AD_SPAWNS = AD_WD.pts([[52, 100], [56, 110], [74, 110], [80, 100]]);   // round Dunstan's farm (58–79 × 96–107 on today's map), on the ash
   const AD_KILL_BONUS_MIN_LEVEL = 10, AD_KILL_BONUS_PER_LEVEL = 10;
   const AD_KID_HEAL = 0.25;
   const AD = { stats: { bonuses: 0, last: null, kidHeals: 0 }, lastHp: null };
@@ -113,7 +118,7 @@
     // 1. drakes spawn round the farm with the def
     const drakes = monsters.filter(m => m.type === 'ash_drake'), d = MONSTER_DEFS.ash_drake;
     check('ashdrake: four wingless level-30 drakes wake round Dunstan\'s farm on open ground (hp 120, no fire, aggressive, dung every kill)',
-      drakes.length === 4 && d.level === 30 && d.hp === 120 && d.maxHit === 12 && d.def === 20 && drakes.every(m => m.angry && !SOLID.has(tileAt(Math.floor(m.home.x / TILE), Math.floor(m.home.y / TILE))) && Math.abs(m.home.x / TILE - 66) < 20 && m.home.y / TILE > 96)
+      drakes.length === 4 && d.level === 30 && d.hp === 120 && d.maxHit === 12 && d.def === 20 && drakes.every(m => m.angry && !SOLID.has(tileAt(Math.floor(m.home.x / TILE), Math.floor(m.home.y / TILE))) && Math.abs(m.home.x / TILE - AD_WD.x(66)) < 20 && m.home.y / TILE > AD_WD.y(96))
         && d.drops.always.some(r => r[0] === 'dragon_dung' && r[1] === 1 && r[2] === 1) && d.drops.table.some(r => r[0] === 'dragon_scale'),
       { drakes: drakes.length, homes: drakes.map(m => [Math.floor(m.home.x / TILE), Math.floor(m.home.y / TILE), tileAt(Math.floor(m.home.x / TILE), Math.floor(m.home.y / TILE))]) });
     // 2. kill one: dung on the ground, and the kill bonus (300 melee xp for level 30)
@@ -123,12 +128,12 @@
       check('ashdrake: a slain drake always drops dragon dung', dead && dung, { dead, dung, near: drops.filter(x => dist(x.x, x.y, player.x, player.y) < 120).map(x => x.id) });
       check('ashdrake: kill bonus — a level-30 kill pays +300 Melee xp on top of damage xp', dead && AD.stats.bonuses === b0 + 1 && AD.stats.last && AD.stats.last.type === 'ash_drake' && AD.stats.last.xp === 300 && player.skills.melee.xp >= mx0 + 300 + 4, { bonuses: AD.stats.bonuses - b0, last: AD.stats.last, gained: player.skills.melee.xp - mx0 });
       m.x = m.home.x; m.y = m.home.y; }
-    { const gob = monsters.find(m => m.type === 'goblin' && !m.dead); const o = h.openSpot(40, 20); F.tp(o.x, o.y); player.facing = { x: 1, y: 0 };
+    { const gob = monsters.find(m => m.type === 'goblin' && !m.dead); const o = h.openSpot(AD_W.tx(40), AD_W.ty(20)); F.tp(o.x, o.y); player.facing = { x: 1, y: 0 };
       const b0 = AD.stats.bonuses, mx0 = player.skills.melee.xp; const dead = killByHand(gob);
       check('ashdrake: kill bonus — a level-2 goblin pays no bonus (only the 4 xp per damage)', dead && AD.stats.bonuses === b0 && player.skills.melee.xp - mx0 <= 4 * playerMaxHit() * 3, { dead, bonuses: AD.stats.bonuses - b0, gained: player.skills.melee.xp - mx0 }); gob.x = gob.home.x; gob.y = gob.home.y; }
     // 3. kid mode: a quarter of each hit back, a barely-lethal hit survived, direct hp writes caught by the tracker
     player.skills.defence.xp = XP_TABLE[skillLv('defence')]; // no level-up heal can land during these hits
-    { F.tp(60, 100); F.sim(2, []); window.__kidmode = true; player.hp = Math.min(player.maxHp, 40); const hp0 = player.hp;
+    { F.tp(...AD_WD.p(60, 100)); F.sim(2, []); window.__kidmode = true; player.hp = Math.min(player.maxHp, 40); const hp0 = player.hp;
       hurtPlayer(20, player.x + 10, player.y, true); const afterHit = player.hp;
       F.sim(1, []); player.hp -= 8; F.sim(1, []); const afterBurn = player.hp;
       player.hp = 10; hurtPlayer(12, player.x + 10, player.y, true); const survived = !player.dead && player.hp > 0; // a level-up heal can land in the same hit, so only demand survival
@@ -147,10 +152,10 @@
     { h.clearJunk(); while (countItem('dragon_scale') < 3) h.give('dragon_scale', 1); if (!hasTool('hammer')) h.give('hammer', 1);
       if (player.skills.smithing.xp < XP_TABLE[29]) player.skills.smithing.xp = XP_TABLE[29];
       const sc0 = countItem('dragon_scale'), p0 = countItem('scale_plate'), h0 = countItem('scale_helm'), sx0 = player.skills.smithing.xp;
-      F.tp(93, 39); F.walkTo(92, 38, 500); F.face(92, 37); F.press('KeyE'); const forge = panel === 'station' && panelArg === 'forge';
+      F.tp(...AD_TD.p(93, 39)); F.walkTo(...AD_TD.p(92, 38), 500); F.face(...ATLAS.port('thistledown.forge')); F.press('KeyE'); const forge = panel === 'station' && panelArg === 'forge';
       const c1 = F.clickButton('3 Dragon scales → Scale plate'); const s1 = F.untilAction(300, () => countItem('scale_plate') > p0); closePanel();
       const sx1 = player.skills.smithing.xp;
-      F.walkTo(94, 39, 500); F.face(94, 38); F.press('KeyE'); const anvil = panel === 'station' && panelArg === 'anvil';
+      F.walkTo(...AD_TD.p(94, 39), 500); F.face(...ATLAS.port('thistledown.anvil')); F.press('KeyE'); const anvil = panel === 'station' && panelArg === 'anvil';
       let viaButton = F.clickButton('1 Scale plate → Scale helm'); if (!viaButton) craft(RECIPES.find(r => r.out === 'scale_helm')); // the anvil list is cut short on small screens
       const s2 = F.untilAction(300, () => countItem('scale_helm') > h0); closePanel();
       const smelt = SMELT.find(r => r.out === 'scale_plate'), helm = RECIPES.find(r => r.out === 'scale_helm'), shield = RECIPES.find(r => r.out === 'scale_shield');

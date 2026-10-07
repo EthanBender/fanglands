@@ -229,7 +229,7 @@
       rows.push({ gate: 'castle portcullis', cols: port, widthPx: port.length * TILE });
       // each mount's real body: boarded the real way and measured (player.r), never a number copied here
       const radii = {};
-      const o0 = h.openSpot(62, 30);
+      const o0 = h.openSpot(...ATLAS.frame('signpost').p(62, 30));
       for (const K of KINDS) { radii[K.kind] = board(K, o0.x, o0.y) ? player.r : null; onFoot(); giveBack(); drain(); }
       const real = Object.values(radii).every(r => typeof r === 'number' && r > 0);
       for (const k in radii) for (const r of rows) if (!(2 * radii[k] < r.widthPx)) fits = false;
@@ -495,7 +495,7 @@
     { let pen = null;
       for (let y = 1; y < MAP_H - 1 && !pen; y++) for (let x = 1; x < MAP_W - 1 && !pen; x++) if (tileAt(x, y) === T.GATE && MOUNTGATES.ride.has(tileAt(x, y)) && !RIDE_THROUGH.has(tileAt(x - 1, y)) && !RIDE_THROUGH.has(tileAt(x + 1, y)) && !RIDE_THROUGH.has(tileAt(x, y - 1)) && !RIDE_THROUGH.has(tileAt(x, y + 1))) pen = [x, y];
       const log = { pen }; let ok = !!pen && gates.length === 2;
-      const o = h.openSpot(60, 30);
+      const o = h.openSpot(ATLAS.world.tx(60), ATLAS.world.ty(30));
       for (const K of [KINDS[2], KINDS[0], KINDS[3]]) {
         const up = board(K, o.x, o.y), w = playerWho();
         const penBlocked = !!pen && pathBlocked(pen[0], pen[1], w), townOpen = gates.every(g => !pathBlocked(g.x, g.mid, w));
@@ -506,7 +506,7 @@
       check(P + 'tap-to-ride knows a gate\'s width: the Barrelbeast is not routed through a one-tile pen gate, the walker and the mare are, and every mount is routed through the town gates', ok, log); }
 
     // 12. on the mare, the hint for pressing USE names her own button: GET DOWN on a touch screen, G on a keyboard
-    { const o = h.openSpot(62, 30), log = {}; let ok = true;
+    { const o = h.openSpot(...ATLAS.frame('signpost').p(62, 30)), log = {}; let ok = true;
       for (const touch of [true, false]) {
         window.__forceTouch = touch;
         const up = board(KINDS[3], o.x, o.y); notice = null;

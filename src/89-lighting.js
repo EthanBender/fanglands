@@ -438,8 +438,8 @@
         INSTANCES.leave();
       }
       // the core's own starting cave is still the core's: nothing of ours is installed while you stand in it
-      F.tp(10, 7); const swal0 = L.stats().coreScrimSwallowed; render();
-      const cave = { isCave: isCaveTile(10, 7), scene: L.activeScene(), suppressing: L.suppressing(), swallowed: L.stats().coreScrimSwallowed - swal0 };
+      const CAVE_IN = ATLAS.frame('cave').p(10, 7); F.tp(...CAVE_IN); const swal0 = L.stats().coreScrimSwallowed; render();
+      const cave = { isCave: isCaveTile(...CAVE_IN), scene: L.activeScene(), suppressing: L.suppressing(), swallowed: L.stats().coreScrimSwallowed - swal0 };
       check(P + 'every dark place still darkens — Deepholm, the Spider Den and the coal road each under exactly one scrim — and Tinkerton’s Lab, the Afterlands and the core’s starting cave are untouched',
         ours.every(id => dark[id].scene && dark[id].ambient >= 0.6 && dark[id].ambient <= 0.9 && dark[id].tileLights >= 1 && dark[id].dropped === 1)
         && Object.values(notOurs).every(v => v.scene === null && v.dropped === 0 && !v.suppressing)

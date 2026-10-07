@@ -36,8 +36,10 @@
   // the Ashfields anchors: deep south-east of dragon country, clear of Dunstan's farm (y 96-107), the
   // track in and the lair approach (y 103-107), and clear of The Fang's lair (x 2-34). The real spots are
   // searched out from these at world-gen so nothing wakes in lava, obsidian or a dead tree.
-  const ASH_ANCHORS = [[88, 122], [70, 126], [46, 122]];
-  const MIN_Y = 116, MIN_X = 44, SPOT_APART = 8;
+  // The anchors and the two bounds are open Ashfields: the stretched world (the spread spec, section 2).
+  const W = ATLAS.world;
+  const ASH_ANCHORS = [[W.tx(88), W.ty(122)], [W.tx(70), W.ty(126)], [W.tx(46), W.ty(122)]];
+  const MIN_Y = W.ty(116), MIN_X = W.tx(44), SPOT_APART = 8;
   // Inside the Afterlands (60 x 40). Both sit in the empty southern flats, well clear of the two routes the
   // instance is built around — the crypt steps (30,3) down to the graveyard (13,27), and the crypt steps
   // across to Count Ashvane (46,18). A wight sees eight tiles and breaks its leash fourteen from home, so
@@ -361,7 +363,7 @@
 
     // 3. you can walk to one: from the track down into the Ashfields, no teleport
     { const target = ws.map(homeT).sort((a, b) => a.x - b.x || a.y - b.y)[0];
-      F.tp(60, 100); const r = F.walkTo(target.x, target.y, 8000);
+      F.tp(...ATLAS.frame('warden').p(60, 100)); const r = F.walkTo(target.x, target.y, 8000);
       const at = { x: Math.floor(player.x / TILE), y: Math.floor(player.y / TILE) };
       check(P + 'a cinderwight is reachable on foot from the track into the Ashfields (60,100)',
         typeof r === 'number' && Math.abs(at.x - target.x) <= 1 && Math.abs(at.y - target.y) <= 1,
@@ -382,7 +384,7 @@
         }
         return h.openSpot(cx, cy);
       };
-      const o = findLane(66, 52), m = ws[0];
+      const o = findLane(W.tx(66), W.ty(52)), m = ws[0];
       // a hired hero swings at whatever stands beside the knight, ember included, so park them well away
       // for this block (they are put back exactly as they were at the end of it)
       const C = (window.FANGLANDS && FANGLANDS.companion && FANGLANDS.companion.comp) ? FANGLANDS.companion.comp() : null;
@@ -517,7 +519,7 @@
       const listed = inst ? inst.spawns.filter(s => s[0] === WIGHT) : [];
       let entered = false, inside = 0, walked = null, left = false, region = null, nearRoute = -1, fromCount = -1, routeLens = null;
       if (inst && !player.mech && !window.__instance) {
-        entered = INSTANCES.enter('afterlands', [14, 70]);
+        entered = INSTANCES.enter('afterlands', ATLAS.port('graveyard.crypt_step'));
         if (entered) {
           region = player.region;
           const there = monsters.filter(m => m.type === WIGHT && !m.dead); inside = there.length;

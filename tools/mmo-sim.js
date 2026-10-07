@@ -864,7 +864,7 @@ async function main() {
 
   // ---- 7. roles ----
   calm();
-  { const meet = openSpot(B, 60, 30, 3); A.FANGLANDS.tp(meet.x, meet.y); B.FANGLANDS.tp(meet.x + 2, meet.y); }
+  { const meet = openSpot(B, B.ATLAS.world.tx(60), B.ATLAS.world.ty(30), 3); A.FANGLANDS.tp(meet.x, meet.y); B.FANGLANDS.tp(meet.x + 2, meet.y); }
   A.NET.connect(); wire.flush(); tick(16);
   {
     const roster = B.PLAYERS.online.find(o => o.n === 'Ann'), remote = B.PLAYERS.remote.Ann, mine = A.PLAYERS.online.find(o => o.n === 'Ben');
@@ -932,7 +932,7 @@ async function main() {
   // ---- 10. spawn: Ann keeps the map; Ben sees the goblins, fights one and gets the kill ----
   {
     calm(); tick(20);
-    const spot = openSpot(A, 60, 30, 3);
+    const spot = openSpot(A, A.ATLAS.world.tx(60), A.ATLAS.world.ty(30), 3);   // open ground in the Goblin Fields (the stretched world)
     A.FANGLANDS.tp(spot.x, spot.y); B.FANGLANDS.tp(spot.x + 2, spot.y); A.FANGLANDS.face(spot.x + 2, spot.y); tick(16);
     const keeper = A.COOP.isKeeper() && B.COOP.keeper() === 'Ann';
     const kA0 = A.FANGLANDS.player.kills, kB0 = B.FANGLANDS.player.kills;
@@ -977,7 +977,10 @@ async function main() {
     for (const g of both) g.FANGLANDS.closePanel();
     // open country with room for 50 crackers in 10 tiles (the admin's client picks them; the world checks them)
     let spot = null;
-    for (const [cx, cy] of [[60, 30], [40, 24], [80, 40], [100, 20], [30, 60], [120, 60]]) {
+    // (the Goblin Fields' open ground is the stretched world; 80,40 and 100,20 lie in Thistledown's old box (its frame); 120,60
+    // is the river's north bank west of the south pond, between TRACKS.river's world points 118,60 and 124,62: the world's)
+    const W = A.ATLAS.world, TD = A.ATLAS.frame('thistledown');
+    for (const [cx, cy] of [[W.tx(60), W.ty(30)], [W.tx(40), W.ty(24)], TD.p(80, 40), TD.p(100, 20), [W.tx(30), W.ty(60)], [W.tx(120), W.ty(60)]]) {
       const s = openSpot(A, cx, cy, 5);
       if (!s) continue;
       A.FANGLANDS.tp(s.x, s.y);
@@ -1142,7 +1145,7 @@ async function main() {
   const tradeRows0 = () => room.store.tradeLog(1000).length;
   {
     calm(); tick(60);
-    const meet = openSpot(A, 70, 40, 3); A.FANGLANDS.tp(meet.x, meet.y); B.FANGLANDS.tp(meet.x + 2, meet.y); tick(20);
+    const meet = openSpot(A, ...A.ATLAS.frame('thistledown').p(70, 40), 3); A.FANGLANDS.tp(meet.x, meet.y); B.FANGLANDS.tp(meet.x + 2, meet.y); tick(20);   // west of the capital's walls (Thistledown's old box)
     setPack(A, [['bread', 5], ['iron_dagger', 1]]); setPack(B, [['coins', 100]]);
     const a0 = mark(A), b0 = mark(B), rows0 = tradeRows0();
     const menu = tapKnight(A, 'Ben');
@@ -1237,10 +1240,12 @@ async function main() {
     const fangOf = g => ev(g, "(() => { const m = monsters.find(o => o.type === 'the_fang'); return m ? { dead: m.dead, remote: !!m.remote, hp: m.hp } : null; })()");
     ev(A, "quest.stage = 16; quest.dragons = Object.assign(quest.dragons || {}, { salve: true }); quest.fang = { gateOpen: true, warned: true, slain: true, seen: true, looted: [], chest: false, summoned: true, echoUp: false, restUntil: 0, echoes: 0 }; drops = [];");
     ev(B, "quest.stage = 14; quest.dragons = Object.assign(quest.dragons || {}, { salve: true }); quest.fang = { gateOpen: true, warned: true, slain: false, seen: true, looted: [], chest: false, summoned: false, echoUp: false, restUntil: 0, echoes: 0 }; drops = []; if (!countItem('dragon_horn')) addItem('dragon_horn', 1);");
-    for (const g of both) ev(g, "for (let x = 17; x <= 19; x++) if (tileAt(x, 108) !== T.CAVE) changeTile(x, 108, T.CAVE)");
-    A.FANGLANDS.tp(20, 116); B.FANGLANDS.tp(18, 116); tick(30);
+    // the lair gate (fang_lair.gate, x 17..19 on row 108) opened; Ann and Ben stand by the summoning circle (fang_lair.circle), The Fang's frame
+    for (const g of both) ev(g, "{ const FL = ATLAS.frame('fang_lair'); for (let x = FL.x(17); x <= FL.x(19); x++) if (tileAt(x, FL.y(108)) !== T.CAVE) changeTile(x, FL.y(108), T.CAVE); }");
+    const FL = A.ATLAS.frame('fang_lair'), CIRCLE = A.ATLAS.port('fang_lair.circle');
+    A.FANGLANDS.tp(...FL.p(20, 116)); B.FANGLANDS.tp(...FL.p(18, 116)); tick(30);
     const calls0 = []; const offCall = A.NET.on('boss_call', m => calls0.push(m));
-    B.FANGLANDS.face(18, 117); B.FANGLANDS.press('KeyE'); tick(30);
+    B.FANGLANDS.face(...CIRCLE); B.FANGLANDS.press('KeyE'); tick(30);
     A.NET.off('boss_call', offCall);
     const up = fangOf(A), pup = fangOf(B);
     const bothSee = !!up && !up.dead && !up.remote && !!pup && !pup.dead && pup.remote;
@@ -1262,8 +1267,8 @@ async function main() {
   {
     calm(); const kept = keepOver();
     ev(A, "quest.fang.restUntil = 0; quest.fang.echoUp = false; if (!countItem('dragon_horn')) addItem('dragon_horn', 1);");
-    A.FANGLANDS.tp(18, 116); B.FANGLANDS.tp(21, 118); tick(20);
-    A.FANGLANDS.face(18, 117); A.FANGLANDS.press('KeyE'); tick(30);
+    { const FL = A.ATLAS.frame('fang_lair'); A.FANGLANDS.tp(...FL.p(18, 116)); B.FANGLANDS.tp(...FL.p(21, 118)); } tick(20);
+    A.FANGLANDS.face(...A.ATLAS.port('fang_lair.circle')); A.FANGLANDS.press('KeyE'); tick(30);
     const echoA = ev(A, "(() => { const m = monsters.find(o => o.type === 'the_fang'); return !!m && !m.dead && m.awake === true && quest.fang.echoUp === true; })()");
     const seenB = ev(B, "(() => { const m = monsters.find(o => o.type === 'the_fang'); return !!m && !m.dead && !!m.remote; })()");
     A.NET.disconnect(); wire.flush(); tick(60);
@@ -1398,9 +1403,10 @@ async function main() {
     ev(A, "Object.assign(quest.fang, { slain: true, echoUp: false, restUntil: player.dayTime + 590 }); quest.stage = 16; drops = []; COOP.state.restAt = {}; COOP.state.calls = {};");
     ev(B, "Object.assign(quest.fang, { slain: true, summoned: true, echoUp: false, restUntil: 0 }); quest.stage = 16; drops = []; if (!countItem('dragon_horn')) addItem('dragon_horn', 1);");
     for (const g of both) ev(g, "{ const m = monsters.find(o => o.type === 'the_fang' && !o.remote); if (m) { m.dead = true; m.awake = false; m.respawnT = Infinity; } }");
-    A.FANGLANDS.tp(20, 116); B.FANGLANDS.tp(18, 116); tick(30);
+    const FL = A.ATLAS.frame('fang_lair'), CIRCLE = A.ATLAS.port('fang_lair.circle');   // by the summoning circle, The Fang's frame
+    A.FANGLANDS.tp(...FL.p(20, 116)); B.FANGLANDS.tp(...FL.p(18, 116)); tick(30);
     let risen = 0; const watch = () => { const up = ev(A, "monsters.some(o => o.type === 'the_fang' && !o.dead)"); if (up && !watch.up) risen++; watch.up = up; };
-    B.FANGLANDS.face(18, 117); ev(B, "dialog.queue.length = 0; dialog.cur = null;"); B.FANGLANDS.press('KeyE'); tick(30, watch);
+    B.FANGLANDS.face(...CIRCLE); ev(B, "dialog.queue.length = 0; dialog.cur = null;"); B.FANGLANDS.press('KeyE'); tick(30, watch);
     const upA = ev(A, "monsters.some(o => o.type === 'the_fang' && !o.dead)");
     ev(A, "(() => { const m = monsters.find(o => o.type === 'the_fang' && !o.dead); if (m) m.hp = 60; })()"); tick(5, watch);
     for (let i = 0; i < 3; i++) { hitBoss(A, 'the_fang', 25); tick(6, watch); }
@@ -1409,7 +1415,7 @@ async function main() {
     const ben = ev(B, "({ echoUp: quest.fang.echoUp, rest: Math.round(quest.fang.restUntil - player.dayTime), coins: drops.filter(d => d.id === 'coins').length })");
     tick(60 * 45, watch);
     // and Ben, his own rest over, sounds it again while the dragon still rests on Ann's map: told how long, nothing rises
-    ev(B, "quest.fang.restUntil = 0; dialog.queue.length = 0; dialog.cur = null;"); B.FANGLANDS.face(18, 117); B.FANGLANDS.press('KeyE'); tick(60, watch);
+    ev(B, "quest.fang.restUntil = 0; dialog.queue.length = 0; dialog.cur = null;"); B.FANGLANDS.face(...CIRCLE); B.FANGLANDS.press('KeyE'); tick(60, watch);
     const told = ev(B, "[dialog.cur, ...dialog.queue].some(l => l && /still cooling.*Ready in \\d+:\\d\\d\\./.test(l.text)) && !quest.fang.echoUp");
     line('X1. Ann (keeper) still rests from her last Echo; Ben (rested) sounds the horn once and never swings; Ann kills it alone: one Echo rises in 46 s, Ann is paid nothing, Ben\'s Echo call is spent and his circle rests 600 s; his horn while the dragon still rests on Ann\'s map is told Ready in m:ss',
       kept && upA && risen === 1 && ann.coins === 0 && ann.scales === 0 && ann.rest >= 580 && !ben.echoUp && ben.rest >= 590 && ben.coins === 0 && told,
@@ -1422,7 +1428,7 @@ async function main() {
     ev(A, "quest.hollowford = Object.assign(quest.hollowford || {}, { beastKilled: false }); quest.stage = Math.max(quest.stage, 11);");
     ev(B, "quest.hollowford = Object.assign(quest.hollowford || {}, { beastKilled: true, shedRestUntil: 0 }); quest.stage = Math.max(quest.stage, 11); drops = [];");
     ev(A, "(() => { const m = monsters.find(o => o.type === 'barrelbeast' && !o.shed); if (m) { m.dead = false; m.hp = m.maxHp; m.x = m.home.x; m.y = m.home.y; m.respawnT = 0; } })()");
-    A.FANGLANDS.tp(138, 84); B.FANGLANDS.tp(142, 84); tick(40);
+    { const HF = A.ATLAS.frame('hollowford'); A.FANGLANDS.tp(...HF.p(138, 84)); B.FANGLANDS.tp(...HF.p(142, 84)); } tick(40);   // either side of the Barrelbeast's home (hollowford.barrelbeast), Hollowford's frame
     const seenB = ev(B, "monsters.some(o => o.type === 'barrelbeast' && o.remote && !o.dead)");
     A.NET.disconnect(); wire.flush(); tick(60);
     const adopted = ev(B, "(() => { const m = monsters.find(o => o.type === 'barrelbeast' && !o.shed); return { keeper: COOP.isKeeper(), alive: !!m && !m.dead, awake: !!m && m.awake === true }; })()");

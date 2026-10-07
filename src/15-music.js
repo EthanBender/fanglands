@@ -224,17 +224,17 @@ const MUSIC = (() => {
       override = fake; audioMuted = false; setEnabled(true);
       const ticks = (n) => { for (let i = 0; i < n; i++) { fake.currentTime += TICK_MS / 1000; tick(); } };
       h.peace(true);
-      F.tp(90, 30); F.sim(2, []);
+      F.tp(...ATLAS.frame('thistledown').p(90, 30)); F.sim(2, []);   // inside Thistledown (its frame: the spread spec, section 9.1)
       check('music: entering Thistledown selects the village loop', player.region === 'Thistledown' && want === 'village', { region: player.region, want });
       ticks(1); const first = cur && cur.name, n0 = scheduled;
       ticks(10);
       check('music: the scheduler schedules notes ahead of time', first === 'village' && scheduled > n0 && counts.osc > 0 && counts.started > 0 && counts.stopped === counts.started, { first, scheduled: scheduled - n0, osc: counts.osc, started: counts.started, stopped: counts.stopped });
       const before = cur;
-      F.tp(52, 8); F.sim(2, []); ticks(1);
+      F.tp(...ATLAS.frame('quarry').p(52, 8)); F.sim(2, []); ticks(1);   // the Grey Quarry (its frame)
       check('music: changing region (Grey Quarry) crossfades — old layer fades to 0, new layer fades in to 1', want === 'quarry' && cur !== before && cur.name === 'quarry' && before.dying && before.gain.gain.target < 0.01 && cur.gain.gain.target === 1 && layers.includes(before), { want, old: before.name, oldTarget: before.gain.gain.target, newTarget: cur.gain.gain.target });
       ticks(12);
       check('music: the faded layer is dropped after the crossfade', !layers.includes(before) && layers.length === 1, { layers: layers.map(l => l.name) });
-      const same = cur; F.tp(48, 6); F.sim(2, []); ticks(2);
+      const same = cur; F.tp(...ATLAS.frame('quarry').p(48, 6)); F.sim(2, []); ticks(2);
       check('music: staying in the same region never restarts the loop', cur === same && layers.length === 1, { name: cur && cur.name });
       audioMuted = true; const o1 = counts.osc, s1 = counts.source; ticks(8);
       check('music: muted → no new nodes are created', counts.osc === o1 && counts.source === s1 && master.gain.target < 0.01, { osc: counts.osc - o1, masterTarget: master.gain.target });

@@ -125,8 +125,11 @@
   const LAIR = LAIRF.rect({ x0: 2, y0: 108, x1: 34, y1: 138 });                  // 28-thefang's box: its walls are never touched
   const APPROACH = LAIRF.rect({ x0: 1, y0: 103, x1: 40, y1: 107 });              // 27-dragons keeps it open: nothing solid goes here
   // the Ashfields' box (world rows; its east edge is the jungle's wall, on its pin): nothing green inside it (56-ashfields), so no dry grass either
-  const AF_BOX = { x0: AW.tx(0), y0: AW.ty(96), y1: AW.ty(139) };
-  const inAF = (x, y) => y >= AF_BOX.y0 && y <= AF_BOX.y1 && x >= AF_BOX.x0 && x < wallX(y);
+  // (its top is the row under the rim, column by column: the rim is on its pin, so where the warden's gate moves the box's top
+  // moves with it; y0 is the highest of those rows, for the loops)
+  const afTop = x => rimRow(x) + 1;
+  const AF_BOX = { x0: AW.tx(0), y1: AW.ty(139) }; AF_BOX.y0 = Math.min(AW.ty(96), ...Array.from({ length: Math.max(1, rimX1() - AF_BOX.x0 + 1) }, (_, k) => afTop(AF_BOX.x0 + k)));
+  const inAF = (x, y) => y >= afTop(x) && y <= AF_BOX.y1 && x >= AF_BOX.x0 && x < wallX(y);
   const BAND_OUT = 9, BAND_IN = 5;                                   // how far the fade reaches out of the outline, and into it
   const inRect = (r, x, y) => x >= r.x0 && x <= r.x1 && y >= r.y0 && y <= r.y1;
   const AE = window.ASHEDGE = { stats: {}, band: null, big: null, box: null, DRY, SINGED, CINDERS, CHAR, CRAG, BAND_OUT, BAND_IN };
@@ -879,7 +882,7 @@
       }
       check(P + 'grey steps into green through dry grass, singed grass and cinders (each laid 150+ times; under 80 places where ash still touches green, from 184)', dry >= 150 && singed >= 150 && cinders >= 150 && touch < 80, { dry, singed, cinders, touch, out: S.out, inside: S.inside }); }
     // 3. nothing green inside the Ashfields' box (not even dry grass: the fringe inside is singed straw), and the edge trees are charred
-    { let bad = 0; for (let y = AF_BOX.y0; y <= AF_BOX.y1; y++) for (let x = AF_BOX.x0; x < wallX(y); x++) { const t = tileAt(x, y); if (t === DRY) bad++; }
+    { let bad = 0; for (let y = AF_BOX.y0; y <= AF_BOX.y1; y++) for (let x = AF_BOX.x0; x < wallX(y); x++) { if (y < afTop(x)) continue; const t = tileAt(x, y); if (t === DRY) bad++; }
       let charred = 0; for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) if (tileAt(x, y) === CHAR) charred++;
       check(P + 'no dry green grass inside the Ashfields box; charred trees stand at the edge (40+)', bad === 0 && charred >= 40, { bad, charred, standing: S.standing, refused: S.refused }); }
     // 4. the lair is not a clean box: crags lean on its east and south walls at more than one depth, and its walls, gate and approach are as they were
@@ -919,7 +922,7 @@
     // 8. nothing green below the rim, and no living tree inside the Ashfields
     { const GREENISH = new Set([T.GRASS, T.FLOWERS, T.MUSHROOM, FERN, DRY].filter(v => v >= 0)), LIVE = new Set([T.TREE, T.OAK, JUNGLE].filter(v => v >= 0));
       const green = [], trees = [];
-      for (let y = AF_BOX.y0; y <= AF_BOX.y1; y++) for (let x = AW.tx(1); x < wallX(y); x++) { if (buildingAt(x, y)) continue; const t = tileAt(x, y); if (GREENISH.has(t)) green.push(x + ',' + y); }
+      for (let y = AF_BOX.y0; y <= AF_BOX.y1; y++) for (let x = AW.tx(1); x < wallX(y); x++) { if (buildingAt(x, y) || y < afTop(x)) continue; const t = tileAt(x, y); if (GREENISH.has(t)) green.push(x + ',' + y); }
       for (let y = AW.ty(96); y < MAP_H; y++) for (let x = AW.tx(1); x < wallX(y); x++) { const r = regionAt(x, y); if (r && (r.name === 'The Ashfields' || r.name === "The Fang's Lair") && LIVE.has(tileAt(x, y))) trees.push(x + ',' + y); }
       check(P + 'no grass, fern or dry grass below the rim anywhere in the Ashfields box, and no living tree inside its outline', green.length === 0 && trees.length === 0,
         { green: green.slice(0, 10), greenCount: green.length, livingTrees: trees.slice(0, 10), livingTreeCount: trees.length, burntSeam: S.seam, charredInside: S.deepTrees }); }
@@ -933,7 +936,7 @@
         if (inB(cb, x, y) || inB(wb, x, y) || !LIVE.has(tileAt(x, y))) continue;
         let n = 0; for (const [dx, dy] of N8) if (GREY.has(tileAt(x + dx, y + dy))) n++;
         if (n) near.push(x + ',' + y); }
-      for (let y = AF_BOX.y0; y <= AF_BOX.y1; y++) if (LIVE.has(tileAt(0, y)) && BURNT.has(tileAt(1, y))) border.push(y);
+      for (let y = AF_BOX.y0; y <= AF_BOX.y1; y++) if (y >= afTop(0) && LIVE.has(tileAt(0, y)) && BURNT.has(tileAt(1, y))) border.push(y);
       check(P + 'no living tree stands against ash or scorch round the burnt country, and the tree border beside the lair and the ash is burnt too', near.length === 0 && border.length === 0 && S.borderCharred >= 30,
         { treesAgainstGrey: near.slice(0, 10), count: near.length, greenBorderRows: border.slice(0, 10), borderCharred: S.borderCharred, burntNearGrey: S.nearGrey, rockGivenBack: S.unwalled, givenBackAt: S.unwalledAt }); }
   });

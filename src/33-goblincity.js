@@ -26,29 +26,35 @@
   const INST_ID = 'tinker_lab';
 
   // ---------- geometry ----------
-  const FS = { x0: 202, y0: 4, x1: 258, y1: 96 };     // The Far Shore (the whole territory)
-  const GM = { x0: 208, y0: 16, x1: 257, y1: 50 };    // Grubmarket: the market, the scrap yard, the lab
-  const CG = { x0: 212, y0: 52, x1: 238, y1: 76 };    // Castle Gnash
-  const STRAIT = { x0: 200, y0: 1, x1: 203, y1: 96 }; // water between the Grey Sea and the shore
-  const SHORE = { x0: 204, x1: 206 };                 // sand, rocks
-  const LANDING = { x: 206, y: 30 };                  // where Harl's boat puts you down (26-boats LOC.farshore.land)
-  const RING = { x0: 214, y0: 54, x1: 236, y1: 74 };  // the castle wall
-  const PORTCULLIS = [[224, 54], [225, 54]];
-  const YARD = { x0: 241, y0: 20, x1: 253, y1: 32, gate: [241, 26] };   // the scrap yard (fence)
-  const LAB = { x0: 240, y0: 36, x1: 256, y1: 50, gate: [240, 44] };    // Tinkerton's compound (stone wall) on the overworld
-  const LAB_DOOR = { x: 247, y: 41 }, LAB_STEP = { x: 247, y: 42 };     // the hut door (a DUNGEON_DOOR when the instance system is present) and the step outside it
-  const BEAST_T = { x: 253, y: 47 };                  // where a re-supplied Barrelbeast is handed over (window.BEAST.giveTile)
-  const THRONE_T = { x: 224, y: 67 }, CHEST_T = { x: 228, y: 68 };
-  const TINK_GATE = { x: 211, y: 32 };   // the corner of Grubmarket's gate, OUTSIDE the wall (66-storm builds the wall and the leaves)
+  // Every overworld position reads the Atlas (the spread spec, section 9.1): the strait, the shore, Grubmarket, the scrap
+  // yard, Tinkerton's compound and Castle Gnash are one rigid frame, the Far Shore's (the landing, the lab door and its
+  // step are its ports). The lab's interior is the instance's own map and is never wrapped. The self-test's stop at the
+  // mainland dock is the dock's frame.
+  const FSF = ATLAS.frame('far_shore');
+  const XY = ([x, y]) => ({ x, y }), GC_DK = ATLAS.frame('dock');
+  const FS = FSF.rect({ x0: 202, y0: 4, x1: 258, y1: 96 });     // The Far Shore (the whole territory)
+  const GM = FSF.rect({ x0: 208, y0: 16, x1: 257, y1: 50 });    // Grubmarket: the market, the scrap yard, the lab
+  const CG = FSF.rect({ x0: 212, y0: 52, x1: 238, y1: 76 });    // Castle Gnash
+  const STRAIT = FSF.rect({ x0: 200, y0: 1, x1: 203, y1: 96 }); // water between the Grey Sea and the shore
+  const SHORE = { x0: FSF.x(204), x1: FSF.x(206) };                 // sand, rocks
+  const LANDING = XY(ATLAS.port('far_shore.landing'));               // where Harl's boat puts you down (26-boats LOC.farshore.land)
+  const RING = FSF.rect({ x0: 214, y0: 54, x1: 236, y1: 74 });  // the castle wall
+  const PORTCULLIS = FSF.pts([[224, 54], [225, 54]]);
+  const YARD = Object.assign(FSF.rect({ x0: 241, y0: 20, x1: 253, y1: 32 }), { gate: FSF.p(241, 26) });   // the scrap yard (fence)
+  const LAB = Object.assign(FSF.rect({ x0: 240, y0: 36, x1: 256, y1: 50 }), { gate: FSF.p(240, 44) });    // Tinkerton's compound (stone wall) on the overworld
+  const LAB_DOOR = XY(ATLAS.port('far_shore.lab_door')), LAB_STEP = XY(ATLAS.port('far_shore.lab_step'));     // the hut door (a DUNGEON_DOOR when the instance system is present) and the step outside it
+  const BEAST_T = FSF.pt({ x: 253, y: 47 });                 // where a re-supplied Barrelbeast is handed over (window.BEAST.giveTile)
+  const THRONE_T = FSF.pt({ x: 224, y: 67 }), CHEST_T = FSF.pt({ x: 228, y: 68 });
+  const TINK_GATE = FSF.pt({ x: 211, y: 32 });   // the corner of Grubmarket's gate, OUTSIDE the wall (66-storm builds the wall and the leaves)
   // the lab interior: instance coordinates (24×18) — or, without instances, the overworld hut and yard
   const LAB_W = 24, LAB_H = 18, LAB_ENTRY = [12, 16], LAB_EXIT = [12, 17];
-  const TINK_LAB = HAS_INST ? { x: 4, y: 3 } : { x: 247, y: 39 };
-  const GN_HOME = HAS_INST ? { x: 12, y: 9 } : { x: 249, y: 46 };
-  const LEVER_T = HAS_INST ? { x: 21, y: 15 } : { x: 241, y: 41 };
-  const KEEP_GUARDS = [[221, 66], [227, 66]], GATE_GUARDS = [[222, 56], [227, 56]];
-  const YARD_WALKERS = [[244, 23], [249, 29]], YARD_DOZER = [[246, 27]];
-  const STALLS = [[219, 28], [220, 28], [229, 28], [230, 28]];
-  const FIRE_T = { x: 220, y: 34 };
+  const TINK_LAB = HAS_INST ? { x: 4, y: 3 } : FSF.pt({ x: 247, y: 39 });
+  const GN_HOME = HAS_INST ? { x: 12, y: 9 } : FSF.pt({ x: 249, y: 46 });
+  const LEVER_T = HAS_INST ? { x: 21, y: 15 } : FSF.pt({ x: 241, y: 41 });
+  const KEEP_GUARDS = FSF.pts([[221, 66], [227, 66]]), GATE_GUARDS = FSF.pts([[222, 56], [227, 56]]);
+  const YARD_WALKERS = FSF.pts([[244, 23], [249, 29]]), YARD_DOZER = FSF.pts([[246, 27]]);
+  const STALLS = FSF.pts([[219, 28], [220, 28], [229, 28], [230, 28]]);
+  const FIRE_T = FSF.pt({ x: 220, y: 34 });
   const inRect = (r, tx, ty) => tx >= r.x0 && tx <= r.x1 && ty >= r.y0 && ty <= r.y1;
   const inLab = () => HAS_INST ? window.__instance === INST_ID : true;   // where the Gnasher lives: inside the instance, or (fallback) the overworld yard
   const hidden = () => !!window.__instance;                              // the knight is inside some dungeon: the overworld folk are out of reach
@@ -62,19 +68,19 @@
       { name: 'The Far Shore', sub: 'Goblin country, over the water', x0: FS.x0, y0: FS.y0, x1: FS.x1, y1: FS.y1 }); }
 
   // ---------- buildings (pushed at load: 02-world carves them before HOOKS.world runs) ----------
-  const KEEP = { id: 'gc_keep', x: 219, y: 62, w: 12, h: 9, name: "King Gnash's Keep", roof: '#3a3f4a', sign: 'GNASH', doorTop: 5, stone: true,
+  const KEEP = FSF.pt({ id: 'gc_keep', x: 219, y: 62, w: 12, h: 9, name: "King Gnash's Keep", roof: '#3a3f4a', sign: 'GNASH', doorTop: 5, stone: true,
     f: [[GC_THRONE, 5, 5], [T.RUG, 5, 1], [T.RUG, 5, 2], [T.RUG, 5, 3], [T.RUG, 5, 4], [GC_GOLD, 1, 1], [GC_GOLD, 2, 1], [GC_GOLD, 9, 1], [GC_GOLD, 10, 1], [GC_GOLD, 1, 7], [GC_GOLD, 10, 7], [GC_GOLD, 9, 7],
-      [GC_CHEST, 9, 6], [T.TABLE, 1, 4], [T.TABLE, 10, 4], [T.SHELF, 2, 7], [T.SHELF, 3, 7]] };
-  const LAB_HUT = { id: 'gc_lab', x: 243, y: 37, w: 9, h: 5, name: "Tinkerton's Lab", roof: '#5a4a3a', sign: 'TINKER', door: 4, scrap: true,
-    f: [[T.WORKBENCH, 1, 1], [T.WORKSHOP, 3, 1], [T.ALCHEMY, 5, 1], [T.SHELF, 7, 1], [T.TABLE, 1, 3], [T.SHELF, 7, 3]] };
+      [GC_CHEST, 9, 6], [T.TABLE, 1, 4], [T.TABLE, 10, 4], [T.SHELF, 2, 7], [T.SHELF, 3, 7]] });
+  const LAB_HUT = FSF.pt({ id: 'gc_lab', x: 243, y: 37, w: 9, h: 5, name: "Tinkerton's Lab", roof: '#5a4a3a', sign: 'TINKER', door: 4, scrap: true,
+    f: [[T.WORKBENCH, 1, 1], [T.WORKSHOP, 3, 1], [T.ALCHEMY, 5, 1], [T.SHELF, 7, 1], [T.TABLE, 1, 3], [T.SHELF, 7, 3]] });
   const HUTS = [
-    { id: 'gc_cook', x: 214, y: 22, w: 5, h: 4, name: "Grubb's Cookhouse", roof: '#6a3a2a', sign: 'GRUB', door: 2, scrap: true, f: [[T.OVEN, 1, 1], [T.TABLE, 3, 1]] },
-    { id: 'gc_h2', x: 220, y: 22, w: 4, h: 4, name: 'Hut', roof: '#3a4a3a', door: 1, scrap: true, f: [[T.TABLE, 1, 1]] },
-    { id: 'gc_nix', x: 228, y: 22, w: 5, h: 4, name: "Nix's Scrap", roof: '#4a4a52', sign: 'SCRAP', door: 2, scrap: true, f: [[T.WORKBENCH, 1, 1], [T.SHELF, 3, 1]] },
-    { id: 'gc_h3', x: 235, y: 22, w: 4, h: 4, name: 'Hut', roof: '#6a4a3a', door: 1, scrap: true, f: [[T.BED, 1, 1]] },
-    { id: 'gc_snaggle', x: 214, y: 35, w: 5, h: 4, name: "Old Snaggle's", roof: '#4a5a3a', doorTop: 2, scrap: true, f: [[T.BED, 1, 2], [T.SHELF, 3, 1]] },
-    { id: 'gc_h4', x: 227, y: 36, w: 5, h: 4, name: 'Hut', roof: '#5a5a3a', doorTop: 2, scrap: true, f: [[T.TABLE, 1, 2], [T.SHELF, 3, 2]] },
-    { id: 'gc_h1', x: 232, y: 35, w: 4, h: 4, name: 'Hut', roof: '#5a4a5a', doorTop: 1, scrap: true, f: [[T.BED, 1, 2]] },
+    FSF.pt({ id: 'gc_cook', x: 214, y: 22, w: 5, h: 4, name: "Grubb's Cookhouse", roof: '#6a3a2a', sign: 'GRUB', door: 2, scrap: true, f: [[T.OVEN, 1, 1], [T.TABLE, 3, 1]] }),
+    FSF.pt({ id: 'gc_h2', x: 220, y: 22, w: 4, h: 4, name: 'Hut', roof: '#3a4a3a', door: 1, scrap: true, f: [[T.TABLE, 1, 1]] }),
+    FSF.pt({ id: 'gc_nix', x: 228, y: 22, w: 5, h: 4, name: "Nix's Scrap", roof: '#4a4a52', sign: 'SCRAP', door: 2, scrap: true, f: [[T.WORKBENCH, 1, 1], [T.SHELF, 3, 1]] }),
+    FSF.pt({ id: 'gc_h3', x: 235, y: 22, w: 4, h: 4, name: 'Hut', roof: '#6a4a3a', door: 1, scrap: true, f: [[T.BED, 1, 1]] }),
+    FSF.pt({ id: 'gc_snaggle', x: 214, y: 35, w: 5, h: 4, name: "Old Snaggle's", roof: '#4a5a3a', doorTop: 2, scrap: true, f: [[T.BED, 1, 2], [T.SHELF, 3, 1]] }),
+    FSF.pt({ id: 'gc_h4', x: 227, y: 36, w: 5, h: 4, name: 'Hut', roof: '#5a5a3a', doorTop: 2, scrap: true, f: [[T.TABLE, 1, 2], [T.SHELF, 3, 2]] }),
+    FSF.pt({ id: 'gc_h1', x: 232, y: 35, w: 4, h: 4, name: 'Hut', roof: '#5a4a5a', doorTop: 1, scrap: true, f: [[T.BED, 1, 2]] }),
     KEEP, LAB_HUT,
   ];
   BUILDINGS.push(...HUTS);
@@ -144,21 +150,21 @@
   };
   const FOLK = [
     { id: 'tinkerton', name: 'Tinkerton', role: 'tinker', look: { tunic: '#6a5a8a', apron: true, hat: 'goggles' } },
-    { id: 'grubb', name: 'Grubb the cook', x: 216, y: 23, role: 'grubb', look: { tunic: '#8a3a2a', apron: true, hat: 'chef', fat: true },
-      lines: ['Soup. Goblin soup. Do not ask what is in it.', 'Tinkerton keeps asking for my boiler. My BOILER.', 'Cooked beef. Bring me cooked beef and we will talk.'], after: ['The soup tastes wrong without the boiler. Better, but wrong.', 'Did it explode yet? The boiler. Did it?'] },
-    { id: 'nix', name: 'Nix the scrapper', x: 230, y: 23, role: 'nix', look: { tunic: '#4a4a52', apron: true, hat: 'cap' },
-      lines: ['Scrap. I buy it, I sort it, I sit on it.', 'The yard out east has two walkers and a dozer. Ours. Do not poke them.', 'Tinkerton wants my best gear wheel. Everyone wants my best gear wheel.'], after: ['That gear wheel came off a walker. A good one.', 'More scrap? Always more scrap.'] },
-    { id: 'snaggle', name: 'Old Snaggle', x: 216, y: 37, role: 'snaggle', look: { tunic: '#4a5a3a', hat: 'hood', beard: true },
-      lines: ['I was on the ship that hit Ironclad Isle. I do not talk about it.', 'The king sits on his gold and the gold sits on the floor. Somebody should sit on the king.', 'My pillow is straw. Straw! Spider silk, now, that is a pillow.'], after: ['Silk pillow. Best sleep in forty years.', 'Tell Tinkerton the chute leaks. It always leaked.'] },
-    { id: 'pip', name: 'Pip-squeak', x: 222, y: 33, role: 'pip', look: { tunic: '#c89a4a', hat: 'cap', small: true },
-      lines: ["Are you a KNIGHT? A real one? Do you have a HORSE?", 'I found a shiny thing in the scrap yard. It buzzes.', 'Grubb says the sea is full of lobsters. I have never seen a lobster.'], after: ['My hair is still up. Look. LOOK.', 'When I am big I will build a machine too. A small one. A nice one.'] },
+    FSF.pt({ id: 'grubb', name: 'Grubb the cook', x: 216, y: 23, role: 'grubb', look: { tunic: '#8a3a2a', apron: true, hat: 'chef', fat: true },
+      lines: ['Soup. Goblin soup. Do not ask what is in it.', 'Tinkerton keeps asking for my boiler. My BOILER.', 'Cooked beef. Bring me cooked beef and we will talk.'], after: ['The soup tastes wrong without the boiler. Better, but wrong.', 'Did it explode yet? The boiler. Did it?'] }),
+    FSF.pt({ id: 'nix', name: 'Nix the scrapper', x: 230, y: 23, role: 'nix', look: { tunic: '#4a4a52', apron: true, hat: 'cap' },
+      lines: ['Scrap. I buy it, I sort it, I sit on it.', 'The yard out east has two walkers and a dozer. Ours. Do not poke them.', 'Tinkerton wants my best gear wheel. Everyone wants my best gear wheel.'], after: ['That gear wheel came off a walker. A good one.', 'More scrap? Always more scrap.'] }),
+    FSF.pt({ id: 'snaggle', name: 'Old Snaggle', x: 216, y: 37, role: 'snaggle', look: { tunic: '#4a5a3a', hat: 'hood', beard: true },
+      lines: ['I was on the ship that hit Ironclad Isle. I do not talk about it.', 'The king sits on his gold and the gold sits on the floor. Somebody should sit on the king.', 'My pillow is straw. Straw! Spider silk, now, that is a pillow.'], after: ['Silk pillow. Best sleep in forty years.', 'Tell Tinkerton the chute leaks. It always leaked.'] }),
+    FSF.pt({ id: 'pip', name: 'Pip-squeak', x: 222, y: 33, role: 'pip', look: { tunic: '#c89a4a', hat: 'cap', small: true },
+      lines: ["Are you a KNIGHT? A real one? Do you have a HORSE?", 'I found a shiny thing in the scrap yard. It buzzes.', 'Grubb says the sea is full of lobsters. I have never seen a lobster.'], after: ['My hair is still up. Look. LOOK.', 'When I am big I will build a machine too. A small one. A nice one.'] }),
     { id: 'gnash', name: 'King Gnash', x: THRONE_T.x, y: THRONE_T.y, role: 'gnash', look: { tunic: '#7a2e2e', hat: 'crown', fat: true, cape: true }, sortY: 10 },
-    { id: 'mudge', name: 'Mudge', x: 234, y: 32, role: 'folk', look: { tunic: '#5a6a4a', hat: 'cap' },
-      lines: ['Forty coins Harl charges. FORTY. For a rowing boat.', 'The castle guards are only rude if you go inside without paying.', 'Grubmarket. Best market on the Far Shore. Only market on the Far Shore.'] },
-    { id: 'skritch', name: 'Skritch', x: 219, y: 27, role: 'folk', look: { tunic: '#7a4a6a', apron: true, hat: 'hood' },
-      lines: ['Trinkets, buttons, teeth. No, not for sale. Just looking at them.', 'The Duke over the water pays for scrap, they say. Nix pays better.', 'Tinkerton? Lives out past the scrap yard. Big wall. He built the wall after the last machine.'] },
-    { id: 'ratchet', name: 'Ratchet', x: 230, y: 27, role: 'folk', look: { tunic: '#4a5a7a', hat: 'cap', beard: true },
-      lines: ['I sell rope. Nobody buys rope. I have a lot of rope.', 'King Gnash counted his gold last week. It took a week.', 'The walkers in the yard are ours. The ones on your side of the sea were ours too, once.'] },
+    FSF.pt({ id: 'mudge', name: 'Mudge', x: 234, y: 32, role: 'folk', look: { tunic: '#5a6a4a', hat: 'cap' },
+      lines: ['Forty coins Harl charges. FORTY. For a rowing boat.', 'The castle guards are only rude if you go inside without paying.', 'Grubmarket. Best market on the Far Shore. Only market on the Far Shore.'] }),
+    FSF.pt({ id: 'skritch', name: 'Skritch', x: 219, y: 27, role: 'folk', look: { tunic: '#7a4a6a', apron: true, hat: 'hood' },
+      lines: ['Trinkets, buttons, teeth. No, not for sale. Just looking at them.', 'The Duke over the water pays for scrap, they say. Nix pays better.', 'Tinkerton? Lives out past the scrap yard. Big wall. He built the wall after the last machine.'] }),
+    FSF.pt({ id: 'ratchet', name: 'Ratchet', x: 230, y: 27, role: 'folk', look: { tunic: '#4a5a7a', hat: 'cap', beard: true },
+      lines: ['I sell rope. Nobody buys rope. I have a lot of rope.', 'King Gnash counted his gold last week. It took a week.', 'The walkers in the yard are ours. The ones on your side of the sea were ours too, once.'] }),
   ];
   // where a goblin stands right now, or null when out of reach (Tinkerton moves from the castle gate to his lab; nobody outside is reachable from inside a dungeon)
   const folkTile = n => {
@@ -347,15 +353,15 @@
       if (inRect(GM, x, y) || inRect(CG, x, y) || (Math.abs(y - LANDING.y) <= 3 && x <= GM.x0 + 4)) continue;
       const r = rnd(); if (r < 0.10) set(x, y, rnd() < 0.3 ? T.OAK : T.TREE); else if (r < 0.15) set(x, y, T.ROCK); else if (r < 0.17) set(x, y, T.FLOWERS);
     }
-    if (T.SEAROCK !== undefined) for (const [x, y] of [[201, 10], [202, 50], [200, 70], [201, 88], [202, 22]]) if (api.tileAt(x, y) === T.WATER) api.setTile(x, y, T.SEAROCK);
+    if (T.SEAROCK !== undefined) for (const [x, y] of FSF.pts([[201, 10], [202, 50], [200, 70], [201, 88], [202, 22]])) if (api.tileAt(x, y) === T.WATER) api.setTile(x, y, T.SEAROCK);
     // roads: the landing to the market lane; the lane; the street south to the castle; east to the scrap yard and the lab
     fill(LANDING.x + 1, LANDING.y - 1, GM.x0 + 3, LANDING.y + 1, T.DIRT);
-    fill(GM.x0 + 4, 29, 239, 31, T.COBBLE);
-    fill(224, 18, 225, RING.y0 - 1, T.COBBLE);
-    fill(226, 25, YARD.x0 - 1, 27, T.DIRT);
-    fill(226, 43, LAB.x0 - 1, 45, T.DIRT);
+    fill(GM.x0 + 4, FSF.y(29), FSF.x(239), FSF.y(31), T.COBBLE);
+    fill(...FSF.p(224, 18), FSF.x(225), RING.y0 - 1, T.COBBLE);
+    fill(...FSF.p(226, 25), YARD.x0 - 1, FSF.y(27), T.DIRT);
+    fill(...FSF.p(226, 43), LAB.x0 - 1, FSF.y(45), T.DIRT);
     // the market square: dirt, a fire, stalls; every hut gets a clear doorstep
-    fill(217, 32, 223, 35, T.DIRT); set(FIRE_T.x, FIRE_T.y, T.FIRE);
+    fill(...FSF.box([217, 32, 223, 35]), T.DIRT); set(FIRE_T.x, FIRE_T.y, T.FIRE);
     for (const [x, y] of STALLS) set(x, y, T.STALL);
     for (const b of HUTS) { if (b.door !== undefined) set(b.x + b.door, b.y + b.h, T.DIRT); if (b.doorTop !== undefined) set(b.x + b.doorTop, b.y - 1, T.DIRT); }
     // the scrap yard: a fence, a gate on the market side, dirt and junk, three machines that mind their own business
@@ -365,10 +371,10 @@
     // Castle Gnash: a stone ring with a portcullis facing the town, a cobbled yard, the keep (a building), a fire
     fill(RING.x0, RING.y0, RING.x1, RING.y1, T.COBBLE); ring(RING.x0, RING.y0, RING.x1, RING.y1, T.CWALL);
     for (const [x, y] of PORTCULLIS) set(x, y, T.PORTCULLIS);
-    set(231, 58, T.FIRE); set(216, 58, T.DUMMY); set(216, 60, T.DUMMY);
+    set(...FSF.p(231, 58), T.FIRE); set(...FSF.p(216, 58), T.DUMMY); set(...FSF.p(216, 60), T.DUMMY);
     // Tinkerton's compound: the stone wall he built after the last machine, a gate on the town side, dirt inside; the hut door leads into the lab
     fill(LAB.x0, LAB.y0, LAB.x1, LAB.y1, T.DIRT); ring(LAB.x0, LAB.y0, LAB.x1, LAB.y1, T.CWALL); set(LAB.gate[0], LAB.gate[1], T.GATE);
-    for (const [x, y] of [[254, 38], [255, 39], [242, 49], [254, 49]]) set(x, y, T.RUBBLE);
+    for (const [x, y] of FSF.pts([[254, 38], [255, 39], [242, 49], [254, 49]])) set(x, y, T.RUBBLE);
     if (!HAS_INST && TQ().stage >= 3) set(LEVER_T.x, LEVER_T.y, GC_LEVER);
     // nothing from the mainland spawns here; the guards and the yard machines do
     for (let i = MONSTER_SPAWNS.length - 1; i >= 0; i--) { const s = MONSTER_SPAWNS[i]; if (s.tx >= STRAIT.x0 && inRect({ x0: STRAIT.x0, y0: FS.y0, x1: FS.x1, y1: FS.y1 }, s.tx, s.ty)) MONSTER_SPAWNS.splice(i, 1); }
@@ -675,21 +681,21 @@
     { let walls = 0, cw = 0, water = 0; for (let y = FS.y0; y <= FS.y1; y++) for (let x = FS.x0; x <= FS.x1; x++) { const t = tileAt(x, y); if (t === T.HWALL) walls++; else if (t === T.CWALL) cw++; } for (let y = STRAIT.y0; y <= STRAIT.y1; y++) for (let x = STRAIT.x0; x <= STRAIT.x1; x++) if (tileAt(x, y) === T.WATER) water++;
       const lab = [T.WORKBENCH, T.WORKSHOP, T.ALCHEMY].every(t => { for (let y = LAB_HUT.y; y < LAB_HUT.y + LAB_HUT.h; y++) for (let x = LAB_HUT.x; x < LAB_HUT.x + LAB_HUT.w; x++) if (tileAt(x, y) === t) return true; return false; });
       const door = HAS_INST ? tileAt(LAB_DOOR.x, LAB_DOOR.y) === T.DUNGEON_DOOR && tileAt(LAB_STEP.x, LAB_STEP.y) === T.DIRT : tileAt(LAB_DOOR.x, LAB_DOOR.y) === T.DOOR;
-      check('goblincity: The Far Shore, Grubmarket and Castle Gnash are regions east of the strait; huts, a stone castle with a portcullis, a keep with a throne and gold, a lab with stations and a door', REGIONS.some(r => r.name === 'The Far Shore') && regionAt(250, 80).name === 'The Far Shore' && regionAt(216, 30).name === 'Grubmarket' && regionAt(224, 66).name === 'Castle Gnash' && regionAt(LANDING.x, LANDING.y).name === 'The Far Shore' && walls >= 60 && cw >= 100 && water > 300 && tileAt(224, 54) === T.PORTCULLIS && tileAt(THRONE_T.x, THRONE_T.y) === GC_THRONE && tileAt(CHEST_T.x, CHEST_T.y) === GC_CHEST && tileAt(220, 63) === GC_GOLD && lab && door && BUILDINGS.filter(mine).length === HUTS.length && tileAt(LAB.gate[0], LAB.gate[1]) === T.GATE && tileAt(YARD.gate[0], YARD.gate[1]) === T.GATE, { walls, cw, water, lab, door, huts: BUILDINGS.filter(mine).length, at216_30: regionAt(216, 30).name, at224_66: regionAt(224, 66).name, inst: HAS_INST }); }
-    { const a = F.bfs(LANDING.x, LANDING.y, 224, 40), b = F.bfs(LANDING.x, LANDING.y, 224, 61), c = F.bfs(LANDING.x, LANDING.y, LAB_STEP.x, LAB_STEP.y), d = F.bfs(LANDING.x, LANDING.y, 246, 26);
+      check('goblincity: The Far Shore, Grubmarket and Castle Gnash are regions east of the strait; huts, a stone castle with a portcullis, a keep with a throne and gold, a lab with stations and a door', REGIONS.some(r => r.name === 'The Far Shore') && regionAt(...FSF.p(250, 80)).name === 'The Far Shore' && regionAt(...FSF.p(216, 30)).name === 'Grubmarket' && regionAt(...FSF.p(224, 66)).name === 'Castle Gnash' && regionAt(LANDING.x, LANDING.y).name === 'The Far Shore' && walls >= 60 && cw >= 100 && water > 300 && tileAt(...FSF.p(224, 54)) === T.PORTCULLIS && tileAt(THRONE_T.x, THRONE_T.y) === GC_THRONE && tileAt(CHEST_T.x, CHEST_T.y) === GC_CHEST && tileAt(...FSF.p(220, 63)) === GC_GOLD && lab && door && BUILDINGS.filter(mine).length === HUTS.length && tileAt(LAB.gate[0], LAB.gate[1]) === T.GATE && tileAt(YARD.gate[0], YARD.gate[1]) === T.GATE, { walls, cw, water, lab, door, huts: BUILDINGS.filter(mine).length, at216_30: regionAt(...FSF.p(216, 30)).name, at224_66: regionAt(...FSF.p(224, 66)).name, inst: HAS_INST }); }
+    { const a = F.bfs(LANDING.x, LANDING.y, ...FSF.p(224, 40)), b = F.bfs(LANDING.x, LANDING.y, ...FSF.p(224, 61)), c = F.bfs(LANDING.x, LANDING.y, LAB_STEP.x, LAB_STEP.y), d = F.bfs(LANDING.x, LANDING.y, ...FSF.p(246, 26));
       check('goblincity: the landing reaches the market, the keep door, the lab door and the scrap yard on foot', !!a && !!b && !!c && !!d, { a: a && a.length, b: b && b.length, c: c && c.length, d: d && d.length }); }
     // the ferry: refused below combat 10, then 40 coins to the Far Shore; Harl waits at the far dock with 'Back to the dock'
     if (bq) {
       bq.sailing = null; bq.where = 'dock'; makeRoom(4); h.give('coins', 200);
       const talkHarl = (hx, hy) => { const a = F.goAdjacent(hx, hy, 3000); F.face(hx, hy); closePanel(); drain(); F.press('KeyE'); F.sim(2, []); return a; };
-      F.tp(164, 14); setCombat(5); const a = talkHarl(165, 14); const open = panel === 'ferry'; const listed = buttons.some(b => /The Far Shore/.test(b.label)); const cbLow = combatLevel();
+      F.tp(...ATLAS.port('dock.planks')); setCombat(5); const a = talkHarl(...GC_DK.p(165, 14)); const open = panel === 'ferry'; const listed = buttons.some(b => /The Far Shore/.test(b.label)); const cbLow = combatLevel();
       const c1 = F.clickButton('The Far Shore'); F.sim(3, []); const refused = !bq.sailing && bq.where === 'dock' && notice && /combat level 10/.test(notice.text);
       check('goblincity: the ferry panel lists The Far Shore and Harl refuses it below combat level 10', typeof a === 'number' && open && listed && cbLow < 10 && c1 && refused, { a, open, listed, cbLow, c1, notice: notice && notice.text });
-      setCombat(12); const c0 = coins(); if (panel !== 'ferry') talkHarl(165, 14); render(); const c2 = F.clickButton('The Far Shore'); const sailing = !!bq.sailing && bq.sailing.to === 'farshore' && panel === 'sailing'; F.sim(150, []);
+      setCombat(12); const c0 = coins(); if (panel !== 'ferry') talkHarl(...GC_DK.p(165, 14)); render(); const c2 = F.clickButton('The Far Shore'); const sailing = !!bq.sailing && bq.sailing.to === 'farshore' && panel === 'sailing'; F.sim(150, []);
       const landed = bq.where === 'farshore' && !bq.sailing && Math.floor(player.x / TILE) === LANDING.x && Math.floor(player.y / TILE) === LANDING.y && player.region === 'The Far Shore' && panel === null;
       check('goblincity: at combat 12 the Far Shore costs 40 coins and lands you on the far dock; the Voice speaks once', combatLevel() >= 10 && c2 && sailing && landed && coins() === c0 - 40 && TQ().visited && said(/Far Shore/), { c2, sailing, landed, paid: c0 - coins(), where: bq.where, region: player.region, at: tileOf() });
-      const a2 = talkHarl(205, 30); const open2 = panel === 'ferry'; const back = buttons.some(b => /Back to the dock/.test(b.label)); closePanel();
-      F.tp(216, 30); F.sim(3, []); const stays = bq.where === 'farshore';
+      const a2 = talkHarl(...FSF.p(205, 30)); const open2 = panel === 'ferry'; const back = buttons.some(b => /Back to the dock/.test(b.label)); closePanel();
+      F.tp(...FSF.p(216, 30)); F.sim(3, []); const stays = bq.where === 'farshore';
       check("goblincity: Harl waits at the far dock with 'Back to the dock', and does not row home while you are in Grubmarket", typeof a2 === 'number' && open2 && back && stays, { a2, open2, back, stays, region: player.region });
     } else check('goblincity: the ferry (26-boats) is loaded', false, {});
     // Tinkerton is met outside, at the corner of the city gate, and that talk is what opens it
@@ -700,14 +706,14 @@
       check("goblincity: Tinkerton, met outside at the corner of the city gate, starts 'A Tinker Gone Wrong' (four parts from four goblins) and opens the city", TQ().stage === 1 && dialog.cur && dialog.cur.who === 'Tinkerton' && outside && shutBefore && (!window.CITYGATE || CITYGATE.open()) && activeQuests().includes('tinker') && /Grubb/.test(questText('tinker')) && !!levelBanner && levelBanner.sub === 'A Tinker Gone Wrong', { stage: TQ().stage, who: dialog.cur && dialog.cur.who, outside, shutBefore, open: !!window.CITYGATE && CITYGATE.open(), text: questText('tinker') }); }
     // the four favours
     const handIn = (id, sx, sy) => { const n = FOLK.find(n => n.id === id), f = FAVOURS[id]; makeRoom(3); F.tp(sx, sy); F.face(n.x, n.y); drain(); F.press('KeyE'); F.sim(2, []); return f; };
-    { const f = handIn('grubb', 216, 24); const refused = !TQ().parts.boiler && said(/beef/) && countItem('boiler') === 0;
-      removeItem('cooked_beef', countItem('cooked_beef')); h.give('cooked_beef', 5); handIn('grubb', 216, 24);
+    { const f = handIn('grubb', ...FSF.p(216, 24)); const refused = !TQ().parts.boiler && said(/beef/) && countItem('boiler') === 0;
+      removeItem('cooked_beef', countItem('cooked_beef')); h.give('cooked_beef', 5); handIn('grubb', ...FSF.p(216, 24));
       check('goblincity: Grubb refuses without 5 cooked beef, then trades them for the boiler', refused && TQ().parts.boiler && countItem('boiler') === 1 && countItem('cooked_beef') === 0 && dialog.cur && dialog.cur.who === 'Grubb the cook', { refused, boiler: countItem('boiler'), beef: countItem('cooked_beef'), item: f.item }); }
-    { while (countItem('goblin_scrap') < 10) h.give('goblin_scrap', 1); const s0 = countItem('goblin_scrap'); handIn('nix', 230, 24);
+    { while (countItem('goblin_scrap') < 10) h.give('goblin_scrap', 1); const s0 = countItem('goblin_scrap'); handIn('nix', ...FSF.p(230, 24));
       check('goblincity: Nix trades 10 goblin scrap for the gear wheel', TQ().parts.gear_wheel && countItem('gear_wheel') === 1 && countItem('goblin_scrap') === s0 - 10, { wheel: countItem('gear_wheel'), scrap: countItem('goblin_scrap') - s0 }); }
-    { while (countItem('spider_silk') < 3) h.give('spider_silk', 1); const s0 = countItem('spider_silk'); handIn('snaggle', 216, 36);
+    { while (countItem('spider_silk') < 3) h.give('spider_silk', 1); const s0 = countItem('spider_silk'); handIn('snaggle', ...FSF.p(216, 36));
       check('goblincity: Old Snaggle trades 3 spider silk for the bomb chute', TQ().parts.bomb_chute && countItem('bomb_chute') === 1 && countItem('spider_silk') === s0 - 3, { chute: countItem('bomb_chute'), silk: countItem('spider_silk') - s0 }); }
-    { if (countItem('bread') < 1) h.give('bread', 1); const b0 = countItem('bread'); handIn('pip', 222, 34);
+    { if (countItem('bread') < 1) h.give('bread', 1); const b0 = countItem('bread'); handIn('pip', ...FSF.p(222, 34));
       check('goblincity: Pip-squeak trades a bread for the lightning coil; the Voice points to the lab', TQ().parts.lightning_coil && countItem('lightning_coil') === 1 && countItem('bread') === b0 - 1 && said(/all four parts/), { coil: countItem('lightning_coil'), bread: countItem('bread') - b0, held: partsHeld() }); }
     // through the hut door into the lab
     { const ok = enterLab(); const stations = !HAS_INST || [T.WORKBENCH, T.WORKSHOP, T.ALCHEMY].every(t => { for (let y = 0; y < LAB_H; y++) for (let x = 0; x < LAB_W; x++) if (tileAt(x, y) === t) return true; return false; });
@@ -739,15 +745,15 @@
     quest.gnash = freshG();
     { const gs = guards(); const neutral0 = gs.length === 4 && gs.every(m => !m.angry) && !MONSTER_DEFS.castle_guard.aggro && MONSTER_DEFS.castle_guard.level === 20;
       for (const m of gs) { m.dead = false; m.hp = m.maxHp; m.angry = false; m.state = 'idle'; m.x = m.home.x; m.y = m.home.y; }
-      F.tp(224, 65); const hp0 = player.hp; player.hp = 5000; h.peace(false); F.sim(6, []); const hostile = gs.some(m => m.angry && m.state === 'chase') && said(/GUARDS/); h.peace(true); for (const m of gs) { m.state = 'return'; } player.hp = Math.min(hp0, player.maxHp); player.hurtT = 0;
+      F.tp(...FSF.p(224, 65)); const hp0 = player.hp; player.hp = 5000; h.peace(false); F.sim(6, []); const hostile = gs.some(m => m.angry && m.state === 'chase') && said(/GUARDS/); h.peace(true); for (const m of gs) { m.state = 'return'; } player.hp = Math.min(hp0, player.maxHp); player.hurtT = 0;
       check('goblincity: four neutral goblin castle guards; they turn hostile when you enter the keep before paying tribute', neutral0 && hostile, { guards: gs.length, neutral0, hostile, angry: gs.filter(m => m.angry).length }); }
-    { makeRoom(5); F.tp(228, 67); F.face(CHEST_T.x, CHEST_T.y); F.press('KeyE'); F.sim(2, []); const locked = !GQ().treasury && notice && /tribute/.test(notice.text);
-      F.tp(224, 66); F.face(THRONE_T.x, THRONE_T.y); drain(); F.press('KeyE'); F.sim(2, []); const asked = GQ().stage === 1 && !GQ().tribute && activeQuests().includes('gnash') && said(/Five hundred/);
+    { makeRoom(5); F.tp(...FSF.p(228, 67)); F.face(CHEST_T.x, CHEST_T.y); F.press('KeyE'); F.sim(2, []); const locked = !GQ().treasury && notice && /tribute/.test(notice.text);
+      F.tp(...FSF.p(224, 66)); F.face(THRONE_T.x, THRONE_T.y); drain(); F.press('KeyE'); F.sim(2, []); const asked = GQ().stage === 1 && !GQ().tribute && activeQuests().includes('gnash') && said(/Five hundred/);
       const stash = coins(); removeItem('coins', stash); drain(); F.press('KeyE'); F.sim(2, []); const poor = !GQ().tribute && said(/500|Five hundred/); addItem('coins', stash);
       check('goblincity: the treasury is locked before tribute; King Gnash asks 500 coins and refuses an empty purse', locked && asked && poor, { locked, asked, poor, stage: GQ().stage, notice: notice && notice.text });
       while (coins() < 500) h.give('coins', 100); const c0 = coins(); drain(); F.press('KeyE'); F.sim(2, []);
       const paid = GQ().tribute && coins() === c0 - 500 && !activeQuests().includes('gnash') && guards().every(m => !m.angry) && !!levelBanner && levelBanner.sub === 'Gold for Gnash';
-      const sb0 = countItem('steel_bar'), mb0 = countItem('mithril_bar'); F.tp(228, 67); F.face(CHEST_T.x, CHEST_T.y); drain(); F.press('KeyE'); F.sim(2, []);
+      const sb0 = countItem('steel_bar'), mb0 = countItem('mithril_bar'); F.tp(...FSF.p(228, 67)); F.face(CHEST_T.x, CHEST_T.y); drain(); F.press('KeyE'); F.sim(2, []);
       const opened = GQ().treasury && countItem('steel_bar') === sb0 + 3 && (!ITEMS.mithril_bar || countItem('mithril_bar') === mb0 + 2) && countItem('gnash_crown') === 1 && ITEMS.gnash_crown.value === 800;
       F.face(CHEST_T.x, CHEST_T.y); F.press('KeyE'); F.sim(2, []);
       check("goblincity: 500 coins of tribute calms the guards and opens the treasury once: 3 steel bars, 2 mithril bars, Gnash's crown", paid && opened && countItem('gnash_crown') === 1 && countItem('steel_bar') === sb0 + 3, { paid, opened, coins: coins() - c0, steel: countItem('steel_bar') - sb0, mithril: countItem('mithril_bar') - mb0, crown: countItem('gnash_crown') }); }

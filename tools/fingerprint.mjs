@@ -48,7 +48,7 @@ const opt = k => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : null
 const file = argv.find((a, i) => !a.startsWith('--') && (i === 0 || !argv[i - 1].startsWith('--'))) || path.join(ROOT, 'index.html');
 
 // ---------- the sandbox (tools/headless.js's, without the suite run) ----------
-function boot(htmlFile) {
+export function boot(htmlFile) {
   const html = fs.readFileSync(htmlFile, 'utf8');
   const script = html.slice(html.indexOf('<script>') + 8, html.lastIndexOf('</script>'));
   const noop = () => { };

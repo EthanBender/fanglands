@@ -901,7 +901,7 @@
     const fakeKill = (type, tx, ty) => { for (const hk of HOOKS.kill) hk({ type, dead: true, x: tc(tx), y: tc(ty), r: 12 }); };
     // a brute is two tiles wide, so a headstone needs room round it: clear a patch and hand back how to put it right
     const clearPatch = (cx, cy, r = 1) => { const kept = []; for (let y = cy - r; y <= cy + r; y++) for (let x = cx - r; x <= cx + r; x++) if (inMap(x, y) && !buildingAt(x, y)) { kept.push([x, y, tileAt(x, y)]); changeTile(x, y, T.GRASS); } return kept; };
-    const putBack = kept => { for (const [x, y, t] of kept) changeTile(x, y, t); };
+    const putBack = kept => { for (let i = kept.length - 1; i >= 0; i--) { const [x, y, t] = kept[i]; changeTile(x, y, t); } };   // newest first: two patches that overlap give back the first one's tile
     h.peace(true);
 
     // ---- 1. the three grades, chosen by what fell ----
@@ -914,7 +914,10 @@
       const byBand = crossKin.every(k => census[k] === 'cross') && graveKin.every(k => census[k] === 'grave') && stoneKin.every(k => census[k] === 'headstone');
       const nobody = ['sheep', 'cow', 'boar', 'spider', 'walker', 'yard_walker', 'bulldozer', 'zombie', 'grave_zombie', 'vampire', 'ally_knight'].every(k => !census[k]);
       // and the hook that lays them: a goblin (2), a goblin brute (9), an elf sentinel (25)
-      const o = h.openSpot(58, 30); F.tp(o.x, o.y);
+      // the six graves go 5 to 15 tiles east of the stand: that row must be open ground, never a wall, a gate or a house
+      // (the jiggle moved Thistledown 3 tiles west and the row reached its west gate, which the test then dug out)
+      const rowOpen = (x, y) => { for (let k = 5; k <= 15; k++) { const t = tileAt(x + k, y); if (SOLID.has(t) || t === T.GATE || buildingAt(x + k, y)) return false; } return true; };
+      const o = h.openSpot(ATLAS.world.tx(58), ATLAS.world.ty(30), rowOpen); F.tp(o.x, o.y);   // open Goblin Fields: stretched-world points (the spread spec, section 2)
       const bx = Math.floor(player.x / TILE), by = Math.floor(player.y / TILE);
       const spots = { goblin: [bx + 5, by], brute: [bx + 7, by], elf_sentinel: [bx + 9, by], sheep: [bx + 11, by], walker: [bx + 13, by], zombie: [bx + 15, by] };
       const was = {}; for (const k in spots) { was[k] = tileAt(spots[k][0], spots[k][1]); changeTile(spots[k][0], spots[k][1], T.GRASS); }
@@ -935,7 +938,7 @@
     { const raised = {};
       for (const grade of ['cross', 'grave', 'headstone']) {
         reset();
-        const o = h.openSpot(56, 34); F.tp(o.x, o.y);
+        const o = h.openSpot(ATLAS.world.tx(56), ATLAS.world.ty(34)); F.tp(o.x, o.y);
         const tx = Math.floor(player.x / TILE) + 5, ty = Math.floor(player.y / TILE);
         const was = clearPatch(tx, ty, 1);
         GRAVES.layMarker(tx, ty, grade);
@@ -951,10 +954,15 @@
 
     // ---- 3. the whole night empties every grave, spread out, and dawn finds none ----
     { reset();
-      const o = h.openSpot(56, 34); F.tp(o.x, o.y);
+      // (never on a gate, a fence or a wall: the patch round a grave is cleared to grass for the test and put back after,
+      // so the stand is one from which every grave below, near and far, has open ground round it)
+      const built = (x, y) => { for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const t = tileAt(x + dx, y + dy); if (t === T.GATE || t === T.FENCE || t === T.WALL || t === T.CWALL || t === T.HWALL || ('TOWN_WALL' in T && t === T.TOWN_WALL)) return true; } return false; };
+      const GRAVE_AT = [[5, 0], [7, 0], [5, 3], [8, -3], [9, 2], [25, 0], [27, 2], [26, -3]];
+      const layOk = (x, y) => GRAVE_AT.every(([dx, dy]) => inMap(x + dx, y + dy) && !buildingAt(x + dx, y + dy) && !built(x + dx, y + dy));
+      const o = h.openSpot(ATLAS.world.tx(56), ATLAS.world.ty(34), layOk); F.tp(o.x, o.y);
       const px = Math.floor(player.x / TILE), py = Math.floor(player.y / TILE);
       const was = [];
-      const put = (x, y, grade) => { if (!inMap(x, y) || buildingAt(x, y)) return false; for (const k of clearPatch(x, y, 1)) was.push(k); return GRAVES.layMarker(x, y, grade); };
+      const put = (x, y, grade) => { if (!inMap(x, y) || buildingAt(x, y) || built(x, y)) return false; for (const k of clearPatch(x, y, 1)) was.push(k); return GRAVES.layMarker(x, y, grade); };
       // five within reach of the knight (one of them a headstone: a brute counts for two of the cap of six)
       const near = [[px + 5, py, 'cross'], [px + 7, py, 'grave'], [px + 5, py + 3, 'headstone'], [px + 8, py - 3, 'cross'], [px + 9, py + 2, 'grave']];
       // three he will never get near
@@ -991,7 +999,7 @@
     // ---- 4. the brute: two tiles across, very high health, low damage, and its stone slam ----
     { reset();
       const d = MONSTER_DEFS[GRAVES.BRUTE], z = MONSTER_DEFS.zombie;
-      const o = h.openSpot(56, 34); F.tp(o.x, o.y);
+      const o = h.openSpot(ATLAS.world.tx(56), ATLAS.world.ty(34)); F.tp(o.x, o.y);
       // the middle of the night: daylight sweeps a brute whatever its flag says, so this one is tested in the
       // dark, and 35-night's spawn clock is set back so no zombie of its own turns up in these three seconds
       player.dayTime = NIGHT.LIGHT + NIGHT.DUSK + 20; NIGHT.resetTimer();
@@ -1045,7 +1053,7 @@
         addItem(r.out, r.qty); made.push(countItem(r.out) >= r.qty);
       }
       // the shared world first: each of the five, a clear tile in front of the knight, and every one is refused
-      const o = h.openSpot(56, 30); F.tp(o.x, o.y); player.facing = { x: 1, y: 0 };
+      const o = h.openSpot(ATLAS.world.tx(56), ATLAS.world.ty(30)); F.tp(o.x, o.y); player.facing = { x: 1, y: 0 };
       const wf = frontTile(player, 40); const wasW = tileAt(wf.tx, wf.ty);
       drops = drops.filter(dd => !circleHitsTile(dd.x, dd.y, 8, wf.tx, wf.ty));
       const moved = [];
@@ -1119,7 +1127,7 @@
 
     // ---- 8. the ground keeps at most forty in a day, and nothing is listed where it cannot sit ----
     { reset();
-      const o = h.openSpot(56, 34); const bx = o.x, by = o.y;
+      const o = h.openSpot(ATLAS.world.tx(56), ATLAS.world.ty(34)); const bx = o.x, by = o.y;
       let laid = 0, peak = 0;
       for (let i = 0; i < GRAVES.MAX_MARKERS * 2; i++) {
         const x = bx + (i % 14) * 2, y = by + Math.floor(i / 14) * 2;
@@ -1157,7 +1165,7 @@
           NET.enabled = true; NET.token = 'graves-test'; NET.useFake(fake); NET.connect();
           push({ t: 'keeper', map: 'over', n: 'Ann' });
           const puppetsUp = Array.isArray(COOP.puppets()) && monsters === COOP.puppets() && COOP.keeper() === 'Ann';
-          const o = h.openSpot(56, 34); F.tp(o.x, o.y);
+          const o = h.openSpot(ATLAS.world.tx(56), ATLAS.world.ty(34)); F.tp(o.x, o.y);
           const px = Math.floor(player.x / TILE), py = Math.floor(player.y / TILE);
           player.dayTime = NIGHT.LIGHT + NIGHT.DUSK - 2;             // the last of the dusk arms the night
           F.sim(2, []);
@@ -1195,7 +1203,7 @@
     // types only ever come out of a grave, so a live one still crumbles at dawn and a dead one is taken away
     // instead of counting down to a respawn.
     { reset();
-      const o = h.openSpot(56, 34); F.tp(o.x, o.y);
+      const o = h.openSpot(ATLAS.world.tx(56), ATLAS.world.ty(34)); F.tp(o.x, o.y);
       const px = Math.floor(player.x / TILE), py = Math.floor(player.y / TILE);
       player.dayTime = DAY() - 4; NIGHT.resetTimer();                     // the last few seconds of the night
       const lost = (type, tx, ty, grade) => { const e = makeRisen(type, tx, ty, grade); e.fromGrave = false; e.remote = false; delete e.grade; e.nid = 'Ann:' + type; return e; };
@@ -1219,7 +1227,7 @@
     // the keeper's to change, so on this knight's screen it does neither. The core loop is held off it the way
     // 75-coop's update wrap holds every puppet (a stun it never runs out of), so only this file's code can act.
     { reset();
-      const o = h.openSpot(56, 34); F.tp(o.x, o.y);
+      const o = h.openSpot(ATLAS.world.tx(56), ATLAS.world.ty(34)); F.tp(o.x, o.y);
       player.dayTime = 0;
       h.peace(false); player.hp = 100000;
       const parked = [];
@@ -1273,7 +1281,7 @@
       player.companion = { id: null, hp: 0, mode: 'follow', x: 0, y: 0, freed: { sera: true }, downT: 0 }; player.law = { wanted: 0, timer: 0, fines: 0 };
       // ---- the graves plaque: a skull, GRAVES n, risen n, a plain line; amber at dusk, green at night, gone by day ----
       {
-        quest.graves = [{ x: 40, y: 40, g: 'cross', t: 0, rise: null }, { x: 42, y: 40, g: 'cross', t: 0, rise: null }, { x: 44, y: 40, g: 'cross', t: 0, rise: null }];
+        quest.graves = ATLAS.frame('pond').pts([{ x: 40, y: 40, g: 'cross', t: 0, rise: null }, { x: 42, y: 40, g: 'cross', t: 0, rise: null }, { x: 44, y: 40, g: 'cross', t: 0, rise: null }]);
         quest.graveNight = { rose: 1, walked: 0, laid: 3 };
         const find = () => { const q = frame().find(x => x.o.id === 'graves'); return q || null; };
         player.dayTime = DUSK; const dusk = find();

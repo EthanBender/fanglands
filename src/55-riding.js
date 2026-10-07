@@ -308,7 +308,7 @@
     let wx = -1;
     for (let x = camp.x0; x <= camp.x1 && wx < 0; x++) for (let y = camp.y0; y <= camp.y1; y++) if (api.tileAt(x, y) === T.FENCE) { wx = x; break; }
     if (wx < 0) return;
-    for (const y of [26, 25, 27, 24, 35, 36]) {                     // clear of the gate lane at y 29-31
+    for (const y of [26, 25, 27, 24, 35, 36].map(ATLAS.frame('camp').y)) {   // clear of the gate lane at y 29-31 (the camp's own rows)
       if (api.tileAt(wx, y) !== T.FENCE) continue;
       const outside = api.tileAt(wx - 1, y), inside = api.tileAt(wx + 1, y);
       const open = t => t === T.GRASS || t === T.DIRT || t === T.SAND;
@@ -370,7 +370,7 @@
     // B. full steam winds up, runs, hurts what it hits, and goes on cooldown
     { const m0 = player.mech, s0 = player.speed, r0 = player.r, up0 = player.dozerUp;
       RIDING.resetCool();
-      const o = h.openSpot(58, 36); F.tp(o.x, o.y);
+      const o = h.openSpot(ATLAS.world.tx(58), ATLAS.world.ty(36)); F.tp(o.x, o.y);   // open Goblin Fields: a stretched-world point
       player.mech = { kind: 'dozer', hp: 110, maxHp: 110 }; player.r = 20; player.speed = 130; player.dozerUp = {};
       player.facing = { x: 1, y: 0 };
       // it refuses off a machine
