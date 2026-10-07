@@ -62,6 +62,20 @@ Everything a feature needs is reachable through globals and the `HOOKS` registry
   the Crossroads Inn, Beacon Hills, the Hunters' Lodge, the goblin outposts, the Bandit Hills). Builders' stakes stand
   round each; `placeAction` refuses them and every main road (`ATLAS.onMainRoad`). A new place fills its reserved box (or
   is given a new anchor in `src/01-atlas.js`), declares its rail with `RAILS.add` (51-mounts), and moves nothing else.
+  **Building a reserved place** (Stage 5; `src/85-riverside.js` is the worked example): at load, `ATLAS.markBuilt(id,
+  { sub })` (before 93-spread names the REGIONS: the banner and the map say the place, not the builders; its signposts drop
+  "(builders at work)"; `placeAction` says "This is Millbrook's ground."). The anchor stays reserved, so every world pass
+  before `HOOKS.built` sees exactly the ground it saw before. Write its points in `ATLAS.planFrame(id)` (offsets from the
+  plan box's top-left: `F.p(3, 4)`, `F.pt({...})`, `F.box([...])`), so the place moves with its box. In its
+  `HOOKS.built` pass: take its own stakes up (`SPREAD_GROUND.PROPS` cells whose `place` is the id: set the tile back to
+  `under` and delete the entry), lay its ground, push its BUILDINGS and NPCS rows and paint them (take them out again in a
+  `HOOKS.world.unshift` pass, so the earlier passes, which keep rings clear round people and buildings with dice, never
+  see them), spawn its creatures (mark each spawn `s.by`). People need a look in 83-townsart (`addPeople`, a family of
+  their own; 83-townsfolk's check counts the people). The markers are made again after `HOOKS.built` (93-spread).
+  **DECO** (`src/83-deco.js`, Stage 5's one tile): open ground drawn as a kind from a side table (`DECO.kind(name,
+  { draw, use, ground, flat, bridge })`, `DECO.put(api, x, y, kind)` in a `HOOKS.built` pass, `DECO.at`, `DECO.cells`):
+  the Old Bridge's stone deck (`bridge: true`, counted as a crossing by the scarp-seal and river checks), reeds, wheat,
+  hedges, drying racks. The tile is made by the first cell put, after PROP, so no older tile id moves.
   East of the Sound (x 303–311) everything is ferry-only (Harl's ferry from the dock).
   `WALK_OVER` (a Set in 00-core) lets the player cross tiles it contains (e.g. `WALK_OVER.add(T.WATER)` while hover armour is worn).
 - Quests: `QUEST_DEFS.my = { name }`, `HOOKS.questText.my = () => '...'`, `HOOKS.activeQuests.push(() => cond ? ['my'] : [])`.

@@ -97,9 +97,10 @@ const HOOKS = {
 // nothing until the page is reloaded. WORLD_V 2 is the Great Spread's 400 x 280 map (a world-1 save is moved onto it by
 // 97-spread). WORLD_REV is the minor: a later stage that changes ground knights may have built on declares its footprint
 // in ATLAS.REVS[rev] and bumps it, and an older save is swept in those boxes only (97-spread's SPREAD.sweep).
-// Revs: 1 = Stage 5a, the starting creatures (87-critters: the ground each new spawn wakes on).
+// Revs: 1 = Stage 5a, the starting creatures (87-critters: the ground each new spawn wakes on); 2 = Stage 5b, the riverside
+// places (85-riverside: the Old Bridge, Millbrook and Saltmere, each box with its dressing ring).
 const WORLD_V = 2;
-const WORLD_REV = 1;
+const WORLD_REV = 2;
 let SAVE_LOCK = false;
 // a cell the knight could step onto but could not get across (an agility obstacle above his level): pathfinders go round it
 function pathBlocked(tx, ty, who) { for (const f of HOOKS.pathBlock) if (f(tx, ty, who)) return true; return false; }

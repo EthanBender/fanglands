@@ -132,7 +132,7 @@
     'Gull Isle': ['Salt Pete'],
   };
   const EXTRA_SHOPS = { 'Thistledown': ["Fennick's Stall (buys pelts, tusks, wool, silk, scrap, coal)", 'Master of Skills (capes at level 99)'], 'The Far Shore': [], 'Grubmarket': ["Tinkerton's Lab"], 'Deepholm': ["Brunhild's Forge"], 'Sylvaris': ["Lira's Range", "Thessaly's Loom"], 'Gull Isle': ["Salt Pete's Shack"], 'The Ashfields': ["Dunstan's Dung Farm"] };
-  const SHOP_PLACE = { general: 'Thistledown', bakery: 'Thistledown', seeds: 'Thistledown', smith: 'Thistledown', dwarf: 'Deepholm', elf_range: 'Sylvaris', elf_weaver: 'Sylvaris', saltpete: 'Gull Isle', dung: 'The Ashfields', tinkerton: 'Grubmarket' };
+  const SHOP_PLACE = { general: 'Thistledown', bakery: 'Thistledown', seeds: 'Thistledown', smith: 'Thistledown', dwarf: 'Deepholm', elf_range: 'Sylvaris', elf_weaver: 'Sylvaris', saltpete: 'Gull Isle', dung: 'The Ashfields', tinkerton: 'Grubmarket', mill: 'Millbrook', saltmere_fish: 'Saltmere' };
 
   // ---------- helpers ----------
   const pct = v => { const p = Math.round(v * 100) / 100; return (p >= 10 || p === Math.floor(p)) ? String(Math.round(p * 10) / 10) : String(p); };

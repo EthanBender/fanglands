@@ -69,7 +69,7 @@ window.FANGLANDS = {
     const unseedCh1 = seedRandom(0xF16);
     F.newGame(); F.sim(120);
     check('voice speaks on wake', dialog.cur && dialog.cur.text === "You're finally awake.", dialog.cur && dialog.cur.text);
-    { const g = monsters.filter(m => m.type.startsWith('guard')); const a = monsters.filter(m => ['sheep', 'cow'].includes(m.type)); check('guards (men and women) + animals neutral', g.length === 6 && g.some(x => x.type === 'guard_f') && g.every(x => !x.angry) && a.length === 7, { guards: g.length, animals: a.length }); }
+    { const g = monsters.filter(m => m.type.startsWith('guard')); const a = monsters.filter(m => ['sheep', 'cow'].includes(m.type)); const farm = window.RIVERSIDE ? RIVERSIDE.SPAWNS.filter(s => s.type === 'sheep').reduce((n, s) => n + s.at().length, 0) : 0; check('guards (men and women) + animals neutral (Thistledown\'s pens, and Millbrook\'s paddock)', g.length === 6 && g.some(x => x.type === 'guard_f') && g.every(x => !x.angry) && a.length === 7 + farm && a.every(x => !x.angry), { guards: g.length, animals: a.length, farm }); }
     { const ghosts = NPCS.filter(n => n.ghost); check("Death waits inside his stone houses (coffin doors)", ghosts.length === 2 && ghosts.every(n => insideBuilding(n.x, n.y) && insideBuilding(n.x, n.y).coffin) && BUILDINGS.filter(b => b.coffin).every(b => tileAt(b.x + b.door, b.y + b.h - 1) === T.COFFINDOOR), { ghosts: ghosts.length }); }
     const sp = monsters.filter(m => m.type === 'spider');
     check('spiders roam the cave, harmless', sp.length === 5 && sp.every(m => MONSTER_DEFS[m.type].harmless), { spiders: sp.length });

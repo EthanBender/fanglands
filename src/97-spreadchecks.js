@@ -147,7 +147,9 @@
   function scarpSeal() {
     const all = gates(), BRIDGE = Tn('BRIDGE'), STEPS = Tn('SCARP_STEPS');
     // each crossing's tiles: the bridge tiles within 4 of each bridge's port, the steps' own tile
-    const near = (pid, t) => { const [px, py] = P(pid), out = []; for (let y = py - 4; y <= py + 4; y++) for (let x = px - 4; x <= px + 4; x++) if (inMap(x, y) && map[y * MAP_W + x] === t) out.push(y * MAP_W + x); return out; };
+    // (a bridge built in stone is DECO cells of a bridge kind: 85-riverside's Old Bridge)
+    const isT = (i, t) => map[i] === t || (t === BRIDGE && window.DECO && DECO.isBridge(i));
+    const near = (pid, t) => { const [px, py] = P(pid), out = []; for (let y = py - 4; y <= py + 4; y++) for (let x = px - 4; x <= px + 4; x++) if (inMap(x, y) && isT(y * MAP_W + x, t)) out.push(y * MAP_W + x); return out; };
     const CROSS = { old_bridge: near('old_bridge.span', BRIDGE), goblin_bridge: near('goblin_road.bridge', BRIDGE), steps: near('graveyard.steps', STEPS) };
     const south = ['wren.door', 'graveyard.grave', 'hunters_lodge.door', 'hollowford.square', 'crossroads_inn.yard'];
     const run = open => { const shut = new Set(); for (const k in CROSS) if (!open.includes(k)) for (const i of CROSS[k]) shut.add(i);
@@ -231,7 +233,7 @@
             if (!inMap(x, y) || (x >= hf[0] && x <= hf[2] && y >= hf[1] && y <= hf[3])) continue;
             const t = map[y * MAP_W + x];
             // (the river beside a bridge: the road narrows to its planks there; Stage 5 lays the Old Bridge three wide)
-            if (t === T.WATER && N8.some(([dx, dy]) => inMap(x + dx, y + dy) && map[(y + dy) * MAP_W + x + dx] === BRIDGE)) continue;
+            if (t === T.WATER && N8.some(([dx, dy]) => inMap(x + dx, y + dy) && (map[(y + dy) * MAP_W + x + dx] === BRIDGE || (window.DECO && DECO.isBridge((y + dy) * MAP_W + x + dx))))) continue;
             if ((t === PROP && PROP >= 0) || (SOLID.has(t) && !PUSH_THROUGH.has(t) && !OK.has(t))) bad.push(id + ' ' + x + ',' + y + ' ' + tileName(t)); } } } }
     return [...new Set(bad)];
   }
@@ -284,10 +286,10 @@
     for (const s of MONSTER_SPAWNS) beats.push([s.tx, s.ty, 'stop', 'spawn ' + s.type]);
     if (window.SPREAD_GROUND) for (const [x, y] of SPREAD_GROUND.signs) beats.push([x, y, 'stop', 'signpost']);
     beats.push([SIGN_TILE.x, SIGN_TILE.y, 'stop', 'the story signpost']);
-    for (const id of Object.keys(A.ANCHORS)) { const b = A.box(id); if (!b) continue; const kind = A.ANCHORS[id].kind === 'place' ? 'stop' : 'glance';
+    for (const id of Object.keys(A.ANCHORS)) { const b = A.box(id); if (!b) continue; const kind = A.ANCHORS[id].kind === 'place' || A.isBuilt(id) ? 'stop' : 'glance';
       for (let y = b[1]; y <= b[3]; y += 2) for (let x = b[0]; x <= b[2]; x += 2) beats.push([x, y, kind, id]); }
     for (const b of BUILDINGS) beats.push([b.x, b.y, 'glance', 'building']);
-    for (let y = 0; y < MAP_H; y += 2) for (let x = 0; x < MAP_W; x += 2) { const t = map[y * MAP_W + x]; if (t === T.WATER || t === BRIDGE || WALLISH.has(t)) beats.push([x, y, 'glance', tileName(t)]); }
+    for (let y = 0; y < MAP_H; y += 2) for (let x = 0; x < MAP_W; x += 2) { const t = map[y * MAP_W + x]; if (t === T.WATER || t === BRIDGE || WALLISH.has(t) || (window.DECO && DECO.isBridge(y * MAP_W + x))) beats.push([x, y, 'glance', tileName(t)]); }
     const out = [];
     for (const id of A.MAIN_ROADS) {
       const pl = A.track(id); let along = 0; const stops = [], glances = [];

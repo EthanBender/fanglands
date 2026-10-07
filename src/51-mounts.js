@@ -646,7 +646,7 @@
     g.fillStyle = '#c9b07a';                                                             // a bale of hay under it
     g.beginPath(); g.moveTo(-14, 16); g.lineTo(2, 16); g.lineTo(-1, 6); g.lineTo(-11, 6); g.closePath(); g.fill();
     g.strokeStyle = '#9c854f'; g.lineWidth = 1; g.beginPath(); g.moveTo(-12, 11); g.lineTo(0, 11); g.stroke();
-    if (!H().owned) { // she is Fennick's until somebody buys her: standing at the rail, nose to the rope
+    if (!H().owned && POST && tx === POST.x && ty === POST.y) { // she is Fennick's until somebody buys her: standing at his rail (not a new place's), nose to the rope
       g.save(); g.translate(20, 13); g.scale(0.72, 0.72);
       drawHorse(g, Object.assign(parkedMare(cx, cy, -1), { headUp: true }), false, null);
       g.restore();

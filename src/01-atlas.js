@@ -625,6 +625,31 @@
   // one track point, as [x, y] on the map
   const pointOf = q => q[0] === 'port' ? port(q[1]) : q[0] === 'n' ? [q[1], q[2]] : q[0] === 'w' ? [W.x(q[1]), W.y(q[2])] : FRAMES[q[0]] ? [FRAMES[q[0]].x(q[1]), FRAMES[q[0]].y(q[2])] : null;
   // the reserved places (§4 and addendum A): their boxes take stakes and a plaque, and placeAction refuses them
+  // A reserved place a Stage 5 file has BUILT (ATLAS.markBuilt(id), at that file's load) stays a reserved anchor, so every world
+  // pass before HOOKS.built sees the same ground (34-food, 62-ores and 93-spread's stakes read reservedAt; skipping a box
+  // there would move dice all over the map); its file takes its own stakes up on the finished land. What changes: its
+  // REGIONS line names the place, not the builders (93-spread), its signposts drop "(builders at work)", placeAction says
+  // whose ground it is, and the beat report counts it a stop.
+  // (BUILT: id -> { sub }, the line under the place's name in its banner and on the map)
+  const BUILT = new Map();
+  const markBuilt = (id, info) => { if (!ANCHORS[id] || ANCHORS[id].kind !== 'reserved') throw new Error('ATLAS.markBuilt: no reserved place ' + JSON.stringify(id)); BUILT.set(id, Object.assign({ sub: '' }, info)); return id; };
+  const isBuilt = id => BUILT.has(id);
+  // a new place's own frame (Stage 5): its points are offsets from its plan box's top-left corner (F.p(0, 0) is the box's
+  // first tile), so the place moves with its box; the same calls as a place frame's
+  function planFrame(id) {
+    const a = ANCHORS[id]; if (!a || !a.newBox) throw new Error('ATLAS.planFrame: no new place ' + JSON.stringify(id));
+    const b = a.newBox, x = v => b[0] + v, y = v => b[1] + v;
+    const f = {
+      id, x, y, tx: v => Math.round(x(v)), ty: v => Math.round(y(v)), ix: v => v - b[0], iy: v => v - b[1],
+      p: (px, py) => [x(px), y(py)],
+      pt: o => Object.assign({}, o, { x: x(o.x), y: y(o.y) }),
+      pts: list => list.map(q => Array.isArray(q) ? [x(q[0]), y(q[1])] : Object.assign({}, q, { x: x(q.x), y: y(q.y) })),
+      rect: r => Object.assign({}, r, { x0: x(r.x0), y0: y(r.y0), x1: x(r.x1), y1: y(r.y1) }),
+      box: q => [x(q[0]), y(q[1]), x(q[2]), y(q[3])],
+      w: b[2] - b[0] + 1, h: b[3] - b[1] + 1, get dx() { return b[0]; }, get dy() { return b[1]; },
+    };
+    return f;
+  }
   const reserved = () => Object.keys(ANCHORS).filter(id => ANCHORS[id].kind === 'reserved').map(id => ({ id, box: ANCHORS[id].newBox.slice() }));
   const reservedAt = (tx, ty) => { for (const id in ANCHORS) { const a = ANCHORS[id]; if (a.kind === 'reserved' && inB(a.newBox, tx, ty)) return id; } return null; };
   // a tile on a main road or one either side of it: within 2 tiles of a main road's centre line (the 2-wide road and
@@ -659,7 +684,7 @@
   const COMPASS = ['east', 'south-east', 'south', 'south-west', 'west', 'north-west', 'north', 'north-east'];
   // the words for a leg's far end: a port names its place (a reserved one says the builders are at work); a junction
   // names the road it meets
-  const placeWords = pre => { const name = PLACE_WORDS[pre] || pre; return ANCHORS[pre] && ANCHORS[pre].kind === 'reserved' ? name + ' (builders at work)' : name; };
+  const placeWords = pre => { const name = PLACE_WORDS[pre] || pre; return ANCHORS[pre] && ANCHORS[pre].kind === 'reserved' && !BUILT.has(pre) ? name + ' (builders at work)' : name; };
   function endWords(q, tid) {
     if (q[0] === 'port') return placeWords(q[1].split('.')[0]);
     if (q[0] !== 'n' && q[0] !== 'w' && PLACE_WORDS[q[0]]) return placeWords(q[0]);   // a place's own point: that place
@@ -772,13 +797,13 @@
 
   // the worldRev footprints (§10 "worldRev sweeps"): a later stage that changes ground a knight may have built on (Stage 5's
   // places, Stage 6's roads) adds REVS[n] = { boxes: [[x0, y0, x1, y1], ...] } (the new map's coordinates) and bumps
-  // WORLD_REV to n; a save with an older worldRev is swept in those boxes only (97-spread's SPREAD.sweep). None yet.
+  // WORLD_REV to n; a save with an older worldRev is swept in those boxes only (97-spread's SPREAD.sweep). 1: 87-critters; 2: 85-riverside.
   const REVS = {};
 
   Object.assign(A, {
     ANCHORS, PORTS, PORT_REL, TRACKS, WORLD, PINS, NESTED, OWNERS, REVS, PLAN: { W: PLAN_W, H: PLAN_H },
     frame, world: W, port, box, track, guards, anchorOf, oldToNew, oldToNewWorld,
-    MAIN_ROADS, ROAD_IDS, SIGNPOSTS, GROUNDS, pointOf, reserved, reservedAt, onMainRoad, signText, signLegs, signArms,
+    MAIN_ROADS, ROAD_IDS, SIGNPOSTS, GROUNDS, pointOf, reserved, reservedAt, onMainRoad, signText, signLegs, signArms, BUILT, markBuilt, isBuilt, planFrame,
     frameProblems: () => problems.slice(), strict: () => [...STRICT.values()].map(e => e.slice()),
   });
 

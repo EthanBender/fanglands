@@ -96,7 +96,8 @@
     const spots = SPOTS(), mine = new Set(spots.map(s => s.type + '@' + s.x + ',' + s.y));
     // the spawns as the world has them (a fresh map: a --play run has changed this one)
     const tiles = window.PLAYTHROUGH ? PLAYTHROUGH.pristine : map;
-    const ours = MONSTER_SPAWNS.filter(s => DEFS[s.type]);
+    // (this file's own: a place built later spawns these kinds too, and marks each with its file, s.by)
+    const ours = MONSTER_SPAWNS.filter(s => DEFS[s.type] && !s.by);
 
     // 1. the table as §4 has it
     { const D = MONSTER_DEFS, want = { crow: { lv: 2, hp: 8 }, giant_rat: { lv: 3, hp: 12 }, snake: { lv: 4, hp: 14 }, adder: { lv: 6, hp: 18 }, wild_dog: { lv: 6, hp: 18 } };
@@ -148,16 +149,18 @@
       const cut = spots.filter(s => !seen[idx(s.x, s.y)]).map(s => s.type + '@' + s.x + ',' + s.y);
       check(P + 'a knight walks from the cave to every creature\'s ground', !cut.length, { cut }); }
 
-    // 7. the footprint: WORLD_REV 1 is this stage, its boxes the 3 x 3 round each spawn
+    // 7. the footprint: WORLD_REV 1 is this stage (later stages bump it past 1), its boxes the 3 x 3 round each spawn
     { const R = A.REVS && A.REVS[1], boxes = R ? R.boxes : [];
       const every = spots.every(s => boxes.some(b => b[0] === s.x - 1 && b[1] === s.y - 1 && b[2] === s.x + 1 && b[3] === s.y + 1));
-      check(P + 'the footprint: WORLD_REV is 1 and ATLAS.REVS[1] is the 3 x 3 round each of the 16 spawns', WORLD_REV === 1 && boxes.length === spots.length && every, { WORLD_REV, n: boxes.length }); }
+      check(P + 'the footprint: WORLD_REV is 1 or later and ATLAS.REVS[1] is the 3 x 3 round each of the 16 spawns', WORLD_REV >= 1 && boxes.length === spots.length && every, { WORLD_REV, n: boxes.length }); }
 
     // 8. a wild dog wakes at 4 tiles and not at 5; idle, a dog keeps to 2 tiles of home; a crow fights back only when hit, and its kill pays 32 xp
     if (!window.__instance) {
       const px0 = player.x, py0 = player.y, hp0 = player.hp, peace0 = window.__peace;
       h.peace(false);
-      const dog = monsters.find(m => m.type === 'wild_dog' && !m.dead), crow = monsters.find(m => m.type === 'crow' && !m.dead);
+      // (this file's own: a built place's crows come first in the list now)
+      const own = m => spots.some(s => s.type === m.type && s.x === Math.floor(m.home.x / TILE) && s.y === Math.floor(m.home.y / TILE));
+      const dog = monsters.find(m => m.type === 'wild_dog' && !m.dead && own(m)), crow = monsters.find(m => m.type === 'crow' && !m.dead && own(m));
       const res = {};
       if (dog && crow) {
         const keep = monsters.map(m => [m, m.x, m.y, m.hp, m.state, m.angry, m.dead]);

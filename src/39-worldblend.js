@@ -456,7 +456,7 @@
     { let rim = 0; for (let y = W.ty(2); y <= W.ty(93); y++) for (let x = W.tx(150); x <= W.tx(178); x++) if (tileAt(x, y) === T.SAND && N4.some(([dx, dy]) => tileAt(x + dx, y + dy) === T.WATER)) rim++;
       check('blend: a sand rim runs along the coast where the land meets the water', rim >= 96, { rim, laid: S.rim }); }   // (4b re-baseline: 60 x1.6, the coast's length at the spread's stretch)
     { const seen = new Uint8Array(MAP_W * MAP_H), q = []; let sea = false;
-      const push = (x, y) => { if (!inMap(x, y)) return; const i = idx(x, y); const t = tileAt(x, y); if (seen[i] || (t !== T.WATER && t !== BRIDGE && t !== DOCK)) return; seen[i] = 1; q.push(i); };
+      const push = (x, y) => { if (!inMap(x, y)) return; const i = idx(x, y); const t = tileAt(x, y); if (seen[i] || (t !== T.WATER && t !== BRIDGE && t !== DOCK && !(window.DECO && DECO.isBridge(i)))) return; seen[i] = 1; q.push(i); };   // (a bridge built in stone since: 85-riverside's Old Bridge)
       for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) push(POND.x + dx, POND.y + dy); // the pond's water (its centre column is the agility course's stepping stones)
       for (let qi = 0; qi < q.length && !sea; qi++) { const c = q[qi], x = c % MAP_W, y = (c / MAP_W) | 0; if (inRect(SEA, x, y) && tileAt(x, y) === T.WATER) { sea = true; break; } for (const [dx, dy] of N4) push(x + dx, y + dy); }
       check("blend: the river runs from Miller's Pond to the Grey Sea (one channel of water and bridges)", sea, { river: S.river, relocated: S.relocated }); }
