@@ -412,7 +412,8 @@
   function stepRemote(m, t, dt) {
     const def = MONSTER_DEFS[m.type];
     const dp = dist(m.x, m.y, t.x, t.y), dHome = dist(m.x, m.y, m.home.x, m.home.y);
-    if (dp > def.sight * 1.6 || dHome > 14 * TILE || t.dead) { m.state = 'return'; m.moving = false; return; }
+    const roadSafe = def.roam && window.ATLAS && ATLAS.onMainRoad(Math.floor(t.x / TILE), Math.floor(t.y / TILE));   // as the core loop: a patch-keeper leaves a knight on a main road be
+    if (dp > def.sight * 1.6 || dHome > 14 * TILE || t.dead || roadSafe) { m.state = 'return'; m.moving = false; return; }
     m.state = 'chase';
     const dx = t.x - m.x, dy = t.y - m.y, d = dp || 1, stop = m.r + KNIGHT_R + 4;
     let vx = 0, vy = 0;

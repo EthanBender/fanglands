@@ -1142,7 +1142,9 @@ resize();
     spur_barrow: 'the Old Barrow', r6_ash: 'the Ash Road', r6a_shrine: 'the shrine path', path_farm: "Dunstan's farm", r7_drovers: "the Drovers' Track",
     r8_bandit: 'the Bandit Track', shaft_lane: 'the mine shaft' };
   // the landmarks an arm names when its road passes one ("→ Thistledown, south-east, past the old signpost.")
-  const PAST_MARKS = ['signpost', 'old_bridge', 'crossroads_inn', 'goblin_road'];
+  // (the Hunters' Lodge since the review of bcb559f: the Old Bridge's post named only the graveyard, the Wolfwood Road's far
+  // end, and not the Lodge, its next stop)
+  const PAST_MARKS = ['signpost', 'old_bridge', 'crossroads_inn', 'goblin_road', 'hunters_lodge'];
   const COMPASS = ['east', 'south-east', 'south', 'south-west', 'west', 'north-west', 'north', 'north-east'];
   // the words for a leg's far end: a port names its place (a reserved one says the builders are at work); a junction
   // names the road it meets
@@ -2988,8 +2990,11 @@ function update(dt) {
     const dHome = dist(m.x, m.y, m.home.x, m.home.y);
     const aggressive = def.aggro && cb <= def.level * 2 + 1 && !window.__peace; // high-level knights are left alone
     if (window.__peace && m.state === 'chase') m.state = 'return';
-    if (!def.harmless && m.state !== 'return' && (m.angry && !def.aggro || aggressive) && dp < def.sight && !player.dead) m.state = 'chase';
-    if (m.state === 'chase' && (dp > def.sight * 1.6 || dHome > 14 * TILE || player.dead)) m.state = 'return';
+    // a creature that keeps to its patch (def.roam: 87-critters' dogs and snakes, the bear) leaves a knight on a main road be:
+    // the book's "keep to the road" is true (the review of bcb559f: the Cave Road's dogs chased a new knight down it)
+    const roadSafe = def.roam && window.ATLAS && ATLAS.onMainRoad(Math.floor(player.x / TILE), Math.floor(player.y / TILE));
+    if (!def.harmless && m.state !== 'return' && (m.angry && !def.aggro || aggressive) && dp < def.sight && !player.dead && !roadSafe) m.state = 'chase';
+    if (m.state === 'chase' && (dp > def.sight * 1.6 || dHome > 14 * TILE || player.dead || roadSafe)) m.state = 'return';
     let vx = 0, vy = 0;
     if (m.state === 'chase') {
       const dx = player.x - m.x, dy = player.y - m.y, d = dp || 1;
@@ -4427,6 +4432,16 @@ function drawCraftPanel(g) {
 // mouse) on a pitch of row + 14; a 36 / 28 px pouch at the left; the name in Cinzel 13; the blurb in the sans at 12
 // (hidden under 520 px of content); 'Buy n' a primary plate HK.row() tall, the coin emblem, 4 px inside the row's
 // right edge; sell pouches 44 on touch, 40 with a mouse, 8 / 6 apart.
+// the sell side's heading and the panel's line under the name: a shop whose `buys` is empty buys nothing, so it says so
+// and never asks him to tap his pack (the review of bcb559f: Corvin's panel said "Tap your pack to sell" over an empty
+// "SELLS FOR FULL PRICE:")
+const shopBuysNothing = shop => Array.isArray(shop.buys) && shop.buys.length === 0;
+function shopSellHead(shop) {
+  const rate = shop.rate || 0.6;
+  if (shopBuysNothing(shop)) return (shop.buysWords || 'This shop buys nothing.').toUpperCase();
+  return shop.buys ? `SELLS FOR FULL PRICE: ${shop.buys.map(i => ITEMS[i].name).join(', ').toUpperCase()}` : `SELL FROM YOUR PACK: ${Math.round(rate * 100)}% OF WHAT IT IS WORTH`;
+}
+const shopSubtitle = shop => `You have ${coins()} coins.${shopBuysNothing(shop) ? '' : ' Tap your pack to sell.'}`;
 function drawShopPanel(g, narrow) {
   const K = PANEL_KIT, Rm = K.room(), T = HK.T, { R, G, t } = Rm;
   const shop = SHOPS[panelArg] || { name: "Fennick's Stall", stock: [], buys: ['wolf_pelt', 'boar_tusk', 'wool', 'spider_silk', 'goblin_scrap', 'coal'], rate: 1 };
@@ -4437,7 +4452,7 @@ function drawShopPanel(g, narrow) {
   const W = cols2 ? Math.min(Rm.aw, 820) : Math.min(Rm.aw, Math.max(gridW + 36, 480)), cw = W - 36;
   const listW = cols2 ? cw - gridW - 28 : cw, rowH = R + 8, pitch = rowH + 6, pagerH = R + 14;
   const armSell = confirmActive('sell');
-  const sellHead = armSell ? `TAP AGAIN TO SELL ${((ITEMS[uxConfirm.item] || {}).name || 'it').toUpperCase()}` : shop.buys ? `SELLS FOR FULL PRICE: ${shop.buys.map(i => ITEMS[i].name).join(', ').toUpperCase()}` : `SELL FROM YOUR PACK: ${Math.round(rate * 100)}% OF WHAT IT IS WORTH`;
+  const sellHead = armSell ? `TAP AGAIN TO SELL ${((ITEMS[uxConfirm.item] || {}).name || 'it').toUpperCase()}` : shopSellHead(shop);
   const sellW = cols2 ? gridW : cw;
   const headLines = HK.wrap(g, sellHead, sellW, 3, K.FN(11)).lines.length, headH = headLines * 15 + 6;
   const sellH = headH + gridH;
@@ -4453,7 +4468,7 @@ function drawShopPanel(g, narrow) {
     else { perPage = Math.max(1, Math.floor((Rm.ah - 62 - 12 - sellH - 12 - pagerH) / pitch)); h = 62 + perPage * pitch + pagerH + 12 + sellH + 12; }
   }
   const pages = Math.max(1, Math.ceil(n / perPage));
-  const { px, py, w, h: ph } = panelBox(g, W, h, shop.name, `You have ${coins()} coins. Tap your pack to sell.`);
+  const { px, py, w, h: ph } = panelBox(g, W, h, shop.name, shopSubtitle(shop));
   const x0 = px + 18, p = clamp(K.page('shop'), 0, pages - 1);
   const blurbOn = listW >= 440;
   const bw = Math.max(...shop.stock.map(([, price]) => K.verbW(g, `Buy ${price}`, 'coin', R)), K.verbW(g, 'Buy 99', 'coin', R));
@@ -20275,6 +20290,9 @@ window.SETTINGS = SETTINGS;
     rebuild: { giver: "The board in Hollowford's square", reward: 'A town again; 500 coins at the end', kind: 'Side quest' },
     guild: { giver: 'Old Tam, Hollowford', reward: 'Ranks, a chest, a cape (500 coins) and staff', kind: 'Side quest' },
     sky: { giver: 'Old Wren, then Queen Seraphel in Aerie', reward: "400 coins, 300 Smithing xp, Halcyon's forge", kind: 'Side quest' },
+    wat_cart: { giver: 'Wat the carter, by the Bandit Hills', reward: '60 coins (and the bandits\' sacks)', kind: 'Side quest' },
+    outposts: { giver: 'Bramble the scout and Brin the drover, by the goblin outposts', reward: '30 coins from Bramble, 40 from Brin, and a song from Marigold', kind: 'Side quest' },
+    beacons: { giver: 'Ansel the beacon keeper, Beacon Hills', reward: '40 coins, Agility xp, and every place in sight on your map', kind: 'Side quest' },
   };
   // people who live in feature places without a NPCS entry (33-goblincity, 36-skycity, 26-boats)
   const EXTRA_NPCS = {
@@ -23182,7 +23200,7 @@ window.SETTINGS = SETTINGS;
     if (!H().owned) { notify('You have no horse. Fennick the trader in Thistledown keeps a grey mare on his rail.'); return false; }
     const why = mountRefusal(); if (why) { notify(why); return false; }
     const at = horseNear();
-    if (!at) { notify(`${NAME} is not here. Whistle her at Fennick's rail in Thistledown.`); return false; }
+    if (!at) { notify(`${NAME} is not here. Whistle her at any hitching rail.`); return false; }
     return mount(at.tx, at.ty);
   }
 
@@ -23985,10 +24003,15 @@ window.SETTINGS = SETTINGS;
     const second = throwNear(), toNew = !!second.at && Math.max(Math.abs(second.at[0] - post.x), Math.abs(second.at[1] - post.y)) <= 4 && /the test rail by the signpost/.test(second.said);
     // the registry: Fennick's first, the two reserved plots' rails held (no post yet), the visited list saved on the horse
     const reg = RAILS[0].id === 'thistledown' && ['alchemy', 'necromancy'].every(id => { const r = RAILS.find(q => q.id === id); return r && r.reserved && r.at() === null; }) && Array.isArray(player.horse.rails) && player.horse.rails.includes('selftest');
-    if (riding()) dismount(true); liftHorse(); RAILS.remove('selftest'); player.horse = h0 || { owned: false, hp: HORSE_HP, at: null, under: null };
+    if (riding()) dismount(true); liftHorse(); RAILS.remove('selftest');
+    // G with her out of reach names no one rail: any rail whistles her in (the review of bcb559f: it sent him to Fennick's
+    // while he stood at a new one)
+    let hint = null; { const n0 = notice; notice = null; F.tp(post.x + 8, post.y + 8); tryRide(); hint = notice && notice.text; notice = n0; }
+    const anyRail = /Whistle her at any hitching rail\./.test(hint || '') && !/Fennick/.test(hint || '');
+    player.horse = h0 || { owned: false, hp: HORSE_HP, at: null, under: null };
     dialog.cur = dc; dialog.queue.length = 0; dialog.queue.push(...dq); h.peace(false);
-    check(P + "thrown off, she bolts to the NEAREST rail he has visited and the Voice names it: Fennick's while the new rail is unvisited, the new one once he has stood by it (RAILS: Fennick's first, the Glasshouse's and the Old Barrow's reserved)",
-      !!added && toFennick && seen && toNew && reg, { first, second, seen, reg, post: [post.x, post.y], fennick: fen && [fen.x, fen.y] });
+    check(P + "thrown off, she bolts to the NEAREST rail he has visited and the Voice names it: Fennick's while the new rail is unvisited, the new one once he has stood by it (RAILS: Fennick's first, the Glasshouse's and the Old Barrow's reserved); G with her out of reach says to whistle her at any hitching rail",
+      !!added && toFennick && seen && toNew && reg && anyRail, { first, second, seen, reg, hint, post: [post.x, post.y], fennick: fen && [fen.x, fen.y] });
   });
 }
 
@@ -39661,7 +39684,8 @@ window.RETALIATE = RETALIATE;
   function stepRemote(m, t, dt) {
     const def = MONSTER_DEFS[m.type];
     const dp = dist(m.x, m.y, t.x, t.y), dHome = dist(m.x, m.y, m.home.x, m.home.y);
-    if (dp > def.sight * 1.6 || dHome > 14 * TILE || t.dead) { m.state = 'return'; m.moving = false; return; }
+    const roadSafe = def.roam && window.ATLAS && ATLAS.onMainRoad(Math.floor(t.x / TILE), Math.floor(t.y / TILE));   // as the core loop: a patch-keeper leaves a knight on a main road be
+    if (dp > def.sight * 1.6 || dHome > 14 * TILE || t.dead || roadSafe) { m.state = 'return'; m.moving = false; return; }
     m.state = 'chase';
     const dx = t.x - m.x, dy = t.y - m.y, d = dp || 1, stop = m.r + KNIGHT_R + 4;
     let vx = 0, vy = 0;
@@ -63552,11 +63576,26 @@ window.TOWNSFOLK = TOWNSFOLK;
       "Lost? Read the signpost. It's never wrong. I am, sometimes.",
     ],
     marigold: [
-      "I used to walk my cows down the Drovers' Track. Then the goblins built a camp right across it.",
+      "I used to walk my cows down the Drovers' Track. Then the goblins built a fence right across it.",
       "Goblins don't even want the cows. They want the bells. Shiny, you see.",
       'My cows are safe in a field by Hollowford now. I miss walking them.',
       "If you ever chase those goblins off my track, I'll sing about you. Loudly.",
       "Mother Hobb's pie is the best thing on any road. Don't tell the baker in Thistledown.",
+    ],
+  };
+  // Marigold once the south goblin outpost on her track has been beaten (86-outposts: quest.outposts.outpost_south): her
+  // song, once, with a pie; then her cows are back (or, while the outpost fills again, the goblins are back)
+  const MARIGOLD = {
+    song: ["You chased the goblins off my track! Brin told me. I promised you a song, so here it is:",
+      "The knight, the knight, the bravest knight! The goblins ran away in fright! ... Here, have a pie. You earned it."],
+    after: [
+      "My cows are back on the track! Brin walks them to the inn again.",
+      "I sing your song to the cows every day. They like it. I think.",
+      "Mother Hobb's pie is the best thing on any road. Don't tell the baker in Thistledown.",
+    ],
+    back: [
+      "The goblins came back to my track! Brin says they are behind their fence again.",
+      "You beat them once. If you beat them again, I will sing even louder.",
     ],
   };
   const PEOPLE = [
@@ -63744,13 +63783,25 @@ window.TOWNSFOLK = TOWNSFOLK;
 
   // ---------- talking ----------
   const SAID = {};
-  HOOKS.talk.wayfarer = n => { const k = SAID[n.id] = ((SAID[n.id] === undefined ? -1 : SAID[n.id]) + 1) % n.lines.length; say(n.lines[k], n.name); };
-  // Mother Hobb: five coins for a bowl of stew (healed to full) and the room (a bed in the back room holds the knight's
-  // spirit from then on, like Dorran's at the Barrel & Boar); then her kitchen opens
+  const southOutpost = () => (quest.outposts && quest.outposts.outpost_south) || {};
+  const marigoldMood = () => { const q = southOutpost(); return q.cleared ? 'after' : q.won ? 'back' : 'before'; };
+  HOOKS.talk.wayfarer = n => {
+    let L = n.lines, key = n.id;
+    if (n.id === 'marigold' && marigoldMood() !== 'before') {
+      const x = quest.xroads && typeof quest.xroads === 'object' ? quest.xroads : (quest.xroads = {});
+      if (!x.sang) { x.sang = 1; for (const l of MARIGOLD.song) say(l, n.name); if (addItem('meat_pie', 1) !== 0) notify('Your pack is full. Marigold keeps the pie for you.'), x.sang = 0; else burst(player.x, player.y, '#ffd166', 12, 60); save(); return; }
+      L = MARIGOLD[marigoldMood()]; key = n.id + ':' + marigoldMood();
+    }
+    const k = SAID[key] = ((SAID[key] === undefined ? -1 : SAID[key]) + 1) % L.length; say(L[k], n.name);
+  };
+  // Mother Hobb: five coins, once, for a bowl of stew (healed to full) and the room (a bed in the back room holds the
+  // knight's spirit from then on, like Dorran's at the Barrel & Boar, and a sleep in it heals him for nothing); then her
+  // kitchen opens. She never takes coin again (the review of bcb559f: she took five from a hurt knight every word, even one
+  // who only wanted a potato)
   const ROOM = 5;
   const hobbWords = {
     paid: 'Five coins. Hot stew, and the bed in the back room is yours. Sleep in it and you will wake here if you fall.',
-    again: 'Five coins. Sit down and eat. You look done in.',
+    hurt: 'You look done in, love. Your bed is made up in the back room. A good sleep will mend you.',
     poor: 'A bowl of stew and a bed are five coins. Come back with coin, love.',
     home: 'Welcome back. Your bed is made. Hungry?',
   };
@@ -63758,15 +63809,15 @@ window.TOWNSFOLK = TOWNSFOLK;
     HOOKS.talkBefore.shop = n => {
       if (n.id !== 'mother_hobb') return prev ? prev(n) : false;
       const paid = !!player.xinnRested, hurt = player.hp < player.maxHp;
-      if ((!paid || hurt) && coins() >= ROOM) {
+      if (!paid && coins() >= ROOM) {
         payCoins(ROOM); player.hp = player.maxHp; player.xinnRested = true;
-        say(paid ? hobbWords.again : hobbWords.paid, n.name); burst(player.x, player.y, '#7ee787', 10, 40); save();
-      } else say(paid ? hobbWords.home : hobbWords.poor, n.name);
+        say(hobbWords.paid, n.name); burst(player.x, player.y, '#7ee787', 10, 40); save();
+      } else say(!paid ? hobbWords.poor : hurt ? hobbWords.hurt : hobbWords.home, n.name);
       openPanel('shop', n.shop); return true;
     }; }
 
   // ---------- the handle ----------
-  window.CROSSROADS = { ID, THINGS, BOX, STAKED, PLAN, INN, PEOPLE, LINES, POSTS, STATS, NOTICES, FOOT, FR: F, boardWords, hobbWords, ROOM };
+  window.CROSSROADS = { ID, THINGS, BOX, STAKED, PLAN, INN, PEOPLE, LINES, MARIGOLD, marigoldMood, POSTS, STATS, NOTICES, FOOT, FR: F, boardWords, hobbWords, ROOM };
 
   // ---------- self-tests ----------
   HOOKS.selfTest.push((check, Fh, h) => {
@@ -63825,12 +63876,28 @@ window.TOWNSFOLK = TOWNSFOLK;
         !bad.length, { bad }); }
 
     // 4. they talk: plain words, short; Jory and Marigold tell their stories a line at a time
-    { const said = {};
+    { const said = {}, op0 = quest.outposts; quest.outposts = {};
       for (const p of PEOPLE.slice(1)) { said[p.id] = []; for (let k = 0; k < p.lines.length; k++) { dialog.queue.length = 0; advanceDialog(); closePanel(); talkTo(p); const d = [dialog.cur, ...dialog.queue].find(q => q && q.who === p.name); said[p.id].push(d ? d.text : null); } closePanel(); dialog.queue.length = 0; advanceDialog(); }
-      const all = Object.values(LINES).flat().concat(Object.values(hobbWords));
+      quest.outposts = op0;
+      const all = Object.values(LINES).flat().concat(Object.values(hobbWords), MARIGOLD.song, MARIGOLD.after, MARIGOLD.back);
       const every = PEOPLE.slice(1).every(p => p.lines.every(t => said[p.id].includes(t)));
       check(P + 'Jory and Marigold each say every one of their lines in turn, every line (and every one of Mother Hobb\'s) short and plain, with no compass words (the signpost gives the ways)',
         every && all.every(t => t.length <= 140 && !/\b(north|south|east|west)\b/i.test(t)), { said }); }
+    // 4b. Marigold's promise kept (the review of bcb559f): once the south outpost on her track is beaten she sings her song
+    // and gives a meat pie, once ever; while it is cleared her cows are back, while it fills again the goblins are; and the
+    // outpost is a fence, as Brin says, not a camp
+    { const mg = PEOPLE.find(p => p.id === 'marigold'), keep = { op: quest.outposts, x: quest.xroads, inv: JSON.parse(JSON.stringify(player.inv)), s: Object.assign({}, SAID) };
+      const talk = n => { const out = []; for (let k = 0; k < n; k++) { dialog.queue.length = 0; advanceDialog(); closePanel(); talkTo(mg); out.push([dialog.cur, ...dialog.queue].filter(q => q && q.who === mg.name).map(q => q.text).join(' / ')); } closePanel(); dialog.queue.length = 0; advanceDialog(); return out; };
+      const res = {};
+      try {
+        player.inv = new Array(INV_SLOTS).fill(null); quest.xroads = {};
+        quest.outposts = { outpost_south: { cleared: 1, won: 1, thanked: 1 } };
+        const t = talk(MARIGOLD.after.length + 2); res.song = t[0]; res.after = t.slice(1); res.pie = countItem('meat_pie');
+        quest.outposts = { outpost_south: { cleared: 0, won: 1, thanked: 1 } }; res.back = talk(MARIGOLD.back.length + 1); res.pie2 = countItem('meat_pie');
+      } finally { quest.outposts = keep.op; quest.xroads = keep.x; player.inv = keep.inv; Object.keys(SAID).forEach(k => delete SAID[k]); Object.assign(SAID, keep.s); }
+      check(P + 'Marigold keeps her promise: after the south goblin outpost is beaten she sings her song and gives a meat pie, once; then only that her cows are back (never that the goblins are on her track), and while it fills again that the goblins came back; the outpost is a fence',
+        res.song === MARIGOLD.song.join(' / ') && res.pie === 1 && res.pie2 === 1 && MARIGOLD.after.every(l => res.after.includes(l)) && res.after.every(l => MARIGOLD.after.includes(l))
+        && MARIGOLD.back.every(l => res.back.includes(l)) && res.back.every(l => MARIGOLD.back.includes(l)) && /fence/.test(LINES.marigold[0]) && !LINES.marigold.some(l => /\bcamp\b/.test(l)), res); }
 
     // 5. the room and the kitchen: no coin, no room (and the bed says whose room it is); five coins heals him to full and
     // the back room's bed then holds his spirit; her kitchen opens every time; the Barrel & Boar's room is its own
@@ -63845,11 +63912,13 @@ window.TOWNSFOLK = TOWNSFOLK;
         addItem('coins', 12); player.hp = Math.max(1, player.maxHp - 5);
         talkTo(hobb); res.coins = coins(); res.healed = player.hp === player.maxHp; res.rested = !!player.xinnRested; res.shop = panel === 'shop' && panelArg === 'xinn_kitchen'; closePanel(); dialog.queue.length = 0; advanceDialog();
         talkTo(hobb); res.coins2 = coins(); closePanel(); dialog.queue.length = 0; advanceDialog();
-        res.paid = sleep(); res.at = player.bedSpawn && [Math.floor(player.bedSpawn.x / TILE), Math.floor(player.bedSpawn.y / TILE)]; res.wantAt = bed;
+        // hurt again with the room paid: a word costs nothing, she sends him to his bed, her kitchen opens; the bed heals him
+        player.hp = Math.max(1, player.maxHp - 5); talkTo(hobb); res.coins3 = coins(); res.hurtWords = ([dialog.cur, ...dialog.queue].find(q => q && q.who === hobb.name) || {}).text || null; res.shop3 = panel === 'shop' && panelArg === 'xinn_kitchen'; closePanel(); dialog.queue.length = 0; advanceDialog();
+        res.paid = sleep(); res.bedHealed = player.hp === player.maxHp; res.at = player.bedSpawn && [Math.floor(player.bedSpawn.x / TILE), Math.floor(player.bedSpawn.y / TILE)]; res.wantAt = bed;
         res.stock = ['meat_pie', 'bread'].every(id => SHOPS.xinn_kitchen.stock.some(([k]) => k === id));
       } finally { player.inv = keep.inv; player.hp = keep.hp; player.xinnRested = keep.rested; player.innRested = keep.inn; player.bedSpawn = keep.bed; player.x = keep.x; player.y = keep.y; player.facing = keep.f; closePanel(); dialog.queue.length = 0; advanceDialog(); }
-      check(P + "the room: unpaid, the bed says \"Pay Mother Hobb for the room first.\" (the Barrel & Boar's paid room does not count here); with no coin she opens her kitchen and keeps the room; five coins heals the knight to full, the room is his and a second word with him whole costs nothing; then the back room's bed holds his spirit; her kitchen sells pies and bread",
-        !res.unpaid.bed && res.unpaid.words === 'Pay Mother Hobb for the room first.' && res.poorShop && !res.poorRested && res.coins === 7 && res.healed && res.rested && res.shop && res.coins2 === 7 && res.paid.bed && !!res.at && res.at[0] === res.wantAt[0] && res.at[1] === res.wantAt[1] && res.stock,
+      check(P + "the room: unpaid, the bed says \"Pay Mother Hobb for the room first.\" (the Barrel & Boar's paid room does not count here); with no coin she opens her kitchen and keeps the room; five coins heals the knight to full and the room is his, once: a later word costs nothing, hurt or whole (hurt, she sends him to his bed, which heals him) and her kitchen opens; the back room's bed holds his spirit; her kitchen sells pies and bread",
+        !res.unpaid.bed && res.unpaid.words === 'Pay Mother Hobb for the room first.' && res.poorShop && !res.poorRested && res.coins === 7 && res.healed && res.rested && res.shop && res.coins2 === 7 && res.coins3 === 7 && res.hurtWords === hobbWords.hurt && res.shop3 && res.bedHealed && res.paid.bed && !!res.at && res.at[0] === res.wantAt[0] && res.at[1] === res.wantAt[1] && res.stock,
         res); }
 
     // 6. no creature spawns inside the place (or in its yard), and the yard's things are solid and say their words
@@ -64556,11 +64625,11 @@ const MOUNT_LOOK = (() => {
       "The crows think my wheat is their dinner. Chase them off if you like. They never listen to me.",
       'Rats got into the barn again. Big as cats, they are. Bigger than some cats.',
       "Bring Tamsin your wheat. Her wheel grinds it to flour, and flour makes pies. There's an oven in my farmhouse.",
-      "That bare patch by the lane is for anyone. Dig it, plant it, eat it. Greta in Thistledown sells the seeds.",
+      "That bare patch by the lane is for anyone. Dig it, plant it, eat it. Tamsin sells the seed at the mill.",
     ],
   };
   const PEOPLE = [
-    OB.pt({ id: 'wilf', name: 'Wilf the stonemason', x: 11, y: 11, tunic: '#8a8680', hair: '#a8a098', beard: true, role: 'riverfolk', lines: LINES.wilf }),
+    OB.pt({ id: 'wilf', name: 'Wilf the stonemason', x: 16, y: 9, tunic: '#8a8680', hair: '#a8a098', beard: true, role: 'riverfolk', lines: LINES.wilf }),
     MB.pt({ id: 'tamsin_miller', name: 'Tamsin the miller', x: 15, y: 2, tunic: '#5a86b0', hair: '#6a4426', woman: true, apron: true, role: 'shop', shop: 'mill' }),
     MB.pt({ id: 'odo', name: 'Odo the farmer', x: 8, y: 11, tunic: '#5a7a3e', hair: '#5a3a1a', beard: true, role: 'riverfolk', lines: LINES.odo }),
     SM.pt({ id: 'nan_gully', name: 'Nan Gully', x: 10, y: 2, tunic: '#3a5a7a', hair: '#e8e2d6', woman: true, apron: true, role: 'shop', shop: 'saltmere_fish' }),
@@ -64583,7 +64652,9 @@ const MOUNT_LOOK = (() => {
   // ---------- the mill leat and the wheel; Saltmere's fishing spots; the marsh band ----------
   const LEAT = () => MB.box([20, 1, 25, 1]), PIT = () => MB.box([19, 0, 19, 2]);
   const WHEEL = () => MB.p(19, 1);
-  const FISH = () => SM.pts([[4, 11], [10, 10], [12, 13], [3, 14]]);
+  // (each on the water beside the jetty, so a knight stands next to every ring: the review of bcb559f found three of the
+  // first four out in open water with no foothold)
+  const FISH = () => SM.pts([[5, 9], [8, 10], [5, 12], [8, 13]]);
   const MARSH = () => SM.box([-8, 2, -1, 16]);
 
   // ---------- the footprint (§10): WORLD_REV 2 ----------
@@ -64929,6 +65000,15 @@ const MOUNT_LOOK = (() => {
       check(P + "Millbrook's wheel turns in a pit fed by a leat from the river (a dead end), its wheat stands on soil and a plot of soil waits for anyone; Saltmere has five stilt huts, a plank jetty two wide with lobster grounds off its end, drying racks, and a marsh band of pools, sand bars and reeds",
         dry === 0 && joins && wheat.length === 21 && onSoil && soil === 8 && huts === 5 && dock >= 30 && lob === 4 && DECO.cells('rack').length === 4 && M.pools > 0 && M.sand > 0 && M.reeds > 0, { dry, joins, wheat: wheat.length, soil, huts, dock, lob, marsh: M }); }
 
+    // 7b. Saltmere's fishing rings: each on water, with a tile beside it (4 ways) a knight walks to from the cave mouth
+    { const N = MAP_W * MAP_H, seen = new Uint8Array(N), q = new Int32Array(N); let n = 0;
+      const take = i => { if (!seen[i] && (!SOLID.has(tiles[i]) || PUSH_THROUGH.has(tiles[i]))) { seen[i] = 1; q[n++] = i; } };
+      { const [mx, my] = A.port('cave.mouth'); take(idx(mx, my)); }
+      for (let k = 0; k < n; k++) { const c = q[k], x = c % MAP_W; if (x > 0) take(c - 1); if (x < MAP_W - 1) take(c + 1); if (c >= MAP_W) take(c - MAP_W); if (c + MAP_W < N) take(c + MAP_W); }
+      const reach = (x, y) => !!seen[idx(x, y)];
+      const bad = FISH().map(p => p.map(Math.round)).filter(([x, y]) => tiles[idx(x, y)] !== T.WATER || ![[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => !SOLID.has(tiles[idx(x + dx, y + dy)]) && reach(x + dx, y + dy)));
+      check(P + "Saltmere's four fishing rings lie on water a knight can stand beside (the jetty), each reached from the cave mouth", FISH().length === 4 && !bad.length, { bad, fish: FISH() }); }
+
     // 8. the rails: each place's rail is in RAILS, on a HITCH tile in its own box, and the mare bolts to the nearest visited
     { const ok = IDS.every(id => { const r = RAILS.find(q => q.id === id), p = r && r.at(); return !!p && inB(A.box(id), p.x, p.y) && tileAt(p.x, p.y) === T.HITCH && RAILS.of(p.x, p.y) === r && !r.reserved; });
       check(P + 'each place has its hitching rail: a RAILS entry, its post on a HITCH tile in its own box', ok, { posts: POSTS }); }
@@ -64938,8 +65018,8 @@ const MOUNT_LOOK = (() => {
       const anyBuilders = SPREAD_GROUND.signs.map(([x, y]) => A.signText(x, y)).filter(t => /(Old Bridge|Millbrook|Saltmere) \(builders at work\)/.test(t));
       const onRoad = []; for (const b of BLDG) for (let y = b.y; y < b.y + b.h; y++) for (let x = b.x; x < b.x + b.w; x++) if (A.onMainRoad(x, y)) onRoad.push(b.id);
       for (const id of IDS) { const rows = PLAN[id]; rows.forEach((r, ry) => [...r].forEach((c, rx) => { const [x, y] = FR[id].p(rx, ry); if (/[fGHkL~]/.test(c) && A.onMainRoad(x, y)) onRoad.push(id + ' ' + c + '@' + x + ',' + y); })); }
-      check(P + "the signposts at the Old Bridge's south end and Millbrook's gate read, no signpost says the riverside's builders are still at work, and nothing built here stands on a main road",
-        words.every(Boolean) && !anyBuilders.length && !onRoad.length, { words, anyBuilders, onRoad }); }
+      check(P + "the signposts at the Old Bridge's south end and Millbrook's gate read (the bridge's names the Hunters' Lodge, the Wolfwood Road's next stop), no signpost says the riverside's builders are still at work, and nothing built here stands on a main road",
+        words.every(Boolean) && /Hunters' Lodge/.test(words[0] || '') && !anyBuilders.length && !onRoad.length, { words, anyBuilders, onRoad }); }
 
     // 10. the ground: no change outside the footprint boxes and their ring (the FOOTPRINT proof's own words, here as the
     // places say it), and placing in a built place says whose ground it is
@@ -65146,6 +65226,20 @@ const MOUNT_LOOK = (() => {
       'Beat the chief and the rest, and the track is safe again. Then I can get my cart back.',
     ],
   };
+  // after the chief has fallen: his cart is home (and, while the hills fill again, a word that the bandits are back)
+  const AFTER = {
+    wat_carter: [
+      'My cart is home. Pots and pans for everyone!',
+      'The track is safe, so I can sell my pots in every town again.',
+      'Thank you again for beating the bandit chief. You are very brave.',
+    ],
+  };
+  const BACK = {
+    wat_carter: [
+      'The bandits came back to their camp! My cart is safe at home, at least.',
+      'You beat them once. Beat them again and the track is safe again.',
+    ],
+  };
   const WORDS = {
     thanks: 'You beat the bandit chief! My cart is free and the track is safe again. Thank you! Here, take these coins.',
     booth: 'The bandits\' toll booth. A board on it says: TOLL, TEN COINS. PAY OR GO HOME.',
@@ -65163,7 +65257,7 @@ const MOUNT_LOOK = (() => {
   };
   const REWARD = { wat_carter: 60 };
   const PEOPLE = [
-    BF.pt({ id: 'wat_carter', name: 'Wat the carter', x: 6, y: 4, place: ID, tunic: '#4e6a3e', hair: '#a8a49c', beard: true, role: 'banditwatch', lines: LINES.wat_carter }),
+    BF.pt({ id: 'wat_carter', name: 'Wat the carter', x: 11, y: 5, place: ID, tunic: '#4e6a3e', hair: '#a8a49c', beard: true, role: 'banditwatch', lines: LINES.wat_carter }),
   ].map(n => Object.assign(n, { bandits: true }));
 
   // ---------- the bandits ----------
@@ -65451,14 +65545,29 @@ const MOUNT_LOOK = (() => {
     const q = quest.bandits; if (q && q.cleared && standing() > 0) q.cleared = 0;
   });
 
-  // ---------- talking: Wat a line at a time; once the chief has been beaten, thanks (once ever) ----------
+  // ---------- talking: Wat a line at a time; once the chief has been beaten, thanks (once ever), then his after-the-win
+  // lines (the review of bcb559f: he went back to "they took my cart" after paying for it) ----------
   const SAID = {};
-  const nextLine = n => { const k = SAID[n.id] = ((SAID[n.id] === undefined ? -1 : SAID[n.id]) + 1) % n.lines.length; return n.lines[k]; };
+  // which story he tells now: 'before' the chief falls; 'after' once he has (his cart is home); 'back' while the hills are
+  // filling again after that
+  const mood = () => { const q = Q(); return !q.won ? 'before' : (!q.cleared && standing() > 0) ? 'back' : 'after'; };
+  const linesOf = (n, m) => (m === 'before' ? n.lines : (m === 'back' ? BACK : AFTER)[n.id] || n.lines);
+  const nextLine = n => { const m = mood(), L = linesOf(n, m), key = n.id + ':' + m; const k = SAID[key] = ((SAID[key] === undefined ? -1 : SAID[key]) + 1) % L.length; return L[k]; };
   HOOKS.talk.banditwatch = n => {
     const q = Q();
+    if (!q.met) { q.met = 1; if (!q.won) { quest.tracked = 'wat_cart'; notify(`New quest: Wat's Cart. ${touchMode() ? 'Tap QUESTS' : 'Press ' + keyName('J')} to read it.`); } save(); }
     if (q.won && !q.thanked) { q.thanked = 1; addItem('coins', REWARD[n.id]); say(WORDS.thanks, n.name); burst(player.x, player.y, '#ffd166', 12, 60); save(); return; }
     say(nextLine(n), n.name);
   };
+
+  // ---------- the quest book (J) and the map: Wat's Cart, from the first word with him to his thanks (the review of
+  // bcb559f: the story was in no book and on no map) ----------
+  QUEST_DEFS.wat_cart = { name: "Wat's Cart" };
+  HOOKS.questText.wat_cart = () => { const q = Q(); return q.thanked ? 'Done.' : q.won ? 'The bandit chief is beaten! Go back and tell Wat the carter.' : "Bandits took Wat the carter's cart. Go in past their toll gate and beat the bandit chief."; };
+  HOOKS.activeQuests.push(() => { const q = quest.bandits; return q && q.met && !q.thanked ? ['wat_cart'] : []; });
+  if (HOOKS.mapTarget) HOOKS.mapTarget.push(() => { const q = quest.bandits; if (!q || !q.met || q.thanked) return null;
+    if (q.won) { const w = PEOPLE[0]; return { x: w.x, y: w.y, label: 'Wat the carter', id: 'wat_cart' }; }
+    const [x, y] = GATE().map(Math.round); return { x, y, label: "The bandits' toll gate", id: 'wat_cart' }; });
 
   // ---------- 42-playthrough: the bandits on the curve ----------
   if (HOOKS.xpSource) HOOKS.xpSource.push(add => {
@@ -65468,7 +65577,7 @@ const MOUNT_LOOK = (() => {
   });
 
   // ---------- the handle ----------
-  window.BANDITS = { ID, PLAN, PEOPLE, LINES, WORDS, REWARD, DEFS, SPAWNS, spotsOf, GATE, MOUTH, WALLS, POSTS, STATS: STATS_B, THINGS, SIGNS, FOOT, BF, Q, gang, standing, isBandit, trackCells, NOTICE };
+  window.BANDITS = { ID, PLAN, PEOPLE, LINES, AFTER, BACK, mood, WORDS, REWARD, DEFS, SPAWNS, spotsOf, GATE, MOUTH, WALLS, POSTS, STATS: STATS_B, THINGS, SIGNS, FOOT, BF, Q, gang, standing, isBandit, trackCells, NOTICE };
 
   // ---------- self-tests ----------
   HOOKS.selfTest.push((check, Fh, h) => {
@@ -65589,13 +65698,19 @@ const MOUNT_LOOK = (() => {
         !bad.length && kinds === 'booth,cart,mouth,tent,tent', { bad, kinds }); }
 
     // 7. Wat talks: a line at a time; plain words, short, no compass word
-    { const said = []; const keep = { s: SAID.wat_carter, bq: JSON.parse(JSON.stringify(quest.bandits || {})) }; quest.bandits = {};
-      const p = PEOPLE[0];
-      for (let k = 0; k < p.lines.length; k++) { dialog.queue.length = 0; advanceDialog(); talkTo(p); const d = [dialog.cur, ...dialog.queue].find(q => q && q.who === p.name); said.push(d ? d.text : null); }
-      SAID.wat_carter = keep.s; quest.bandits = keep.bq; dialog.queue.length = 0; advanceDialog();
-      const lines = LINES.wat_carter.concat([WORDS.thanks, WORDS.booth, WORDS.boothEmpty, WORDS.tent, WORDS.cart, WORDS.cartFree, WORDS.mouth, WORDS.gate, WORDS.sacksGuarded, WORDS.sacksFound, WORDS.sacksEmpty, WORDS.scrub]);
-      check(P + 'Wat tells his story a line at a time; every line (and every word the hills say) is short and plain, with no compass word',
-        p.lines.every(t => said.includes(t)) && lines.every(t => t.length <= 140 && !/\b(north|south|east|west)\b|\bmiles?\b/i.test(t)), { said }); }
+    // (after the chief has fallen his cart is home: only his after-the-win lines, and while the hills fill again that the
+    // bandits came back; never "they took my cart" again: the review of bcb559f)
+    { const said = {}; const keep = { s: Object.assign({}, SAID), bq: JSON.parse(JSON.stringify(quest.bandits || {})) };
+      const p = PEOPLE[0], up = gang().filter(m => !m.dead).length > 0;
+      const MOODS = { before: {}, after: { won: 1, cleared: 1, thanked: 1, searched: 1 }, back: { won: 1, cleared: 0, thanked: 1 } };
+      const want = m => m === 'before' ? p.lines : (m === 'after' ? AFTER : BACK)[p.id];
+      for (const m of Object.keys(MOODS)) { quest.bandits = Object.assign({}, MOODS[m]); said[m] = [];
+        for (let k = 0; k < want(m).length + 2; k++) { dialog.queue.length = 0; advanceDialog(); talkTo(p); const d = [dialog.cur, ...dialog.queue].find(q => q && q.who === p.name); said[m].push(d ? d.text : null); } }
+      Object.keys(SAID).forEach(k => delete SAID[k]); Object.assign(SAID, keep.s); quest.bandits = keep.bq; dialog.queue.length = 0; advanceDialog();
+      const lines = LINES.wat_carter.concat(AFTER.wat_carter, BACK.wat_carter, [WORDS.thanks, WORDS.booth, WORDS.boothEmpty, WORDS.tent, WORDS.cart, WORDS.cartFree, WORDS.mouth, WORDS.gate, WORDS.sacksGuarded, WORDS.sacksFound, WORDS.sacksEmpty, WORDS.scrub]);
+      const told = up && Object.keys(MOODS).every(m => want(m).every(t => said[m].includes(t)) && said[m].every(t => want(m).includes(t)));
+      check(P + 'Wat tells his story a line at a time; once the chief has fallen only his after-the-win lines (his cart is home), and while the hills fill again that the bandits came back; every line (and every word the hills say) is short and plain, with no compass word',
+        told && lines.every(t => t.length <= 140 && !/\b(north|south|east|west)\b|\bmiles?\b/i.test(t)), { said, up }); }
 
     // 8. the rail, the signpost and the track: a RAILS entry on a HITCH tile in the box; a signpost by the track names the
     // Bandit Hills (its arm drawn); Hollowford's signpost no longer says "builders at work"; the Bandit Track's own cells
@@ -65728,6 +65843,29 @@ const MOUNT_LOOK = (() => {
       'My cows will not walk past goblins. Cows are clever like that.',
     ],
   };
+  // while the outpost is cleared (after the thanks); and once it has been won, while it fills again
+  const AFTER = {
+    bramble_scout: [
+      'Empty! I will keep watch in case they come back.',
+      'The guards in town were very pleased when I told them about you.',
+      'Goblins hate losing. They will stay away for a long while.',
+    ],
+    brin_drover: [
+      'The cows walk this way again. Listen to them moo!',
+      'Marigold at the Crossroads Inn heard what you did. She will want to thank you.',
+      'Goblins do not stay away for ever. If they come back, I will tell you.',
+    ],
+  };
+  const BACK = {
+    bramble_scout: [
+      'Shh! The goblins came back. Three goblins and a sapper, the same as before.',
+      'You beat them once. Beat them again and they stay away for a long while.',
+    ],
+    brin_drover: [
+      'The goblins came back! My cows will not walk past them again.',
+      'You beat them once. You can beat them again. Eat some food when you get hurt.',
+    ],
+  };
   const WORDS = {
     thanks: {
       bramble_scout: 'You beat the whole outpost! I will tell the guards in town. Here, take this for being so brave.',
@@ -65745,7 +65883,7 @@ const MOUNT_LOOK = (() => {
   const REWARD = { bramble_scout: 30, brin_drover: 40 };
   const PEOPLE = [
     ON.pt({ id: 'bramble_scout', name: 'Bramble the scout', x: 1, y: 0, place: 'outpost_north', tunic: '#4e6a3a', hair: '#7a4a24', woman: true, role: 'outpostwatch', lines: LINES.bramble_scout }),
-    OS.pt({ id: 'brin_drover', name: 'Brin the drover', x: 0, y: 2, place: 'outpost_south', tunic: '#7a5a3a', hair: '#5a3a1e', beard: true, role: 'outpostwatch', lines: LINES.brin_drover }),
+    OS.pt({ id: 'brin_drover', name: 'Brin the drover', x: 0, y: 7, place: 'outpost_south', tunic: '#7a5a3a', hair: '#5a3a1e', beard: true, role: 'outpostwatch', lines: LINES.brin_drover }),
   ].map(n => Object.assign(n, { outposts: true }));
 
   // ---------- the goblins: north three goblins and a sapper, south three goblins and a brute ----------
@@ -66011,15 +66149,32 @@ const MOUNT_LOOK = (() => {
 
   // ---------- talking: each watcher a line at a time; once the outpost has been cleared, thanks (once ever) ----------
   const SAID = {};
-  const nextLine = n => { const k = SAID[n.id] = ((SAID[n.id] === undefined ? -1 : SAID[n.id]) + 1) % n.lines.length; return n.lines[k]; };
+  // which story the watcher tells now (the review of bcb559f: after the win they still said the goblins were in there):
+  // 'before' it has ever been cleared; 'after' while it is cleared; 'back' while it fills again after a win
+  const mood = id => { const q = Q(id); return q.cleared ? 'after' : q.won ? 'back' : 'before'; };
+  const linesOf = (n, m) => (m === 'before' ? n.lines : (m === 'back' ? BACK : AFTER)[n.id] || n.lines);
+  const nextLine = n => { const m = mood(n.place), L = linesOf(n, m), key = n.id + ':' + m; const k = SAID[key] = ((SAID[key] === undefined ? -1 : SAID[key]) + 1) % L.length; return L[k]; };
   HOOKS.talk.outpostwatch = n => {
     const q = Q(n.place);
+    if (!q.met) { q.met = 1; if (!q.won) { quest.tracked = 'outposts'; notify(`New quest: The Goblin Outposts. ${touchMode() ? 'Tap QUESTS' : 'Press ' + keyName('J')} to read it.`); } save(); }
     if (q.won && !q.thanked) { q.thanked = 1; addItem('coins', REWARD[n.id]); say(WORDS.thanks[n.id], n.name); burst(player.x, player.y, '#ffd166', 12, 60); save(); return; }
     say(nextLine(n), n.name);
   };
 
+  // ---------- the quest book (J) and the map: The Goblin Outposts, from the first word with Bramble or Brin to their
+  // thanks (the review of bcb559f) ----------
+  QUEST_DEFS.outposts = { name: 'The Goblin Outposts' };
+  const WHOSE = { outpost_north: 'Bramble', outpost_south: 'Brin' };
+  const open_ = () => IDS.filter(id => { const q = quest.outposts && quest.outposts[id]; return q && q.met && !q.thanked; });
+  HOOKS.questText.outposts = () => { const ids = open_(); if (!ids.length) return 'Done.';
+    return ids.map(id => Q(id).won ? `${WHOSE[id]}'s outpost is beaten! Go back and tell ${WHOSE[id]}.` : `${WHOSE[id]}'s outpost: beat every goblin in it. Go in through the gap in the spikes.`).join(' '); };
+  HOOKS.activeQuests.push(() => open_().length ? ['outposts'] : []);
+  if (HOOKS.mapTarget) HOOKS.mapTarget.push(() => { const id = open_()[0]; if (!id) return null;
+    if (Q(id).won) { const w = PEOPLE.find(p => p.place === id); return { x: w.x, y: w.y, label: w.name, id: 'outposts' }; }
+    const [x, y] = gapOf(id).map(Math.round); return { x, y, label: 'The goblin outpost', id: 'outposts' }; });
+
   // ---------- the handle ----------
-  window.OUTPOSTS = { IDS, PLAN, PEOPLE, LINES, WORDS, REWARD, SPAWNS, spotsOf, GAP, gapOf, SOUTH_SIGN, LANE, POSTS, STATS, THINGS, HEAPS, SIGNS, FOOT, FR, Q, outpostOf, gang, standing };
+  window.OUTPOSTS = { IDS, PLAN, PEOPLE, LINES, AFTER, BACK, mood, WORDS, REWARD, SPAWNS, spotsOf, GAP, gapOf, SOUTH_SIGN, LANE, POSTS, STATS, THINGS, HEAPS, SIGNS, FOOT, FR, Q, outpostOf, gang, standing };
 
   // ---------- self-tests ----------
   HOOKS.selfTest.push((check, Fh, h) => {
@@ -66141,13 +66296,18 @@ const MOUNT_LOOK = (() => {
         !bad.length, { bad }); }
 
     // 6. they talk: a line at a time; plain words, short, no compass word
-    { const said = {};
-      for (const p of PEOPLE) { const keep = { s: SAID[p.id], op: JSON.parse(JSON.stringify(quest.outposts || {})) }; quest.outposts = {}; said[p.id] = [];
-        for (let k = 0; k < p.lines.length; k++) { dialog.queue.length = 0; advanceDialog(); talkTo(p); const d = [dialog.cur, ...dialog.queue].find(q => q && q.who === p.name); said[p.id].push(d ? d.text : null); }
-        SAID[p.id] = keep.s; quest.outposts = keep.op; dialog.queue.length = 0; advanceDialog(); }
-      const lines = Object.values(LINES).flat().concat(Object.values(WORDS.thanks), [WORDS.lookout, WORDS.lookoutEmpty, WORDS.heapGuarded, WORDS.heapFound, WORDS.heapEmpty, WORDS.hide, WORDS.junk]);
-      check(P + 'Bramble and Brin each tell their story a line at a time; every line (and every word the outposts say) is short and plain, with no compass word',
-        PEOPLE.every(p => p.lines.every(t => said[p.id].includes(t))) && lines.every(t => t.length <= 140 && !/\b(north|south|east|west)\b|\bmiles?\b/i.test(t)), { said }); }
+    // (and after the win: while the outpost is cleared their after lines, never the story before it; while it fills again
+    // after a win, that the goblins are back: the review of bcb559f)
+    { const said = {}, MOODS = { before: () => ({}), after: id => ({ [id]: { cleared: 1, won: 1, thanked: 1, searched: 1 } }), back: id => ({ [id]: { cleared: 0, won: 1, thanked: 1 } }) };
+      const want = (p, m) => m === 'before' ? p.lines : (m === 'after' ? AFTER : BACK)[p.id];
+      for (const p of PEOPLE) { const keep = { s: Object.assign({}, SAID), op: JSON.parse(JSON.stringify(quest.outposts || {})) }; said[p.id] = {};
+        for (const m of Object.keys(MOODS)) { quest.outposts = MOODS[m](p.place); said[p.id][m] = [];
+          for (let k = 0; k < want(p, m).length + 2; k++) { dialog.queue.length = 0; advanceDialog(); talkTo(p); const d = [dialog.cur, ...dialog.queue].find(q => q && q.who === p.name); said[p.id][m].push(d ? d.text : null); } }
+        Object.keys(SAID).forEach(k => delete SAID[k]); Object.assign(SAID, keep.s); quest.outposts = keep.op; dialog.queue.length = 0; advanceDialog(); }
+      const lines = Object.values(LINES).flat().concat(Object.values(AFTER).flat(), Object.values(BACK).flat(), Object.values(WORDS.thanks), [WORDS.lookout, WORDS.lookoutEmpty, WORDS.heapGuarded, WORDS.heapFound, WORDS.heapEmpty, WORDS.hide, WORDS.junk]);
+      const told = PEOPLE.every(p => Object.keys(MOODS).every(m => want(p, m).every(t => said[p.id][m].includes(t)) && said[p.id][m].every(t => want(p, m).includes(t))));
+      check(P + 'Bramble and Brin each tell their story a line at a time; once the outpost is cleared they say only their after-the-win lines (never that the goblins are still in there), and while it fills again after a win, that the goblins came back; every line (and every word the outposts say) is short and plain, with no compass word',
+        told && lines.every(t => t.length <= 140 && !/\b(north|south|east|west)\b|\bmiles?\b/i.test(t)), { said }); }
 
     // 7. the rails and the signposts: a RAILS entry on a HITCH tile in each place; a signpost where the trail and the
     // Drovers' Track leave the road, naming the outpost (arms drawn) and never "builders at work"; nothing built here stands
@@ -66307,6 +66467,7 @@ const MOUNT_LOOK = (() => {
       'Climb a tower and look around. From the top you can see places you have never been, and your map will remember them.',
       'The path up goes back and forth. It is slow, but it is the only way. The rock is too steep to climb anywhere else.',
       'Mind the snakes in the rocks below. And the crows. A crow will steal anything shiny.',
+      'Climb all three towers and come back to me. A keeper always thanks a climber.',
     ],
     hilde: [
       'Pelts, skins and furs! I pay full price for every one.',
@@ -66325,13 +66486,13 @@ const MOUNT_LOOK = (() => {
   const WORDS = {
     trapGift: 'Want to learn traps? Take this one. Use it from your pack to set it down where goblins walk. When one steps on it, snap!',
     allThree: 'You climbed all three towers! Not many people do. Here, a keeper\'s thanks.',
-    pelts: 'Hilde only buys pelts and skins.',
+    pelts: 'Hilde only buys pelts, skins and feathers.',
     traps: 'Corvin buys nothing. He only sells.',
   };
   const PEOPLE = [
     BH.pt({ id: 'ansel', name: 'Ansel the beacon keeper', x: 20, y: 3, tunic: '#7a5a3a', hair: '#cfcac0', beard: true, role: 'beaconkeeper', lines: LINES.ansel }),
     HL.pt({ id: 'hilde_trapper', name: 'Hilde the trapper', x: 4, y: 2, tunic: '#6a4a2e', hair: '#b8742e', woman: true, role: 'shop', shop: 'lodge_pelts' }),
-    HL.pt({ id: 'corvin_hunter', name: 'Corvin the hunter', x: 9, y: 2, tunic: '#4a5a32', hair: '#3a2a1a', beard: true, role: 'shop', shop: 'lodge_traps' }),
+    HL.pt({ id: 'corvin_hunter', name: 'Corvin the hunter', x: 7, y: 3, tunic: '#4a5a32', hair: '#3a2a1a', beard: true, role: 'shop', shop: 'lodge_traps' }),
   ].map(n => Object.assign(n, { wildplaces: true }));
 
   // ---------- the bear ----------
@@ -66361,7 +66522,7 @@ const MOUNT_LOOK = (() => {
   if (A.REVS) A.REVS[4] = { stage: '5d', by: '86-wildplaces', why: "Beacon Hills and the Hunters' Lodge: each box with its dressing ring, and the bear's den", boxes: FOOT() };
 
   // ---------- the shops ----------
-  SHOPS.lodge_pelts = { name: "Hilde's Furs", stock: [['raw_beef', 6], ['cooked_beef', 12]], buys: ['wolf_pelt', 'bear_pelt', 'snakeskin', 'boar_tusk', 'wool'], rate: 1, buysWords: WORDS.pelts };
+  SHOPS.lodge_pelts = { name: "Hilde's Furs", stock: [['raw_beef', 6], ['cooked_beef', 12]], buys: ['wolf_pelt', 'bear_pelt', 'snakeskin', 'boar_tusk', 'wool', 'crow_feather'], rate: 1, buysWords: WORDS.pelts };   // (the crow's feather: she trims her hats with them)
   SHOPS.lodge_traps = { name: "Corvin's Traps", stock: [['goblin_trap', 50], ['shortbow', 50], ['stone_arrow', 1]], buys: [], rate: 1, buysWords: WORDS.traps };
 
   // ---------- the rails ----------
@@ -66666,9 +66827,19 @@ const MOUNT_LOOK = (() => {
   // Ansel: his story a line at a time; climb all three towers and he thanks the knight once
   HOOKS.talk.beaconkeeper = n => {
     const q = W();
+    if (!q.met) { q.met = 1; if (!TOWERS.every(tw => q.climbed[tw.id])) { quest.tracked = 'beacons'; notify(`New quest: The Three Beacons. ${touchMode() ? 'Tap QUESTS' : 'Press ' + keyName('J')} to read it.`); } save(); }
     if (TOWERS.every(tw => q.climbed[tw.id]) && !q.thanked) { q.thanked = 1; addItem('coins', 40); say(WORDS.allThree, n.name); burst(player.x, player.y, '#ffd166', 12, 60); save(); return; }
     say(nextLine(n), n.name);
   };
+  // the quest book (J) and the map: The Three Beacons, from the first word with Ansel to his thanks (the review of bcb559f)
+  QUEST_DEFS.beacons = { name: 'The Three Beacons' };
+  const climbedN = () => TOWERS.filter(tw => W().climbed[tw.id]).length;
+  HOOKS.questText.beacons = () => { const q = W(); return q.thanked ? 'Done.' : climbedN() === TOWERS.length ? 'All three towers climbed! Go back and tell Ansel.' : `Climb the three beacon towers on Beacon Hills (${climbedN()}/${TOWERS.length}). Press E at a tower's door. The path up goes back and forth.`; };
+  HOOKS.activeQuests.push(() => { const q = quest.wild; return q && q.met && !q.thanked ? ['beacons'] : []; });
+  if (HOOKS.mapTarget) HOOKS.mapTarget.push(() => { const q = quest.wild; if (!q || !q.met || q.thanked) return null;
+    const tw = TOWERS.find(t => !W().climbed[t.id]);
+    if (!tw) { const a = PEOPLE[0]; return { x: a.x, y: a.y, label: a.name, id: 'beacons' }; }
+    const [x, y] = stepOf(tw); return { x, y, label: tw.name.charAt(0).toUpperCase() + tw.name.slice(1), id: 'beacons' }; });
   // Hilde greets and opens her furs; Corvin gives the knight his first trap (once), then talks traps and opens his shop
   { const prev = HOOKS.talkBefore.shop;
     HOOKS.talkBefore.shop = n => {
@@ -66783,11 +66954,16 @@ const MOUNT_LOOK = (() => {
         talkTo(corvin); res.gift = countItem('goblin_trap'); res.corvinShop = panel === 'shop' && panelArg === 'lodge_traps'; closePanel(); dialog.queue.length = 0; advanceDialog();
         talkTo(corvin); res.gift2 = countItem('goblin_trap'); closePanel(); dialog.queue.length = 0; advanceDialog();
         res.stock = ['goblin_trap', 'shortbow', 'stone_arrow'].every(id => SHOPS.lodge_traps.stock.some(([k]) => k === id));
+        // (the review of bcb559f) Corvin buys nothing, and his panel says so: no "Tap your pack to sell", no empty "SELLS FOR
+        // FULL PRICE:"; the crow's feathers have a buyer (Hilde)
+        res.corvinHead = shopSellHead(SHOPS.lodge_traps); res.corvinSub = shopSubtitle(SHOPS.lodge_traps);
+        res.corvinPanel = res.corvinHead === WORDS.traps.toUpperCase() && !/tap your pack/i.test(res.corvinSub) && /tap your pack/i.test(shopSubtitle(sh));
+        res.feathers = sh.buys.includes('crow_feather');
         const c0 = coins(); for (const tw of TOWERS) W().climbed[tw.id] = 1;
         talkTo(ansel); res.thanks = coins() - c0; talkTo(ansel); res.thanks2 = coins() - c0; dialog.queue.length = 0; advanceDialog();
       } finally { player.inv = keep.inv; quest.wild = keep.wild; closePanel(); dialog.queue.length = 0; advanceDialog(); }
-      check(P + "the services: Hilde's furs open and she buys wolf and bear pelts and snakeskin at full price; Corvin gives one goblin trap the first time only, and sells traps, a bow and arrows; with all three towers climbed Ansel gives 40 coins, once",
-        res.hildeShop && res.buys && res.gift === 1 && res.gift2 === 1 && res.corvinShop && res.stock && res.thanks === 40 && res.thanks2 === 40, res); }
+      check(P + "the services: Hilde's furs open and she buys wolf and bear pelts, snakeskin and crow feathers at full price; Corvin gives one goblin trap the first time only, and sells traps, a bow and arrows (his panel says he buys nothing, and never asks for a tap on the pack); with all three towers climbed Ansel gives 40 coins, once",
+        res.hildeShop && res.buys && res.corvinPanel && res.feathers && res.gift === 1 && res.gift2 === 1 && res.corvinShop && res.stock && res.thanks === 40 && res.thanks2 === 40, res); }
 
     // 7. the range: an arrow shot from the worn line strikes a target (it trains Ranged and lands at the target's foot)
     { const keep = { inv: JSON.parse(JSON.stringify(player.inv)), eq: JSON.parse(JSON.stringify(player.equip)), x: player.x, y: player.y, f: { ...player.facing }, skills: JSON.parse(JSON.stringify(player.skills)) };
@@ -67256,7 +67432,7 @@ const MOUNT_LOOK = (() => {
       giant_rat: ['Giant rat', "A rat as big as a cat, up out of the cave and into the grass. It nibbles everything: bread, seeds, even coins. It only bites back if you hit it first."],
       snake: ['Snake', "A grass snake that lives in the reeds round Miller's Pond. Hit it and it bites. It sheds a fine skin that shops will buy."],
       adder: ['Adder', "An adder: grey-brown, with a black zigzag down its back and a red eye. Tougher than a grass snake, and its bite hurts more. It always leaves its skin behind."],
-      wild_dog: ['Wild dog', "Wild dogs hunt in packs of three, out in the fields away from the road. Come within four steps and the whole pack runs at you. Keep to the road, or come back when you are stronger."],
+      wild_dog: ['Wild dog', "Wild dogs hunt in packs of three, out in the fields away from the road. Come within four steps and the whole pack runs at you, but they never follow you onto the road. Keep to the road, or come back when you are stronger."],
       bear: ['Bear', "A big brown bear lives in a den in the wood, past the Hunters' Lodge. She stays near her den, but come close and she charges. Hilde the trapper pays well for a bear pelt."],
     };
     for (const id in BLURB) WIKI.add('monsters', { id, name: BLURB[id][0], blurb: BLURB[id][1] });
@@ -67452,6 +67628,15 @@ const MOUNT_LOOK = (() => {
           const S = DEFS.wild_dog.sight;
           reset(); player.x = dog.home.x + S * 1.25; player.y = dog.home.y; F.step([]); res.at5 = dog.state;
           reset(); player.x = dog.home.x + S * 0.875; player.y = dog.home.y; F.step([]); res.at35 = dog.state;
+          // the chase ends the moment he steps onto a main road, and a dog never starts one at a knight on it (the book's
+          // "keep to the road"; the review of bcb559f: a pack chased a new knight down the Cave Road)
+          { const hx = Math.floor(dog.home.x / TILE), hy = Math.floor(dog.home.y / TILE); let rc = null;
+            for (let r = 1; r < 20 && !rc; r++) for (let dy = -r; dy <= r && !rc; dy++) for (let dx = -r; dx <= r && !rc; dx++) if (Math.max(Math.abs(dx), Math.abs(dy)) === r && A.onMainRoad(hx + dx, hy + dy) && !SOLID.has(tileAt(hx + dx, hy + dy))) rc = [hx + dx, hy + dy];
+            res.road = rc;
+            // (the dog two tiles off him, well inside its chase: only the road ends it)
+            if (rc) { player.x = tc(rc[0]); player.y = tc(rc[1]); const ux = dog.home.x - player.x, uy = dog.home.y - player.y, ul = Math.hypot(ux, uy) || 1;
+              dog.x = player.x + ux / ul * 2 * TILE; dog.y = player.y + uy / ul * 2 * TILE; dog.state = 'chase'; F.step([]); res.onRoad = dog.state;
+              reset(); dog.x = player.x + S * 0.5; dog.y = player.y; F.step([]); res.onRoadNear = dog.state; } }
           // idle for 40 s with him 30 tiles off: never past 2 tiles (and the push of a packmate) from home
           reset(); player.x = dog.home.x + S * 7.5; player.y = dog.home.y; let far = 0;
           for (let i = 0; i < 2400; i++) { F.step([]); far = Math.max(far, dist(dog.x, dog.y, dog.home.x, dog.home.y)); }
@@ -67469,8 +67654,8 @@ const MOUNT_LOOK = (() => {
           player.x = px0; player.y = py0; player.hp = hp0; window.__peace = peace0;
         }
       }
-      check(P + 'a wild dog wakes at 3.5 tiles but not at 5, idles within 2 tiles of home (and a packmate\'s push), a crow lets a knight stand beside it, and the blows that fell it pay at least its 32 melee xp',
-        !!dog && !!crow && res.at5 !== 'chase' && res.at35 === 'chase' && res.far <= 2.6 && res.calm && res.killed && res.kills === 1 && res.xp >= DEFS.crow.hp * 4, res);
+      check(P + 'a wild dog wakes at 3.5 tiles but not at 5, gives up the chase when the knight steps onto a main road and never chases one standing on it, idles within 2 tiles of home (and a packmate\'s push), a crow lets a knight stand beside it, and the blows that fell it pay at least its 32 melee xp',
+        !!dog && !!crow && res.at5 !== 'chase' && res.at35 === 'chase' && !!res.road && res.onRoad !== 'chase' && res.onRoadNear !== 'chase' && res.far <= 2.6 && res.calm && res.killed && res.kills === 1 && res.xp >= DEFS.crow.hp * 4, res);
     }
   });
 }
@@ -79211,8 +79396,11 @@ const MOUNT_LOOK = (() => {
       check(P + "a signpost stands beside every road node (" + want + " besides the story's), and the Mill Lane fork's names Millbrook, Thistledown and the cave, and says the way to Thistledown goes past the old signpost (chapter 4's sign)",
         SP.signs.length === want && !bad.length && !!words && /Millbrook/.test(words) && /Thistledown, south-east, past the old signpost\./.test(words) && /cave/.test(words), { signs: SP.signs.length, want, bad, words, skipped: S.skipped }); }
     // the road network is laid whole: each main road's centre line is open ground (a bridge, a gate or a door counts) from
-    // end to end, bar the story signpost, the gates' own tiles and Hollowford's ruins
+    // end to end, bar the story signpost, the gates' own tiles and Hollowford's ruins. A machine, a wreck or the mare left
+    // on the road by the play before this check is not the world's (a knight walks round it, and the save migration parks
+    // them as SPREAD.MACHINES): the review of bcb559f saw the camp walker's wreck land on the Goblin Road once in three runs
     { const gaps = {}, OKT = new Set([T.SIGN, Tn('WARDEN_GATE'), Tn('LAIR_GATE'), T.GATE, T.DOOR].filter(v => v >= 0)), hf = A.box('hollowford');
+      for (const n of (window.SPREAD ? SPREAD.MACHINES : []).concat(['HORSE'])) if (Tn(n) >= 0) OKT.add(Tn(n));
       for (const id of A.MAIN_ROADS) { const pl = A.track(id);
         for (let k = 1; k < pl.length; k++) { const [ax, ay] = pl[k - 1], [bx, by] = pl[k], n = Math.max(1, Math.round(Math.max(Math.abs(bx - ax), Math.abs(by - ay))));
           for (let s = 0; s <= n; s++) { const x = Math.round(ax + (bx - ax) * s / n), y = Math.round(ay + (by - ay) * s / n), t = tileAt(x, y);
@@ -83905,6 +84093,12 @@ const MOUNT_LOOK = (() => {
     }
     for (const c of Array.isArray(d.crops) ? d.crops : []) { const x = c.i % W, y = Math.floor(c.i / W); if (inBox(x, y)) P.crops.push({ x, y, stage: c.stage | 0, crop: c.crop || null }); else keepCrops.push(c); }
     d.mapDiffs = keep; d.crops = keepCrops;
+    // regrowth and fires in the boxes go too (the world-1 move clears them all): a stump's regrow left behind would grow
+    // the old world's tree back on the new place's ground once its stump diff is swept (the review of bcb559f)
+    const outside = e => !(e && typeof e.i === 'number') || !inBox(e.i % W, Math.floor(e.i / W));
+    const rg = Array.isArray(d.regrow) ? d.regrow : [], fi = Array.isArray(d.fires) ? d.fires : [];
+    d.regrow = rg.filter(outside); d.fires = fi.filter(outside);
+    P.regrow = rg.length - d.regrow.length; P.fires = fi.length - d.fires.length;
     S.pending = P;
     SAVE_LOCK = true; saveLockSay = SAVE_KEPT;
   }
@@ -84175,6 +84369,15 @@ const MOUNT_LOOK = (() => {
     const R = newReport('rev'); R.from = { worldRev: P.from }; R.boxes = P.boxes;
     const remade = remakeAll(R, { wreckLies: false });
     const got = sortDiffs(R, P, remade, (x, y) => [x, y]);
+    R.dropped.regrow = P.regrow | 0; R.dropped.fires = P.fires | 0;
+    // a lodestone or a bed that came back takes his home and his bed's spirit with it (as finish() clears both)
+    const inBox = (x, y) => P.boxes.some(b => x >= b[0] && x <= b[2] && y >= b[1] && y <= b[3]);
+    const swept = n => P.diffs.filter(e => e.name === n);
+    if (player.bedSpawn) { const bx = Math.floor(player.bedSpawn.x / TILE), by = Math.floor(player.bedSpawn.y / TILE);
+      if ((inBox(bx, by) || swept('BED').some(e => e.x === bx && e.y === by)) && tileAt(bx, by) !== T.BED) { player.bedSpawn = null; R.homeCleared = (R.homeCleared || []).concat('bed'); } }
+    if (player.home) { const hx = Math.floor(player.home.x / TILE), hy = Math.floor(player.home.y / TILE), near = (x, y) => Math.max(Math.abs(x - hx), Math.abs(y - hy)) <= 3;
+      let stone = false; for (let dy = -3; dy <= 3 && !stone; dy++) for (let dx = -3; dx <= 3 && !stone; dx++) if (tileAt(hx + dx, hy + dy) === T.LODESTONE) stone = true;
+      if (!stone && (inBox(hx, hy) || swept('LODESTONE').some(e => near(e.x, e.y)))) { player.home = null; R.homeCleared = (R.homeCleared || []).concat('home'); } }
     const L = newLot();
     for (const n of got.machines) parkMachine(R, L, n);
     if (got.mare) tieMare(R, L);
@@ -84182,6 +84385,7 @@ const MOUNT_LOOK = (() => {
     const lines = refundLines(R);
     if (R.mare) lines.push(`${mareName()} is tied at Fennick's rail.`);
     const ml = machineLine(R.parked); if (ml) lines.push(ml);
+    if (R.homeCleared && R.homeCleared.includes('home')) lines.push('Your lodestone came back, so home is not set. Place it again to make a new home.');
     if (lines.length) { lines.unshift('Builders came while you slept.'); for (const l of lines) say(l, 'The Voice'); }
     R.lines = lines;
     const s = quest.spread && typeof quest.spread === 'object' ? quest.spread : (quest.spread = { told: true, owed: [] });
@@ -84198,6 +84402,8 @@ const MOUNT_LOOK = (() => {
     const P = { kind: 'rev', from: WORLD_REV, boxes, diffs: [], crops: [] };
     for (const [i, t] of [...mapDiffs]) { const x = i % MAP_W, y = Math.floor(i / MAP_W); if (!inBox(x, y)) continue; P.diffs.push({ x, y, name: tileName(t) }); mapDiffs.delete(i); setTile(x, y, ground(x, y)); }
     crops = crops.filter(c => { const x = c.i % MAP_W, y = Math.floor(c.i / MAP_W); if (!inBox(x, y)) return true; P.crops.push({ x, y, stage: c.stage | 0, crop: c.crop || null }); return false; });
+    const out = e => !inBox(e.i % MAP_W, Math.floor(e.i / MAP_W)), r0 = regrow.length, f0 = fires.length;
+    regrow = regrow.filter(out); fires = fires.filter(out); P.regrow = r0 - regrow.length; P.fires = f0 - fires.length;
     return P;
   };
 
@@ -84387,13 +84593,25 @@ const MOUNT_LOOK = (() => {
         const g0 = [o[0] - 1, o[1]], g1 = [o[0] + 1, o[1]], g2 = [o[0], o[1] + 1];
         const ok0 = [g0, g1, g2, out].every(([x, y]) => PLACEABLE_ON.has(tileAt(x, y)));
         const was = [g0, g1, g2, out].map(([x, y]) => tileAt(x, y));
+        // (the review of bcb559f: the stump's regrow and a fire in the box go with them, and a lodestone and a bed in the box
+        // come back with his home and his bed's spirit cleared)
+        const fc = [o[0], o[1] - 1], lc = [o[0] - 2, o[1] - 2], bc = [o[0] + 2, o[1] - 2];
+        const was2 = [fc, lc, bc].map(([x, y]) => tileAt(x, y)), home0 = player.home, bed0 = player.bedSpawn, rg0 = regrow.slice(), fi0 = fires.slice();
         changeTile(...g0, T.PLANK); changeTile(...g1, T.WRECK); changeTile(...g2, T.STUMP); changeTile(...out, T.PLANK);
-        const planks0 = count('plank'), under = new Map([g0, g1, g2].map(([x, y], k) => [idx(x, y), was[k]])), P = S.sweep([box], (x, y) => under.get(idx(x, y))); const R = sweepFinish(P);
+        regrow.push({ i: idx(...g2), t: T.TREE, timer: 0.01 }, { i: idx(...out), t: T.TREE, timer: 999 });
+        changeTile(...fc, T.FIRE); fires.push({ i: idx(...fc), timer: 0.01, under: T.TREE });
+        changeTile(...lc, T.LODESTONE); player.home = { x: tc(lc[0]), y: tc(lc[1] + 1) }; changeTile(...bc, T.BED); player.bedSpawn = { x: tc(bc[0]), y: tc(bc[1]) };
+        const planks0 = count('plank'), lode0 = count('lodestone'), beds0 = count('bed');
+        const under = new Map([g0, g1, g2, fc, lc, bc].map(([x, y], k) => [idx(x, y), k < 3 ? was[k] : was2[k - 3]])), P = S.sweep([box], (x, y) => under.get(idx(x, y))); const R = sweepFinish(P);
         const wreckAt = [...mapDiffs].filter(([, t]) => t === T.WRECK).map(([i]) => [i % MAP_W, Math.floor(i / MAP_W)]);
-        const res = { ok0, plank: count('plank') === planks0 + 1, wreck: wreckAt.length >= 1 && R.parked.WRECK === 1, stump: tileAt(...g2) === was[2] && R.dropped.STUMP === 1, kept: tileAt(...out) === T.PLANK && mapDiffs.get(idx(...out)) === T.PLANK };
+        const inBoxI = i => { const x = i % MAP_W, y = Math.floor(i / MAP_W); return x >= box[0] && x <= box[2] && y >= box[1] && y <= box[3]; };
+        const res = { ok0, plank: count('plank') === planks0 + 1, wreck: wreckAt.length >= 1 && R.parked.WRECK === 1, stump: tileAt(...g2) === was[2] && R.dropped.STUMP === 1, kept: tileAt(...out) === T.PLANK && mapDiffs.get(idx(...out)) === T.PLANK,
+          regrow: !regrow.some(r => inBoxI(r.i)) && regrow.some(r => r.i === idx(...out)) && R.dropped.regrow === 1, fire: !fires.some(f => inBoxI(f.i)) && R.dropped.fires === 1 && tileAt(...fc) === was2[0],
+          home: player.home === null && count('lodestone') === lode0 + 1, bed: player.bedSpawn === null && count('bed') === beds0 + 1 && respawnPoint() !== null };
         for (const [i, t] of [...mapDiffs]) if (t === T.WRECK) { mapDiffs.delete(i); setTile(i % MAP_W, Math.floor(i / MAP_W), T.DIRT); }
-        changeTile(...out, was[3]); mapDiffs.delete(idx(...out)); removeItem('plank', 1); dialog.queue.length = 0; dialog.cur = null;
-        check(P0 + 'a worldRev sweep in a footprint box: a plank placed inside comes back, a walker wreck inside is parked round the Bulldozer bay, a stump inside is cleared, and a plank outside the box is kept', Object.values(res).every(Boolean), res); }
+        changeTile(...out, was[3]); mapDiffs.delete(idx(...out)); for (const id of ['plank', 'lodestone', 'bed']) { const b = player.bank.find(q => q && q.id === id); if (b) { if (!--b.qty) player.bank.splice(player.bank.indexOf(b), 1); } else removeItem(id, 1); } dialog.queue.length = 0; dialog.cur = null;
+        regrow = rg0; fires = fi0; player.home = home0; player.bedSpawn = bed0;
+        check(P0 + 'a worldRev sweep in a footprint box: a plank placed inside comes back, a walker wreck inside is parked round the Bulldozer bay, a stump inside is cleared with its regrowth and a fire inside goes out for good (regrowth outside kept), a lodestone and a bed inside come back with his home and his bed cleared, and a plank outside the box is kept', Object.values(res).every(Boolean), res); }
     } finally {
       SAVE_LOCK = false; quest.spread = null;
       if (raw0 === null) localStorage.removeItem(K(slot0)); else localStorage.setItem(K(slot0), raw0);
@@ -84666,6 +84884,62 @@ const MOUNT_LOOK = (() => {
   // no place's box, no port, no building, no person and no fixed wall or cliff with x >= MAP_W - 8 or y >= MAP_H - 8, but
   // the east sea itself and the open grounds (the Ash Wastes are reserved Wilds; the Jungle and the Grub Fields run to the edge)
   const EDGE = 8;
+  // E at a new place's hitching rail, at the mare tied beside it, or at its signposts uses that thing: no person stands
+  // where npcInFront (06-systems: 118 px, in a cone ahead) would answer first (the review of bcb559f: E at Wilf's, Wat's and
+  // Brin's rails talked to them, so the mare never came or was never mounted). For every Stage 5 rail (Fennick's stands by
+  // his own on purpose: he sells her) the post and each open cell round it (where she is tied), and every signpost in a
+  // Stage 5 footprint box: the knight on each open cell beside it, facing it, with every person at home.
+  function peopleClearOfThings() {
+    const bad = [], targets = [], HORSE = Tn('HORSE');
+    for (const r of (window.RAILS || [])) { if (r.id === 'thistledown' || r.reserved) continue; const p = r.at(); if (!p) continue;
+      targets.push({ what: r.id + ' rail', x: p.x, y: p.y, t: tileAt(p.x, p.y) });
+      for (const [dx, dy] of N8) { const x = p.x + dx, y = p.y + dy; if (inMap(x, y) && PLACEABLE_ON.has(tileAt(x, y)) && !insideBuilding(x, y)) targets.push({ what: r.id + ' mare', x, y, t: HORSE }); } }
+    const signs = new Set();
+    for (let r = 2; r <= WORLD_REV; r++) for (const b of ((A.REVS || {})[r] || {}).boxes || []) for (let y = b[1]; y <= b[3]; y++) for (let x = b[0]; x <= b[2]; x++) if (inMap(x, y) && tileAt(x, y) === T.SIGN && !signs.has(idx(x, y))) { signs.add(idx(x, y)); targets.push({ what: 'signpost', x, y, t: T.SIGN }); }
+    const keep = { x: player.x, y: player.y, f: player.facing }, homes = NPCS.map(n => [n, n.px, n.py]);
+    try {
+      for (const n of NPCS) if (n.home) { n.px = n.home.x; n.py = n.home.y; }
+      for (const g of targets) for (const [dx, dy] of N8) {
+        const sx = g.x + dx, sy = g.y + dy; if (!inMap(sx, sy) || SOLID.has(tileAt(sx, sy)) || insideBuilding(sx, sy)) continue;
+        player.x = tc(sx); player.y = tc(sy); const l = Math.hypot(dx, dy); player.facing = { x: -dx / l, y: -dy / l };
+        const n = npcInFront();
+        if (n && !(n.wander && (SOLID.has(g.t) || PUSH_THROUGH.has(g.t)))) bad.push(g.what + ' ' + g.x + ',' + g.y + ' from ' + sx + ',' + sy + ': ' + n.id);
+      }
+    } finally { player.x = keep.x; player.y = keep.y; player.facing = keep.f; for (const [n, x, y] of homes) { n.px = x; n.py = y; } }
+    return { targets: targets.length, bad: [...new Set(bad.map(b => b.replace(/ from .*: /, ': ')))], first: bad.slice(0, 6) };
+  }
+
+  // the new stories in the quest book (the review of bcb559f: none was in the book or on the map)
+  function storiesInTheBook() {
+    const out = { n: 0, bad: [], seen: {} };
+    if (!window.BANDITS || !window.OUTPOSTS || !window.WILDPLACES) { out.bad.push('a place file is missing'); return out; }
+    const rows = [
+      { id: 'wat_cart', key: 'bandits', who: BANDITS.PEOPLE[0], won: q => { q.won = 1; q.cleared = 1; }, thank: q => { q.thanked = 1; }, get: () => quest.bandits },
+      { id: 'outposts', key: 'outposts', who: OUTPOSTS.PEOPLE[0], won: q => { q.outpost_north.won = 1; q.outpost_north.cleared = 1; }, thank: q => { q.outpost_north.thanked = 1; }, get: () => quest.outposts },
+      { id: 'beacons', key: 'wild', who: WILDPLACES.PEOPLE[0], won: q => { for (const tw of WILDPLACES.TOWERS) q.climbed[tw.id] = 1; }, thank: q => { q.thanked = 1; }, get: () => quest.wild },
+    ];
+    const keep = { tracked: quest.tracked, inv: JSON.parse(JSON.stringify(player.inv)), notice };
+    for (const r of rows) {
+      const k0 = JSON.stringify(quest[r.key] === undefined ? null : quest[r.key]);
+      try {
+        quest[r.key] = r.key === 'wild' ? { climbed: {} } : {};
+        const before = activeQuests().includes(r.id);
+        dialog.queue.length = 0; dialog.cur = null; closePanel(); talkTo(r.who); closePanel(); dialog.queue.length = 0; dialog.cur = null;
+        const t1 = questText(r.id), m1 = mapTargets().find(t => t.id === r.id), on = activeQuests().includes(r.id), tracked = quest.tracked === r.id;
+        r.won(r.get()); const t2 = questText(r.id), m2 = mapTargets().find(t => t.id === r.id);
+        r.thank(r.get()); const off = !activeQuests().includes(r.id) && !mapTargets().some(t => t.id === r.id);
+        out.seen[r.id] = { t1, t2, m1: m1 && m1.label, m2: m2 && m2.label };
+        const plain = t => typeof t === 'string' && t.length > 10 && t.length <= 160 && !/\b(north|south|east|west)\b|\bmiles?\b/i.test(t);
+        if (!QUEST_DEFS[r.id] || before || !on || !tracked || !plain(t1) || !plain(t2) || !m1 || !m2 || m2.x !== r.who.x || m2.y !== r.who.y || !/tell/i.test(t2) || !off)
+          out.bad.push(r.id + ' ' + JSON.stringify({ def: !!QUEST_DEFS[r.id], before, on, tracked, t1, t2, m1: !!m1, m2: m2 && [m2.x, m2.y], off }));
+        out.n++;
+      } catch (e) { out.bad.push(r.id + ' threw ' + e.message); }
+      finally { quest[r.key] = JSON.parse(k0); if (quest[r.key] === null) delete quest[r.key]; }
+    }
+    quest.tracked = keep.tracked; player.inv = keep.inv; notice = keep.notice; dialog.queue.length = 0; dialog.cur = null;
+    return out;
+  }
+
   function edgeRing() {
     const inRing = (x, y) => x >= MAP_W - EDGE || y >= MAP_H - EDGE, bad = [];
     const boxIn = b => b[2] >= MAP_W - EDGE || b[3] >= MAP_H - EDGE;
@@ -84716,7 +84990,7 @@ const MOUNT_LOOK = (() => {
   let SNAP = null;
   { const _generateWorld = generateWorld; generateWorld = function () { const r = _generateWorld.apply(this, arguments); SNAP = map.slice(); return r; }; }
 
-  window.SPREAD_CHECKS = { BEAT_HELD, BEAT_LIMIT, walkClock, TRIPS, WALK_HELD, SEAM_EXEMPT, spacing, ports, gateFloods, scarpSeal, transects, roadsClear, spawnsOffRoads, edgeRing, beatGaps, walkTiles, flood, EDGE };
+  window.SPREAD_CHECKS = { BEAT_HELD, BEAT_LIMIT, walkClock, TRIPS, WALK_HELD, SEAM_EXEMPT, spacing, ports, gateFloods, scarpSeal, transects, roadsClear, spawnsOffRoads, peopleClearOfThings, storiesInTheBook, edgeRing, beatGaps, walkTiles, flood, EDGE };
 
   // ---------- the self-tests ----------
   HOOKS.selfTest.push((check, F, h) => {
@@ -84745,6 +85019,11 @@ const MOUNT_LOOK = (() => {
         check(PF + "the main roads are clear surface: no solid tile and no builders' prop on either lane of the six main roads (gates, doors, the story signpost and Hollowford's ruins aside)", bad.length === 0, { bad: bad.slice(0, 10), more: Math.max(0, bad.length - 10) }); }
       { const r = spawnsOffRoads();
         check(PF + "every aggressive spawn stands 6+ tiles off a main road's centre line, but the fights the road leads to (the camp, the outposts, the bandit hills, the lair, the Ashfields' dragons on the Ash Road)", r.near.length === 0, r); }
+      { const r = peopleClearOfThings();
+        check(PF + "E at a Stage 5 place's hitching rail, at the mare tied beside it, or at its signposts uses it: from every open cell beside one, facing it, no person (at home) is close enough ahead to answer first (Fennick's own rail aside: he sells her)", r.bad.length === 0 && r.targets >= 9 * 4, r); }
+      { const r = storiesInTheBook();
+        check(PF + "the new places' stories are in the quest book (J) from the first word: Wat's Cart, The Goblin Outposts and The Three Beacons each go active and tracked, say what to do in plain words (no compass word) and put a ring on the map where to go; once won they send the knight back to the teller (the ring on him), and once he has thanked the knight they leave the book",
+          r.bad.length === 0 && r.n === 3, r); }
       { const r = edgeRing();
         check(PF + "ADDENDUM C: the map's outer 8-tile ring on the east and south holds no place, port, building, person, wall or cliff (the east sea aside, water end to end), so land can be added at an edge", r.bad.length === 0 && r.dry === 0, r); }
       // (Stage 5 is built: the Cave, Sea and Long Roads hold the limits, a stop at most every 73 tiles and a glance at most every

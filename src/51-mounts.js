@@ -240,7 +240,7 @@
     if (!H().owned) { notify('You have no horse. Fennick the trader in Thistledown keeps a grey mare on his rail.'); return false; }
     const why = mountRefusal(); if (why) { notify(why); return false; }
     const at = horseNear();
-    if (!at) { notify(`${NAME} is not here. Whistle her at Fennick's rail in Thistledown.`); return false; }
+    if (!at) { notify(`${NAME} is not here. Whistle her at any hitching rail.`); return false; }
     return mount(at.tx, at.ty);
   }
 
@@ -1043,9 +1043,14 @@
     const second = throwNear(), toNew = !!second.at && Math.max(Math.abs(second.at[0] - post.x), Math.abs(second.at[1] - post.y)) <= 4 && /the test rail by the signpost/.test(second.said);
     // the registry: Fennick's first, the two reserved plots' rails held (no post yet), the visited list saved on the horse
     const reg = RAILS[0].id === 'thistledown' && ['alchemy', 'necromancy'].every(id => { const r = RAILS.find(q => q.id === id); return r && r.reserved && r.at() === null; }) && Array.isArray(player.horse.rails) && player.horse.rails.includes('selftest');
-    if (riding()) dismount(true); liftHorse(); RAILS.remove('selftest'); player.horse = h0 || { owned: false, hp: HORSE_HP, at: null, under: null };
+    if (riding()) dismount(true); liftHorse(); RAILS.remove('selftest');
+    // G with her out of reach names no one rail: any rail whistles her in (the review of bcb559f: it sent him to Fennick's
+    // while he stood at a new one)
+    let hint = null; { const n0 = notice; notice = null; F.tp(post.x + 8, post.y + 8); tryRide(); hint = notice && notice.text; notice = n0; }
+    const anyRail = /Whistle her at any hitching rail\./.test(hint || '') && !/Fennick/.test(hint || '');
+    player.horse = h0 || { owned: false, hp: HORSE_HP, at: null, under: null };
     dialog.cur = dc; dialog.queue.length = 0; dialog.queue.push(...dq); h.peace(false);
-    check(P + "thrown off, she bolts to the NEAREST rail he has visited and the Voice names it: Fennick's while the new rail is unvisited, the new one once he has stood by it (RAILS: Fennick's first, the Glasshouse's and the Old Barrow's reserved)",
-      !!added && toFennick && seen && toNew && reg, { first, second, seen, reg, post: [post.x, post.y], fennick: fen && [fen.x, fen.y] });
+    check(P + "thrown off, she bolts to the NEAREST rail he has visited and the Voice names it: Fennick's while the new rail is unvisited, the new one once he has stood by it (RAILS: Fennick's first, the Glasshouse's and the Old Barrow's reserved); G with her out of reach says to whistle her at any hitching rail",
+      !!added && toFennick && seen && toNew && reg && anyRail, { first, second, seen, reg, hint, post: [post.x, post.y], fennick: fen && [fen.x, fen.y] });
   });
 }

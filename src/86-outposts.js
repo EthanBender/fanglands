@@ -108,6 +108,29 @@
       'My cows will not walk past goblins. Cows are clever like that.',
     ],
   };
+  // while the outpost is cleared (after the thanks); and once it has been won, while it fills again
+  const AFTER = {
+    bramble_scout: [
+      'Empty! I will keep watch in case they come back.',
+      'The guards in town were very pleased when I told them about you.',
+      'Goblins hate losing. They will stay away for a long while.',
+    ],
+    brin_drover: [
+      'The cows walk this way again. Listen to them moo!',
+      'Marigold at the Crossroads Inn heard what you did. She will want to thank you.',
+      'Goblins do not stay away for ever. If they come back, I will tell you.',
+    ],
+  };
+  const BACK = {
+    bramble_scout: [
+      'Shh! The goblins came back. Three goblins and a sapper, the same as before.',
+      'You beat them once. Beat them again and they stay away for a long while.',
+    ],
+    brin_drover: [
+      'The goblins came back! My cows will not walk past them again.',
+      'You beat them once. You can beat them again. Eat some food when you get hurt.',
+    ],
+  };
   const WORDS = {
     thanks: {
       bramble_scout: 'You beat the whole outpost! I will tell the guards in town. Here, take this for being so brave.',
@@ -125,7 +148,7 @@
   const REWARD = { bramble_scout: 30, brin_drover: 40 };
   const PEOPLE = [
     ON.pt({ id: 'bramble_scout', name: 'Bramble the scout', x: 1, y: 0, place: 'outpost_north', tunic: '#4e6a3a', hair: '#7a4a24', woman: true, role: 'outpostwatch', lines: LINES.bramble_scout }),
-    OS.pt({ id: 'brin_drover', name: 'Brin the drover', x: 0, y: 2, place: 'outpost_south', tunic: '#7a5a3a', hair: '#5a3a1e', beard: true, role: 'outpostwatch', lines: LINES.brin_drover }),
+    OS.pt({ id: 'brin_drover', name: 'Brin the drover', x: 0, y: 7, place: 'outpost_south', tunic: '#7a5a3a', hair: '#5a3a1e', beard: true, role: 'outpostwatch', lines: LINES.brin_drover }),
   ].map(n => Object.assign(n, { outposts: true }));
 
   // ---------- the goblins: north three goblins and a sapper, south three goblins and a brute ----------
@@ -391,15 +414,32 @@
 
   // ---------- talking: each watcher a line at a time; once the outpost has been cleared, thanks (once ever) ----------
   const SAID = {};
-  const nextLine = n => { const k = SAID[n.id] = ((SAID[n.id] === undefined ? -1 : SAID[n.id]) + 1) % n.lines.length; return n.lines[k]; };
+  // which story the watcher tells now (the review of bcb559f: after the win they still said the goblins were in there):
+  // 'before' it has ever been cleared; 'after' while it is cleared; 'back' while it fills again after a win
+  const mood = id => { const q = Q(id); return q.cleared ? 'after' : q.won ? 'back' : 'before'; };
+  const linesOf = (n, m) => (m === 'before' ? n.lines : (m === 'back' ? BACK : AFTER)[n.id] || n.lines);
+  const nextLine = n => { const m = mood(n.place), L = linesOf(n, m), key = n.id + ':' + m; const k = SAID[key] = ((SAID[key] === undefined ? -1 : SAID[key]) + 1) % L.length; return L[k]; };
   HOOKS.talk.outpostwatch = n => {
     const q = Q(n.place);
+    if (!q.met) { q.met = 1; if (!q.won) { quest.tracked = 'outposts'; notify(`New quest: The Goblin Outposts. ${touchMode() ? 'Tap QUESTS' : 'Press ' + keyName('J')} to read it.`); } save(); }
     if (q.won && !q.thanked) { q.thanked = 1; addItem('coins', REWARD[n.id]); say(WORDS.thanks[n.id], n.name); burst(player.x, player.y, '#ffd166', 12, 60); save(); return; }
     say(nextLine(n), n.name);
   };
 
+  // ---------- the quest book (J) and the map: The Goblin Outposts, from the first word with Bramble or Brin to their
+  // thanks (the review of bcb559f) ----------
+  QUEST_DEFS.outposts = { name: 'The Goblin Outposts' };
+  const WHOSE = { outpost_north: 'Bramble', outpost_south: 'Brin' };
+  const open_ = () => IDS.filter(id => { const q = quest.outposts && quest.outposts[id]; return q && q.met && !q.thanked; });
+  HOOKS.questText.outposts = () => { const ids = open_(); if (!ids.length) return 'Done.';
+    return ids.map(id => Q(id).won ? `${WHOSE[id]}'s outpost is beaten! Go back and tell ${WHOSE[id]}.` : `${WHOSE[id]}'s outpost: beat every goblin in it. Go in through the gap in the spikes.`).join(' '); };
+  HOOKS.activeQuests.push(() => open_().length ? ['outposts'] : []);
+  if (HOOKS.mapTarget) HOOKS.mapTarget.push(() => { const id = open_()[0]; if (!id) return null;
+    if (Q(id).won) { const w = PEOPLE.find(p => p.place === id); return { x: w.x, y: w.y, label: w.name, id: 'outposts' }; }
+    const [x, y] = gapOf(id).map(Math.round); return { x, y, label: 'The goblin outpost', id: 'outposts' }; });
+
   // ---------- the handle ----------
-  window.OUTPOSTS = { IDS, PLAN, PEOPLE, LINES, WORDS, REWARD, SPAWNS, spotsOf, GAP, gapOf, SOUTH_SIGN, LANE, POSTS, STATS, THINGS, HEAPS, SIGNS, FOOT, FR, Q, outpostOf, gang, standing };
+  window.OUTPOSTS = { IDS, PLAN, PEOPLE, LINES, AFTER, BACK, mood, WORDS, REWARD, SPAWNS, spotsOf, GAP, gapOf, SOUTH_SIGN, LANE, POSTS, STATS, THINGS, HEAPS, SIGNS, FOOT, FR, Q, outpostOf, gang, standing };
 
   // ---------- self-tests ----------
   HOOKS.selfTest.push((check, Fh, h) => {
@@ -521,13 +561,18 @@
         !bad.length, { bad }); }
 
     // 6. they talk: a line at a time; plain words, short, no compass word
-    { const said = {};
-      for (const p of PEOPLE) { const keep = { s: SAID[p.id], op: JSON.parse(JSON.stringify(quest.outposts || {})) }; quest.outposts = {}; said[p.id] = [];
-        for (let k = 0; k < p.lines.length; k++) { dialog.queue.length = 0; advanceDialog(); talkTo(p); const d = [dialog.cur, ...dialog.queue].find(q => q && q.who === p.name); said[p.id].push(d ? d.text : null); }
-        SAID[p.id] = keep.s; quest.outposts = keep.op; dialog.queue.length = 0; advanceDialog(); }
-      const lines = Object.values(LINES).flat().concat(Object.values(WORDS.thanks), [WORDS.lookout, WORDS.lookoutEmpty, WORDS.heapGuarded, WORDS.heapFound, WORDS.heapEmpty, WORDS.hide, WORDS.junk]);
-      check(P + 'Bramble and Brin each tell their story a line at a time; every line (and every word the outposts say) is short and plain, with no compass word',
-        PEOPLE.every(p => p.lines.every(t => said[p.id].includes(t))) && lines.every(t => t.length <= 140 && !/\b(north|south|east|west)\b|\bmiles?\b/i.test(t)), { said }); }
+    // (and after the win: while the outpost is cleared their after lines, never the story before it; while it fills again
+    // after a win, that the goblins are back: the review of bcb559f)
+    { const said = {}, MOODS = { before: () => ({}), after: id => ({ [id]: { cleared: 1, won: 1, thanked: 1, searched: 1 } }), back: id => ({ [id]: { cleared: 0, won: 1, thanked: 1 } }) };
+      const want = (p, m) => m === 'before' ? p.lines : (m === 'after' ? AFTER : BACK)[p.id];
+      for (const p of PEOPLE) { const keep = { s: Object.assign({}, SAID), op: JSON.parse(JSON.stringify(quest.outposts || {})) }; said[p.id] = {};
+        for (const m of Object.keys(MOODS)) { quest.outposts = MOODS[m](p.place); said[p.id][m] = [];
+          for (let k = 0; k < want(p, m).length + 2; k++) { dialog.queue.length = 0; advanceDialog(); talkTo(p); const d = [dialog.cur, ...dialog.queue].find(q => q && q.who === p.name); said[p.id][m].push(d ? d.text : null); } }
+        Object.keys(SAID).forEach(k => delete SAID[k]); Object.assign(SAID, keep.s); quest.outposts = keep.op; dialog.queue.length = 0; advanceDialog(); }
+      const lines = Object.values(LINES).flat().concat(Object.values(AFTER).flat(), Object.values(BACK).flat(), Object.values(WORDS.thanks), [WORDS.lookout, WORDS.lookoutEmpty, WORDS.heapGuarded, WORDS.heapFound, WORDS.heapEmpty, WORDS.hide, WORDS.junk]);
+      const told = PEOPLE.every(p => Object.keys(MOODS).every(m => want(p, m).every(t => said[p.id][m].includes(t)) && said[p.id][m].every(t => want(p, m).includes(t))));
+      check(P + 'Bramble and Brin each tell their story a line at a time; once the outpost is cleared they say only their after-the-win lines (never that the goblins are still in there), and while it fills again after a win, that the goblins came back; every line (and every word the outposts say) is short and plain, with no compass word',
+        told && lines.every(t => t.length <= 140 && !/\b(north|south|east|west)\b|\bmiles?\b/i.test(t)), { said }); }
 
     // 7. the rails and the signposts: a RAILS entry on a HITCH tile in each place; a signpost where the trail and the
     // Drovers' Track leave the road, naming the outpost (arms drawn) and never "builders at work"; nothing built here stands

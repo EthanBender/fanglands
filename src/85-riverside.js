@@ -127,11 +127,11 @@
       "The crows think my wheat is their dinner. Chase them off if you like. They never listen to me.",
       'Rats got into the barn again. Big as cats, they are. Bigger than some cats.',
       "Bring Tamsin your wheat. Her wheel grinds it to flour, and flour makes pies. There's an oven in my farmhouse.",
-      "That bare patch by the lane is for anyone. Dig it, plant it, eat it. Greta in Thistledown sells the seeds.",
+      "That bare patch by the lane is for anyone. Dig it, plant it, eat it. Tamsin sells the seed at the mill.",
     ],
   };
   const PEOPLE = [
-    OB.pt({ id: 'wilf', name: 'Wilf the stonemason', x: 11, y: 11, tunic: '#8a8680', hair: '#a8a098', beard: true, role: 'riverfolk', lines: LINES.wilf }),
+    OB.pt({ id: 'wilf', name: 'Wilf the stonemason', x: 16, y: 9, tunic: '#8a8680', hair: '#a8a098', beard: true, role: 'riverfolk', lines: LINES.wilf }),
     MB.pt({ id: 'tamsin_miller', name: 'Tamsin the miller', x: 15, y: 2, tunic: '#5a86b0', hair: '#6a4426', woman: true, apron: true, role: 'shop', shop: 'mill' }),
     MB.pt({ id: 'odo', name: 'Odo the farmer', x: 8, y: 11, tunic: '#5a7a3e', hair: '#5a3a1a', beard: true, role: 'riverfolk', lines: LINES.odo }),
     SM.pt({ id: 'nan_gully', name: 'Nan Gully', x: 10, y: 2, tunic: '#3a5a7a', hair: '#e8e2d6', woman: true, apron: true, role: 'shop', shop: 'saltmere_fish' }),
@@ -154,7 +154,9 @@
   // ---------- the mill leat and the wheel; Saltmere's fishing spots; the marsh band ----------
   const LEAT = () => MB.box([20, 1, 25, 1]), PIT = () => MB.box([19, 0, 19, 2]);
   const WHEEL = () => MB.p(19, 1);
-  const FISH = () => SM.pts([[4, 11], [10, 10], [12, 13], [3, 14]]);
+  // (each on the water beside the jetty, so a knight stands next to every ring: the review of bcb559f found three of the
+  // first four out in open water with no foothold)
+  const FISH = () => SM.pts([[5, 9], [8, 10], [5, 12], [8, 13]]);
   const MARSH = () => SM.box([-8, 2, -1, 16]);
 
   // ---------- the footprint (§10): WORLD_REV 2 ----------
@@ -500,6 +502,15 @@
       check(P + "Millbrook's wheel turns in a pit fed by a leat from the river (a dead end), its wheat stands on soil and a plot of soil waits for anyone; Saltmere has five stilt huts, a plank jetty two wide with lobster grounds off its end, drying racks, and a marsh band of pools, sand bars and reeds",
         dry === 0 && joins && wheat.length === 21 && onSoil && soil === 8 && huts === 5 && dock >= 30 && lob === 4 && DECO.cells('rack').length === 4 && M.pools > 0 && M.sand > 0 && M.reeds > 0, { dry, joins, wheat: wheat.length, soil, huts, dock, lob, marsh: M }); }
 
+    // 7b. Saltmere's fishing rings: each on water, with a tile beside it (4 ways) a knight walks to from the cave mouth
+    { const N = MAP_W * MAP_H, seen = new Uint8Array(N), q = new Int32Array(N); let n = 0;
+      const take = i => { if (!seen[i] && (!SOLID.has(tiles[i]) || PUSH_THROUGH.has(tiles[i]))) { seen[i] = 1; q[n++] = i; } };
+      { const [mx, my] = A.port('cave.mouth'); take(idx(mx, my)); }
+      for (let k = 0; k < n; k++) { const c = q[k], x = c % MAP_W; if (x > 0) take(c - 1); if (x < MAP_W - 1) take(c + 1); if (c >= MAP_W) take(c - MAP_W); if (c + MAP_W < N) take(c + MAP_W); }
+      const reach = (x, y) => !!seen[idx(x, y)];
+      const bad = FISH().map(p => p.map(Math.round)).filter(([x, y]) => tiles[idx(x, y)] !== T.WATER || ![[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => !SOLID.has(tiles[idx(x + dx, y + dy)]) && reach(x + dx, y + dy)));
+      check(P + "Saltmere's four fishing rings lie on water a knight can stand beside (the jetty), each reached from the cave mouth", FISH().length === 4 && !bad.length, { bad, fish: FISH() }); }
+
     // 8. the rails: each place's rail is in RAILS, on a HITCH tile in its own box, and the mare bolts to the nearest visited
     { const ok = IDS.every(id => { const r = RAILS.find(q => q.id === id), p = r && r.at(); return !!p && inB(A.box(id), p.x, p.y) && tileAt(p.x, p.y) === T.HITCH && RAILS.of(p.x, p.y) === r && !r.reserved; });
       check(P + 'each place has its hitching rail: a RAILS entry, its post on a HITCH tile in its own box', ok, { posts: POSTS }); }
@@ -509,8 +520,8 @@
       const anyBuilders = SPREAD_GROUND.signs.map(([x, y]) => A.signText(x, y)).filter(t => /(Old Bridge|Millbrook|Saltmere) \(builders at work\)/.test(t));
       const onRoad = []; for (const b of BLDG) for (let y = b.y; y < b.y + b.h; y++) for (let x = b.x; x < b.x + b.w; x++) if (A.onMainRoad(x, y)) onRoad.push(b.id);
       for (const id of IDS) { const rows = PLAN[id]; rows.forEach((r, ry) => [...r].forEach((c, rx) => { const [x, y] = FR[id].p(rx, ry); if (/[fGHkL~]/.test(c) && A.onMainRoad(x, y)) onRoad.push(id + ' ' + c + '@' + x + ',' + y); })); }
-      check(P + "the signposts at the Old Bridge's south end and Millbrook's gate read, no signpost says the riverside's builders are still at work, and nothing built here stands on a main road",
-        words.every(Boolean) && !anyBuilders.length && !onRoad.length, { words, anyBuilders, onRoad }); }
+      check(P + "the signposts at the Old Bridge's south end and Millbrook's gate read (the bridge's names the Hunters' Lodge, the Wolfwood Road's next stop), no signpost says the riverside's builders are still at work, and nothing built here stands on a main road",
+        words.every(Boolean) && /Hunters' Lodge/.test(words[0] || '') && !anyBuilders.length && !onRoad.length, { words, anyBuilders, onRoad }); }
 
     // 10. the ground: no change outside the footprint boxes and their ring (the FOOTPRINT proof's own words, here as the
     // places say it), and placing in a built place says whose ground it is

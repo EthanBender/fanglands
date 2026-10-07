@@ -87,11 +87,26 @@
       "Lost? Read the signpost. It's never wrong. I am, sometimes.",
     ],
     marigold: [
-      "I used to walk my cows down the Drovers' Track. Then the goblins built a camp right across it.",
+      "I used to walk my cows down the Drovers' Track. Then the goblins built a fence right across it.",
       "Goblins don't even want the cows. They want the bells. Shiny, you see.",
       'My cows are safe in a field by Hollowford now. I miss walking them.',
       "If you ever chase those goblins off my track, I'll sing about you. Loudly.",
       "Mother Hobb's pie is the best thing on any road. Don't tell the baker in Thistledown.",
+    ],
+  };
+  // Marigold once the south goblin outpost on her track has been beaten (86-outposts: quest.outposts.outpost_south): her
+  // song, once, with a pie; then her cows are back (or, while the outpost fills again, the goblins are back)
+  const MARIGOLD = {
+    song: ["You chased the goblins off my track! Brin told me. I promised you a song, so here it is:",
+      "The knight, the knight, the bravest knight! The goblins ran away in fright! ... Here, have a pie. You earned it."],
+    after: [
+      "My cows are back on the track! Brin walks them to the inn again.",
+      "I sing your song to the cows every day. They like it. I think.",
+      "Mother Hobb's pie is the best thing on any road. Don't tell the baker in Thistledown.",
+    ],
+    back: [
+      "The goblins came back to my track! Brin says they are behind their fence again.",
+      "You beat them once. If you beat them again, I will sing even louder.",
     ],
   };
   const PEOPLE = [
@@ -279,13 +294,25 @@
 
   // ---------- talking ----------
   const SAID = {};
-  HOOKS.talk.wayfarer = n => { const k = SAID[n.id] = ((SAID[n.id] === undefined ? -1 : SAID[n.id]) + 1) % n.lines.length; say(n.lines[k], n.name); };
-  // Mother Hobb: five coins for a bowl of stew (healed to full) and the room (a bed in the back room holds the knight's
-  // spirit from then on, like Dorran's at the Barrel & Boar); then her kitchen opens
+  const southOutpost = () => (quest.outposts && quest.outposts.outpost_south) || {};
+  const marigoldMood = () => { const q = southOutpost(); return q.cleared ? 'after' : q.won ? 'back' : 'before'; };
+  HOOKS.talk.wayfarer = n => {
+    let L = n.lines, key = n.id;
+    if (n.id === 'marigold' && marigoldMood() !== 'before') {
+      const x = quest.xroads && typeof quest.xroads === 'object' ? quest.xroads : (quest.xroads = {});
+      if (!x.sang) { x.sang = 1; for (const l of MARIGOLD.song) say(l, n.name); if (addItem('meat_pie', 1) !== 0) notify('Your pack is full. Marigold keeps the pie for you.'), x.sang = 0; else burst(player.x, player.y, '#ffd166', 12, 60); save(); return; }
+      L = MARIGOLD[marigoldMood()]; key = n.id + ':' + marigoldMood();
+    }
+    const k = SAID[key] = ((SAID[key] === undefined ? -1 : SAID[key]) + 1) % L.length; say(L[k], n.name);
+  };
+  // Mother Hobb: five coins, once, for a bowl of stew (healed to full) and the room (a bed in the back room holds the
+  // knight's spirit from then on, like Dorran's at the Barrel & Boar, and a sleep in it heals him for nothing); then her
+  // kitchen opens. She never takes coin again (the review of bcb559f: she took five from a hurt knight every word, even one
+  // who only wanted a potato)
   const ROOM = 5;
   const hobbWords = {
     paid: 'Five coins. Hot stew, and the bed in the back room is yours. Sleep in it and you will wake here if you fall.',
-    again: 'Five coins. Sit down and eat. You look done in.',
+    hurt: 'You look done in, love. Your bed is made up in the back room. A good sleep will mend you.',
     poor: 'A bowl of stew and a bed are five coins. Come back with coin, love.',
     home: 'Welcome back. Your bed is made. Hungry?',
   };
@@ -293,15 +320,15 @@
     HOOKS.talkBefore.shop = n => {
       if (n.id !== 'mother_hobb') return prev ? prev(n) : false;
       const paid = !!player.xinnRested, hurt = player.hp < player.maxHp;
-      if ((!paid || hurt) && coins() >= ROOM) {
+      if (!paid && coins() >= ROOM) {
         payCoins(ROOM); player.hp = player.maxHp; player.xinnRested = true;
-        say(paid ? hobbWords.again : hobbWords.paid, n.name); burst(player.x, player.y, '#7ee787', 10, 40); save();
-      } else say(paid ? hobbWords.home : hobbWords.poor, n.name);
+        say(hobbWords.paid, n.name); burst(player.x, player.y, '#7ee787', 10, 40); save();
+      } else say(!paid ? hobbWords.poor : hurt ? hobbWords.hurt : hobbWords.home, n.name);
       openPanel('shop', n.shop); return true;
     }; }
 
   // ---------- the handle ----------
-  window.CROSSROADS = { ID, THINGS, BOX, STAKED, PLAN, INN, PEOPLE, LINES, POSTS, STATS, NOTICES, FOOT, FR: F, boardWords, hobbWords, ROOM };
+  window.CROSSROADS = { ID, THINGS, BOX, STAKED, PLAN, INN, PEOPLE, LINES, MARIGOLD, marigoldMood, POSTS, STATS, NOTICES, FOOT, FR: F, boardWords, hobbWords, ROOM };
 
   // ---------- self-tests ----------
   HOOKS.selfTest.push((check, Fh, h) => {
@@ -360,12 +387,28 @@
         !bad.length, { bad }); }
 
     // 4. they talk: plain words, short; Jory and Marigold tell their stories a line at a time
-    { const said = {};
+    { const said = {}, op0 = quest.outposts; quest.outposts = {};
       for (const p of PEOPLE.slice(1)) { said[p.id] = []; for (let k = 0; k < p.lines.length; k++) { dialog.queue.length = 0; advanceDialog(); closePanel(); talkTo(p); const d = [dialog.cur, ...dialog.queue].find(q => q && q.who === p.name); said[p.id].push(d ? d.text : null); } closePanel(); dialog.queue.length = 0; advanceDialog(); }
-      const all = Object.values(LINES).flat().concat(Object.values(hobbWords));
+      quest.outposts = op0;
+      const all = Object.values(LINES).flat().concat(Object.values(hobbWords), MARIGOLD.song, MARIGOLD.after, MARIGOLD.back);
       const every = PEOPLE.slice(1).every(p => p.lines.every(t => said[p.id].includes(t)));
       check(P + 'Jory and Marigold each say every one of their lines in turn, every line (and every one of Mother Hobb\'s) short and plain, with no compass words (the signpost gives the ways)',
         every && all.every(t => t.length <= 140 && !/\b(north|south|east|west)\b/i.test(t)), { said }); }
+    // 4b. Marigold's promise kept (the review of bcb559f): once the south outpost on her track is beaten she sings her song
+    // and gives a meat pie, once ever; while it is cleared her cows are back, while it fills again the goblins are; and the
+    // outpost is a fence, as Brin says, not a camp
+    { const mg = PEOPLE.find(p => p.id === 'marigold'), keep = { op: quest.outposts, x: quest.xroads, inv: JSON.parse(JSON.stringify(player.inv)), s: Object.assign({}, SAID) };
+      const talk = n => { const out = []; for (let k = 0; k < n; k++) { dialog.queue.length = 0; advanceDialog(); closePanel(); talkTo(mg); out.push([dialog.cur, ...dialog.queue].filter(q => q && q.who === mg.name).map(q => q.text).join(' / ')); } closePanel(); dialog.queue.length = 0; advanceDialog(); return out; };
+      const res = {};
+      try {
+        player.inv = new Array(INV_SLOTS).fill(null); quest.xroads = {};
+        quest.outposts = { outpost_south: { cleared: 1, won: 1, thanked: 1 } };
+        const t = talk(MARIGOLD.after.length + 2); res.song = t[0]; res.after = t.slice(1); res.pie = countItem('meat_pie');
+        quest.outposts = { outpost_south: { cleared: 0, won: 1, thanked: 1 } }; res.back = talk(MARIGOLD.back.length + 1); res.pie2 = countItem('meat_pie');
+      } finally { quest.outposts = keep.op; quest.xroads = keep.x; player.inv = keep.inv; Object.keys(SAID).forEach(k => delete SAID[k]); Object.assign(SAID, keep.s); }
+      check(P + 'Marigold keeps her promise: after the south goblin outpost is beaten she sings her song and gives a meat pie, once; then only that her cows are back (never that the goblins are on her track), and while it fills again that the goblins came back; the outpost is a fence',
+        res.song === MARIGOLD.song.join(' / ') && res.pie === 1 && res.pie2 === 1 && MARIGOLD.after.every(l => res.after.includes(l)) && res.after.every(l => MARIGOLD.after.includes(l))
+        && MARIGOLD.back.every(l => res.back.includes(l)) && res.back.every(l => MARIGOLD.back.includes(l)) && /fence/.test(LINES.marigold[0]) && !LINES.marigold.some(l => /\bcamp\b/.test(l)), res); }
 
     // 5. the room and the kitchen: no coin, no room (and the bed says whose room it is); five coins heals him to full and
     // the back room's bed then holds his spirit; her kitchen opens every time; the Barrel & Boar's room is its own
@@ -380,11 +423,13 @@
         addItem('coins', 12); player.hp = Math.max(1, player.maxHp - 5);
         talkTo(hobb); res.coins = coins(); res.healed = player.hp === player.maxHp; res.rested = !!player.xinnRested; res.shop = panel === 'shop' && panelArg === 'xinn_kitchen'; closePanel(); dialog.queue.length = 0; advanceDialog();
         talkTo(hobb); res.coins2 = coins(); closePanel(); dialog.queue.length = 0; advanceDialog();
-        res.paid = sleep(); res.at = player.bedSpawn && [Math.floor(player.bedSpawn.x / TILE), Math.floor(player.bedSpawn.y / TILE)]; res.wantAt = bed;
+        // hurt again with the room paid: a word costs nothing, she sends him to his bed, her kitchen opens; the bed heals him
+        player.hp = Math.max(1, player.maxHp - 5); talkTo(hobb); res.coins3 = coins(); res.hurtWords = ([dialog.cur, ...dialog.queue].find(q => q && q.who === hobb.name) || {}).text || null; res.shop3 = panel === 'shop' && panelArg === 'xinn_kitchen'; closePanel(); dialog.queue.length = 0; advanceDialog();
+        res.paid = sleep(); res.bedHealed = player.hp === player.maxHp; res.at = player.bedSpawn && [Math.floor(player.bedSpawn.x / TILE), Math.floor(player.bedSpawn.y / TILE)]; res.wantAt = bed;
         res.stock = ['meat_pie', 'bread'].every(id => SHOPS.xinn_kitchen.stock.some(([k]) => k === id));
       } finally { player.inv = keep.inv; player.hp = keep.hp; player.xinnRested = keep.rested; player.innRested = keep.inn; player.bedSpawn = keep.bed; player.x = keep.x; player.y = keep.y; player.facing = keep.f; closePanel(); dialog.queue.length = 0; advanceDialog(); }
-      check(P + "the room: unpaid, the bed says \"Pay Mother Hobb for the room first.\" (the Barrel & Boar's paid room does not count here); with no coin she opens her kitchen and keeps the room; five coins heals the knight to full, the room is his and a second word with him whole costs nothing; then the back room's bed holds his spirit; her kitchen sells pies and bread",
-        !res.unpaid.bed && res.unpaid.words === 'Pay Mother Hobb for the room first.' && res.poorShop && !res.poorRested && res.coins === 7 && res.healed && res.rested && res.shop && res.coins2 === 7 && res.paid.bed && !!res.at && res.at[0] === res.wantAt[0] && res.at[1] === res.wantAt[1] && res.stock,
+      check(P + "the room: unpaid, the bed says \"Pay Mother Hobb for the room first.\" (the Barrel & Boar's paid room does not count here); with no coin she opens her kitchen and keeps the room; five coins heals the knight to full and the room is his, once: a later word costs nothing, hurt or whole (hurt, she sends him to his bed, which heals him) and her kitchen opens; the back room's bed holds his spirit; her kitchen sells pies and bread",
+        !res.unpaid.bed && res.unpaid.words === 'Pay Mother Hobb for the room first.' && res.poorShop && !res.poorRested && res.coins === 7 && res.healed && res.rested && res.shop && res.coins2 === 7 && res.coins3 === 7 && res.hurtWords === hobbWords.hurt && res.shop3 && res.bedHealed && res.paid.bed && !!res.at && res.at[0] === res.wantAt[0] && res.at[1] === res.wantAt[1] && res.stock,
         res); }
 
     // 6. no creature spawns inside the place (or in its yard), and the yard's things are solid and say their words

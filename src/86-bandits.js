@@ -104,6 +104,20 @@
       'Beat the chief and the rest, and the track is safe again. Then I can get my cart back.',
     ],
   };
+  // after the chief has fallen: his cart is home (and, while the hills fill again, a word that the bandits are back)
+  const AFTER = {
+    wat_carter: [
+      'My cart is home. Pots and pans for everyone!',
+      'The track is safe, so I can sell my pots in every town again.',
+      'Thank you again for beating the bandit chief. You are very brave.',
+    ],
+  };
+  const BACK = {
+    wat_carter: [
+      'The bandits came back to their camp! My cart is safe at home, at least.',
+      'You beat them once. Beat them again and the track is safe again.',
+    ],
+  };
   const WORDS = {
     thanks: 'You beat the bandit chief! My cart is free and the track is safe again. Thank you! Here, take these coins.',
     booth: 'The bandits\' toll booth. A board on it says: TOLL, TEN COINS. PAY OR GO HOME.',
@@ -121,7 +135,7 @@
   };
   const REWARD = { wat_carter: 60 };
   const PEOPLE = [
-    BF.pt({ id: 'wat_carter', name: 'Wat the carter', x: 6, y: 4, place: ID, tunic: '#4e6a3e', hair: '#a8a49c', beard: true, role: 'banditwatch', lines: LINES.wat_carter }),
+    BF.pt({ id: 'wat_carter', name: 'Wat the carter', x: 11, y: 5, place: ID, tunic: '#4e6a3e', hair: '#a8a49c', beard: true, role: 'banditwatch', lines: LINES.wat_carter }),
   ].map(n => Object.assign(n, { bandits: true }));
 
   // ---------- the bandits ----------
@@ -409,14 +423,29 @@
     const q = quest.bandits; if (q && q.cleared && standing() > 0) q.cleared = 0;
   });
 
-  // ---------- talking: Wat a line at a time; once the chief has been beaten, thanks (once ever) ----------
+  // ---------- talking: Wat a line at a time; once the chief has been beaten, thanks (once ever), then his after-the-win
+  // lines (the review of bcb559f: he went back to "they took my cart" after paying for it) ----------
   const SAID = {};
-  const nextLine = n => { const k = SAID[n.id] = ((SAID[n.id] === undefined ? -1 : SAID[n.id]) + 1) % n.lines.length; return n.lines[k]; };
+  // which story he tells now: 'before' the chief falls; 'after' once he has (his cart is home); 'back' while the hills are
+  // filling again after that
+  const mood = () => { const q = Q(); return !q.won ? 'before' : (!q.cleared && standing() > 0) ? 'back' : 'after'; };
+  const linesOf = (n, m) => (m === 'before' ? n.lines : (m === 'back' ? BACK : AFTER)[n.id] || n.lines);
+  const nextLine = n => { const m = mood(), L = linesOf(n, m), key = n.id + ':' + m; const k = SAID[key] = ((SAID[key] === undefined ? -1 : SAID[key]) + 1) % L.length; return L[k]; };
   HOOKS.talk.banditwatch = n => {
     const q = Q();
+    if (!q.met) { q.met = 1; if (!q.won) { quest.tracked = 'wat_cart'; notify(`New quest: Wat's Cart. ${touchMode() ? 'Tap QUESTS' : 'Press ' + keyName('J')} to read it.`); } save(); }
     if (q.won && !q.thanked) { q.thanked = 1; addItem('coins', REWARD[n.id]); say(WORDS.thanks, n.name); burst(player.x, player.y, '#ffd166', 12, 60); save(); return; }
     say(nextLine(n), n.name);
   };
+
+  // ---------- the quest book (J) and the map: Wat's Cart, from the first word with him to his thanks (the review of
+  // bcb559f: the story was in no book and on no map) ----------
+  QUEST_DEFS.wat_cart = { name: "Wat's Cart" };
+  HOOKS.questText.wat_cart = () => { const q = Q(); return q.thanked ? 'Done.' : q.won ? 'The bandit chief is beaten! Go back and tell Wat the carter.' : "Bandits took Wat the carter's cart. Go in past their toll gate and beat the bandit chief."; };
+  HOOKS.activeQuests.push(() => { const q = quest.bandits; return q && q.met && !q.thanked ? ['wat_cart'] : []; });
+  if (HOOKS.mapTarget) HOOKS.mapTarget.push(() => { const q = quest.bandits; if (!q || !q.met || q.thanked) return null;
+    if (q.won) { const w = PEOPLE[0]; return { x: w.x, y: w.y, label: 'Wat the carter', id: 'wat_cart' }; }
+    const [x, y] = GATE().map(Math.round); return { x, y, label: "The bandits' toll gate", id: 'wat_cart' }; });
 
   // ---------- 42-playthrough: the bandits on the curve ----------
   if (HOOKS.xpSource) HOOKS.xpSource.push(add => {
@@ -426,7 +455,7 @@
   });
 
   // ---------- the handle ----------
-  window.BANDITS = { ID, PLAN, PEOPLE, LINES, WORDS, REWARD, DEFS, SPAWNS, spotsOf, GATE, MOUTH, WALLS, POSTS, STATS: STATS_B, THINGS, SIGNS, FOOT, BF, Q, gang, standing, isBandit, trackCells, NOTICE };
+  window.BANDITS = { ID, PLAN, PEOPLE, LINES, AFTER, BACK, mood, WORDS, REWARD, DEFS, SPAWNS, spotsOf, GATE, MOUTH, WALLS, POSTS, STATS: STATS_B, THINGS, SIGNS, FOOT, BF, Q, gang, standing, isBandit, trackCells, NOTICE };
 
   // ---------- self-tests ----------
   HOOKS.selfTest.push((check, Fh, h) => {
@@ -547,13 +576,19 @@
         !bad.length && kinds === 'booth,cart,mouth,tent,tent', { bad, kinds }); }
 
     // 7. Wat talks: a line at a time; plain words, short, no compass word
-    { const said = []; const keep = { s: SAID.wat_carter, bq: JSON.parse(JSON.stringify(quest.bandits || {})) }; quest.bandits = {};
-      const p = PEOPLE[0];
-      for (let k = 0; k < p.lines.length; k++) { dialog.queue.length = 0; advanceDialog(); talkTo(p); const d = [dialog.cur, ...dialog.queue].find(q => q && q.who === p.name); said.push(d ? d.text : null); }
-      SAID.wat_carter = keep.s; quest.bandits = keep.bq; dialog.queue.length = 0; advanceDialog();
-      const lines = LINES.wat_carter.concat([WORDS.thanks, WORDS.booth, WORDS.boothEmpty, WORDS.tent, WORDS.cart, WORDS.cartFree, WORDS.mouth, WORDS.gate, WORDS.sacksGuarded, WORDS.sacksFound, WORDS.sacksEmpty, WORDS.scrub]);
-      check(P + 'Wat tells his story a line at a time; every line (and every word the hills say) is short and plain, with no compass word',
-        p.lines.every(t => said.includes(t)) && lines.every(t => t.length <= 140 && !/\b(north|south|east|west)\b|\bmiles?\b/i.test(t)), { said }); }
+    // (after the chief has fallen his cart is home: only his after-the-win lines, and while the hills fill again that the
+    // bandits came back; never "they took my cart" again: the review of bcb559f)
+    { const said = {}; const keep = { s: Object.assign({}, SAID), bq: JSON.parse(JSON.stringify(quest.bandits || {})) };
+      const p = PEOPLE[0], up = gang().filter(m => !m.dead).length > 0;
+      const MOODS = { before: {}, after: { won: 1, cleared: 1, thanked: 1, searched: 1 }, back: { won: 1, cleared: 0, thanked: 1 } };
+      const want = m => m === 'before' ? p.lines : (m === 'after' ? AFTER : BACK)[p.id];
+      for (const m of Object.keys(MOODS)) { quest.bandits = Object.assign({}, MOODS[m]); said[m] = [];
+        for (let k = 0; k < want(m).length + 2; k++) { dialog.queue.length = 0; advanceDialog(); talkTo(p); const d = [dialog.cur, ...dialog.queue].find(q => q && q.who === p.name); said[m].push(d ? d.text : null); } }
+      Object.keys(SAID).forEach(k => delete SAID[k]); Object.assign(SAID, keep.s); quest.bandits = keep.bq; dialog.queue.length = 0; advanceDialog();
+      const lines = LINES.wat_carter.concat(AFTER.wat_carter, BACK.wat_carter, [WORDS.thanks, WORDS.booth, WORDS.boothEmpty, WORDS.tent, WORDS.cart, WORDS.cartFree, WORDS.mouth, WORDS.gate, WORDS.sacksGuarded, WORDS.sacksFound, WORDS.sacksEmpty, WORDS.scrub]);
+      const told = up && Object.keys(MOODS).every(m => want(m).every(t => said[m].includes(t)) && said[m].every(t => want(m).includes(t)));
+      check(P + 'Wat tells his story a line at a time; once the chief has fallen only his after-the-win lines (his cart is home), and while the hills fill again that the bandits came back; every line (and every word the hills say) is short and plain, with no compass word',
+        told && lines.every(t => t.length <= 140 && !/\b(north|south|east|west)\b|\bmiles?\b/i.test(t)), { said, up }); }
 
     // 8. the rail, the signpost and the track: a RAILS entry on a HITCH tile in the box; a signpost by the track names the
     // Bandit Hills (its arm drawn); Hollowford's signpost no longer says "builders at work"; the Bandit Track's own cells

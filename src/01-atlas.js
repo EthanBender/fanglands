@@ -686,7 +686,9 @@
     spur_barrow: 'the Old Barrow', r6_ash: 'the Ash Road', r6a_shrine: 'the shrine path', path_farm: "Dunstan's farm", r7_drovers: "the Drovers' Track",
     r8_bandit: 'the Bandit Track', shaft_lane: 'the mine shaft' };
   // the landmarks an arm names when its road passes one ("→ Thistledown, south-east, past the old signpost.")
-  const PAST_MARKS = ['signpost', 'old_bridge', 'crossroads_inn', 'goblin_road'];
+  // (the Hunters' Lodge since the review of bcb559f: the Old Bridge's post named only the graveyard, the Wolfwood Road's far
+  // end, and not the Lodge, its next stop)
+  const PAST_MARKS = ['signpost', 'old_bridge', 'crossroads_inn', 'goblin_road', 'hunters_lodge'];
   const COMPASS = ['east', 'south-east', 'south', 'south-west', 'west', 'north-west', 'north', 'north-east'];
   // the words for a leg's far end: a port names its place (a reserved one says the builders are at work); a junction
   // names the road it meets

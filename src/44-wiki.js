@@ -122,6 +122,9 @@
     rebuild: { giver: "The board in Hollowford's square", reward: 'A town again; 500 coins at the end', kind: 'Side quest' },
     guild: { giver: 'Old Tam, Hollowford', reward: 'Ranks, a chest, a cape (500 coins) and staff', kind: 'Side quest' },
     sky: { giver: 'Old Wren, then Queen Seraphel in Aerie', reward: "400 coins, 300 Smithing xp, Halcyon's forge", kind: 'Side quest' },
+    wat_cart: { giver: 'Wat the carter, by the Bandit Hills', reward: '60 coins (and the bandits\' sacks)', kind: 'Side quest' },
+    outposts: { giver: 'Bramble the scout and Brin the drover, by the goblin outposts', reward: '30 coins from Bramble, 40 from Brin, and a song from Marigold', kind: 'Side quest' },
+    beacons: { giver: 'Ansel the beacon keeper, Beacon Hills', reward: '40 coins, Agility xp, and every place in sight on your map', kind: 'Side quest' },
   };
   // people who live in feature places without a NPCS entry (33-goblincity, 36-skycity, 26-boats)
   const EXTRA_NPCS = {
