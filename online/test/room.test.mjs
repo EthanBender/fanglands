@@ -703,9 +703,11 @@ test('after a nap the world and both pages agree on the keeper from the first wo
       hear(a); hear(b);
       const k = w.room.keeperOf('over');
       const at = `${story}, restored ${first} first, ${w.t - t0} ms after play: server keeper=${k && k.name} Cohen believes=${a.belief} Sam believes=${b.belief}`;
-      if (!(k && a.belief === k.name && b.belief === k.name)) seen.push(at);
+      if (!(k && a.belief === k.name && b.belief === k.name)) seen.push({ t: w.t - t0, at });
     });
-    assert.deepEqual(seen.slice(0, 1), [], 'they disagree');
+    // a wake tells nobody while the keeper it restored has said nothing (as on master, where a wake told nobody and the alarm
+    // settled it 3.05 s on): they agree once he has (a playing page's presence comes once a second), and stay so
+    assert.deepEqual(seen.filter(x => x.t > 1000 + 125).slice(0, 1).map(x => x.at), [], 'they disagree');
     // the stream reaches the other page, and his swing reaches the page that runs the monsters
     const keeper = w.room.keeperOf('over').name, other = keeper === 'Cohen' ? b : a, mine = keeper === 'Cohen' ? a : b;
     other.s.clear(); mine.s.clear(); other.n = mine.n = 0;
@@ -716,14 +718,14 @@ test('after a nap the world and both pages agree on the keeper from the first wo
   }
 });
 
-// Review round 2 of the idle work (6 Oct 2026): a nap proves every socket has been quiet for at least 10 s, yet the keeper a wake
-// restored used to start a fresh grace, and the first word on the map then told every page that this silent knight keeps it. So
-// when the knight restored first stays paused or locked and the other plays, the player's page lost the monsters it was running
-// (setKeeper to the other: no puppets, no monsters) and waited up to 3.05 s for the map, slower than before the idle work. Here
-// one knight plays after the nap while the other stays silent, for every story, both restore orders and either player, and from
-// his very first word on: the server names him keeper and his page believes it, at every frame (a page that ran the monsters
-// before the nap never stops).
-test('after a nap the knight who plays first keeps the map from his first word, while the other stays silent, whichever socket the restore takes first', () => {
+// Review round 2 of the idle work (6 Oct 2026): the keeper a wake restored starts a fresh grace, and the first word on the map
+// used to tell every page that this silent knight keeps it. So when the knight restored first stays paused or locked and the
+// other plays, the player's page lost the monsters it was running (setKeeper to the other: no puppets, no monsters). Here one
+// knight plays after the nap while the other stays silent, for every story, both restore orders and either player: his page is
+// never told the silent knight keeps the map (a page that ran the monsters before the nap never stops), and the map is his, on
+// the server and on his page, once the restored keeper's grace is out (KEEPER_STALE + 50, as master's alarm gave it; the
+// simplification review of 7 Oct: handing it over at his first word took a boss fight from a paused keeper's page).
+test('after a nap the knight who plays first keeps the map once the silent keeper\'s grace is out, and his page is never told the silent one keeps it, whichever socket the restore takes first', () => {
   for (const story of ['walks out', 'pauses', 'plain']) for (const first of ['Cohen', 'Sam']) for (const player of ['Cohen', 'Sam']) for (const wake of ['presence', 'alarm']) {
     let w = world();
     const C = [];
@@ -751,19 +753,22 @@ test('after a nap the knight who plays first keeps the map from his first word, 
     // one plays; the other stays paused or locked
     const P = player === 'Cohen' ? a : b, at = `${story}, told ${told}, restored ${first} first, woken by ${wake}, ${player} plays`;
     P.playing = true;
-    const bad = [];
+    const bad = [], before = P.belief, other = P === a ? 'Sam' : 'Cohen';
     w.run(10000, 25, play, t => {
       hear(P);
       const k = w.room.keeperOf('over');
-      if (!(k && k.name === P.name && P.belief === P.name)) bad.push(`${at}, ${t} ms after play: server keeper=${k && k.name}, ${P.name}'s page believes ${P.belief}`);
+      if (P.belief !== before && P.belief !== P.name) bad.push(`${at}, ${t} ms after play: ${P.name}'s page was told ${P.belief} keeps it`);
+      if (t > KEEPER_STALE + 75 && !(k && k.name === P.name && P.belief === P.name)) bad.push(`${at}, ${t} ms after play: server keeper=${k && k.name}, ${P.name}'s page believes ${P.belief}`);
     });
-    assert.deepEqual(bad.slice(0, 1), [], 'the player does not keep the map from his first word');
+    assert.deepEqual(bad.slice(0, 1), [], 'the player does not keep the map once the grace is out');
+    assert.equal(P.s.got.filter(m => m.t === 'keeper' && m.n === other).length, 0, at + ': nobody is told the silent knight keeps it');
   }
 });
 
 // ... and a knight who arrives on the map just after a wake does not take it from the knight the wake restored (his grace holds
-// against an arrival, as before the idle work), while one who was there through the nap and plays does, at his first word.
-test('after a nap a knight arriving on the map does not take it from the restored keeper; one there who plays does', () => {
+// against an arrival, as before the idle work), while one who was there through the nap and plays does, once that keeper has had
+// KEEPER_STALE to answer (master's alarm), with one alarm.
+test('after a nap a knight arriving on the map does not take it from the restored keeper; one there who plays does, after the grace', () => {
   const w = world();
   const a = w.knight('Cohen', 'over'); w.t += 10;
   const b = w.knight('Sam', 'over');
@@ -773,12 +778,70 @@ test('after a nap a knight arriving on the map does not take it from the restore
   const a2 = w2.sock(), b2 = w2.sock();
   w2.room.restore(b2, b.state); w2.room.restore(a2, a.state);
   assert.equal(w2.room.keeperOf('over').name, 'Cohen');
+  const t0 = w2.t;   // his grace starts at the wake
   w2.t += 500;
   const j = w2.knight('Jack', 'over');   // (his first presence included: he plays, but arrived after the wake)
   assert.equal(w2.room.keeperOf('over').name, 'Cohen', 'the arrival does not take the map');
   assert.equal(j.last('welcome').keeper, 'Cohen');
   w2.t += 200;
   w2.say(b2, { t: 'p', map: 'over', x: 1, y: 2, lv: 3 });
-  assert.equal(w2.room.keeperOf('over').name, 'Sam', 'Sam plays: the map is his at his first word');
+  assert.equal(w2.room.keeperOf('over').name, 'Cohen', 'Cohen has his grace to answer');
+  let got = null;
+  w2.run(KEEPER_STALE + 1000, 25, t => { if (t % 1000 === 0) { w2.say(b2, { t: 'p', map: 'over', x: 1, y: 2, lv: 3 }); w2.say(j, { t: 'p', map: 'over', x: 1, y: 2, lv: 3 }); } },
+    () => { if (got == null && w2.room.keeperOf('over').name !== 'Cohen') got = w2.t - t0; });
+  assert.equal(w2.room.keeperOf('over').name, 'Sam', 'Sam plays: the map is his once the grace is out');
+  assert.ok(got > KEEPER_STALE && got <= KEEPER_STALE + 75, got + ' ms after the wake');
   for (const s of [a2, b2, j]) assert.equal(s.last('keeper').n, 'Sam', 'and everyone there hears it');
+});
+
+// Simplification review (7 Oct 2026): three knights hurt the Brood Mother; Ann (longest on the map, the keeper) leaves her game
+// on the menu, Ben locks his phone, and a while later Cal comes back and fells the boss. On master the alarm gave a quiet keeper
+// still the best a new grace every 3 s, so Ann's paused page heard Cal come back, streamed again and kept the map, and the boss's
+// hits from all three stayed counted on her game: all three were paid. The branch handed the map to Cal at his first word, before
+// Ann's page heard him, and only Cal was paid. With a nap and without one, whichever socket the restore takes first: the keeper
+// gets KEEPER_STALE to answer; when her page answers she keeps the map and nobody is told another keeps it; when it does not, Cal has it
+// KEEPER_STALE + 50 after his first word (after the wake, when there was a nap), with one alarm.
+test('a quiet keeper gets a grace to answer when a knight comes back to his game: her paused page streams again and keeps the map', () => {
+  for (const nap of [false, true]) for (const first of ['Ann', 'Cal']) for (const answers of [true, false]) {
+    const label = `nap ${nap}, restored ${first} first, Ann's page ${answers ? 'answers' : 'is locked'}`;
+    let w = world();
+    let A = w.knight('Ann', 'den'); w.t += 10;
+    let B = w.knight('Ben', 'den'); w.t += 10;
+    let C = w.knight('Cal', 'den');
+    w.settle(A, B, C);
+    // all three fight: Ann's game runs the boss
+    w.run(5000, 25, t => { if (t % 125 === 0) w.say(A, { t: 'mon', list: [] }); if (t % 1000 === 0) for (const s of [A, B, C]) w.say(s, { t: 'p', map: 'den', x: 1, y: 2, lv: 3 }); });
+    assert.equal(w.room.keeperOf('den').name, 'Ann');
+    // everyone stops: Ann on the menu (nobody near her playing: no stream), Ben's phone locked, Cal away
+    w.run(30000, 25);
+    if (nap) {
+      const w2 = world(); w2.t = w.t;
+      const by = { Ann: A, Ben: B, Cal: C }, now = {};
+      for (const n of first === 'Ann' ? ['Ann', 'Ben', 'Cal'] : ['Cal', 'Ben', 'Ann']) { const s = w2.sock(); w2.room.restore(s, by[n].state); now[n] = s; }
+      w = w2; A = now.Ann; B = now.Ben; C = now.Cal;
+    }
+    for (const s of [A, B, C]) s.clear();
+    const alarms = w.alarms;
+    // Cal comes back and plays; Ann's paused page streams its frozen monsters again 25 ms after it hears a knight near
+    let heardCal = false, calAt = null, gotAt = null;
+    w.run(8000, 25, t => {
+      if (calAt == null) calAt = w.t;
+      if (t % 1000 === 25) w.say(C, { t: 'p', map: 'den', x: 1, y: 2, lv: 3 });
+      if (answers && heardCal && t % 125 === 0) w.say(A, { t: 'mon', list: [] });
+      if (A.of('p').some(m => m.n === 'Cal')) heardCal = true;
+    }, () => { if (gotAt == null && w.room.keeperOf('den').name === 'Cal') gotAt = w.t; });
+    if (answers) {
+      assert.equal(w.room.keeperOf('den').name, 'Ann', label + ': Ann keeps the map');
+      // (after a nap, once she has spoken, everyone hears once that she keeps it: what their pages already believe)
+      for (const s of [A, B, C]) assert.deepEqual(s.of('keeper').filter(m => m.n !== 'Ann'), [], label + ': nobody is told another keeps it');
+      w.say(C, { t: 'hit', nid: 'm1', dmg: 3 });
+      assert.equal(A.of('hit').length, 1, label + ': Cal\'s hit reaches the game that runs the boss');
+    } else {
+      assert.equal(w.room.keeperOf('den').name, 'Cal', label + ': the map goes to the one playing');
+      const took = gotAt - calAt;
+      // (after a nap her grace started at the wake, 25 ms before his first word)
+      assert.ok(took > KEEPER_STALE - 50 && took <= KEEPER_STALE + 50 + 25, label + ': took ' + took + ' ms');
+      assert.ok(w.alarms - alarms <= 1, label + ': ' + (w.alarms - alarms) + ' alarms');
+    }
+  }
 });

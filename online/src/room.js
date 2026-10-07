@@ -273,7 +273,7 @@ export class Room {
     const old = this.byName.get(lc);
     if (old) { if (old.since <= state.since) { try { sock.close(4000, 'logged in elsewhere'); } catch (e) { } return; } this.drop(old, 4000, 'logged in elsewhere'); }
     const k = this.makeKnight(sock, state);
-    k.restored = true;   // rebuilt by a wake: he has said nothing in this Room yet (keeperCheck)
+    k.restored = true;   // rebuilt by a wake: he has said nothing in this Room yet (retell)
     k.role = acc ? acc.role : 'player';
     // the login this socket has carried since it joined; a socket from before logins were kept starts one at its join time
     k.loginId = Number.isInteger(state.loginId) ? state.loginId : this.loginStart(k.lc, k.since);
@@ -444,6 +444,7 @@ export class Room {
 
   onPresence(k, m, str) {
     if (!k.hello) return;
+    const was = Math.max(k.pAt || 0, k.monAt || 0);   // his last word before this one (keeperCheck)
     k.pAt = this.now();
     if (str.length > MAX_P) return this.strike(k, CAPS.p);
     const map = (typeof m.map === 'string' && m.map) ? mapKey(k, m.map.slice(0, 64)) : k.map;
@@ -460,7 +461,7 @@ export class Room {
     // an open trade ends when either knight falls or walks away
     if (k.trade) { const o = this.otherOf(k.trade, k); if (k.dead) this.cancelTrade(k.trade, 'dead', k); else if (!this.within(k, o, TRADE_LEAVE, true)) this.cancelTrade(k.trade, 'far', k); }
     if (changed) { this.attach(k); this.rosterLater(); }
-    this.keeperCheck(k);   // a quiet keeper on his map hands it to this knight, who is playing (KEEPER_STALE)
+    this.keeperCheck(k, was);   // a quiet keeper on his map hands it to this knight, who is playing (KEEPER_STALE)
     this.retell(k);        // a map a wake rebuilt: everyone on it hears who keeps it, once
     // the role on a relayed p is always the server's word: whatever the sender put there is overwritten
     const out = JSON.stringify(Object.assign({}, m, { t: 'p', n: k.name, map: wireMap(k.map), role: k.role }));
@@ -513,10 +514,11 @@ export class Room {
   onMon(k, m) {
     if (!k.hello || !Array.isArray(m.list)) return;
     const g = this.maps.get(k.map);
+    const was = Math.max(k.pAt || 0, k.monAt || 0);
     k.monAt = this.now();   // his game is running: alive, whoever keeps the map
     // a game that thinks it keeps a map a wake gave to a knight still silent takes it (keeperCheck); one a wake gave to a knight
     // who has spoken since hears who keeps it (retell)
-    if (g && g.keeper !== k) { this.keeperCheck(k); this.retell(k); }
+    if (g && g.keeper !== k) { this.keeperCheck(k, was); this.retell(k); }
     if (!g || g.keeper !== k) return;   // only the keeper's monsters are real; a late snapshot after handoff is dropped
     this.worlds.keeperMon(k, m);        // a copy taking this map over reads the keeper's stream first
     if (g.keeper !== k) return;
@@ -1058,11 +1060,9 @@ export class Room {
     if (g.keeper && g.keeper.keeperAt == null) g.keeper.keeperAt = now;   // a keeper with no moment yet starts its grace now
     const first = (a, b) => a.mapAt !== b.mapAt ? a.mapAt < b.mapAt : (a.since !== b.since ? a.since < b.since : a.lc < b.lc);
     // A wake (restore, silent) names the knight longest on the map, whatever order the sockets come back in. His grace starts
-    // now, so a knight who arrives on the map just after a wake does not take it from him; but it does not hold against a knight
-    // who was there through the nap and plays: keeperCheck hands the map to the first of them who speaks while the restored
-    // keeper has said nothing since the wake (a nap means every socket has been quiet for at least 10 s). Who the pages were
-    // told is not in the sockets; the first word on the map settles it (retell). One restored before him and named for a
-    // moment keeps no grace: it would read as a sign of life (silentKnight).
+    // now and holds 3 s against everyone, as on master (a paused keeper's page may still answer). Who the pages were told is not
+    // in the sockets; his first word, or elect when his grace runs out, settles it (retell). One restored before him and named
+    // for a moment keeps no grace: it would read as a sign of life (silentKnight).
     if (silent) { let best = null; for (const o of g.members) if (!best || first(o, best)) best = o; if (g.keeper && g.keeper !== best) g.keeper.keeperAt = undefined; g.keeper = best; best.keeperAt = now; return; }
     // a keeper that has gone quiet while others are here goes to the back of the line (see KEEPER_STALE)
     const stale = o => o === g.keeper && g.members.size > 1 && now - Math.max(o.monAt || 0, o.pAt || 0, o.keeperAt || 0) > KEEPER_STALE;
@@ -1074,9 +1074,9 @@ export class Room {
     let best = null;
     for (const o of g.members) if (!best || before(o, best)) best = o;
     // The keeper keeps the map while he is playing, and while nobody else there is either: a hand-over is the costly part, and
-    // handing a map from one silent knight to another only turns the monsters on a silent page into puppets nobody streams. He
-    // gets no new grace for it (nothing watches his quiet moment: due() reads only g.watch), so the first knight there who
-    // plays takes the map at once.
+    // handing a map from one silent knight to another only turns the monsters on a silent page into puppets nobody streams.
+    // Nothing watches his quiet moment (due() reads only g.watch); a knight who comes back to his game gives him one
+    // KEEPER_STALE to answer (keeperCheck).
     if (g.keeper && g.members.has(g.keeper) && (g.keeper === best || !back(g.keeper) || back(best))) return;
     // a quiet keeper goes to the back of the line for good, not just this once: otherwise it would win the very
     // next election (it is still the longest on the map) and the map would thrash between the two
@@ -1090,14 +1090,17 @@ export class Room {
 
   // g.told is the keeper everyone on the map was last told of (elect). A wake rebuilds each map from its sockets and names its
   // keeper without a word (restore is silent): the knight longest on the map, and that need not be the knight the pages were
-  // told before the nap (the pages kept their own idea through it). The first word from anyone else there takes the map from
-  // him at once (keeperCheck: he has not spoken since the wake, so he is quiet), and everyone hears it. When
-  // the first word is the restored keeper's own, everyone there hears, once, that he keeps it: his game takes the map (75-coop
+  // told before the nap (the pages kept their own idea through it). Nobody hears anything while he has not spoken since the
+  // wake; when his grace runs out unanswered, elect hands the map on and everyone hears it. When
+  // he speaks, everyone there hears, once, that he keeps it: his game takes the map (75-coop
   // setKeeper hands its puppets over), the other's turns its monsters to puppets. A name a page already holds changes nothing on
   // it. A world-run map's virtual keeper is told by the world (sim/worlds.js).
   retell(k) {
     const g = k.map && this.maps.get(k.map);
     if (!g || !g.keeper || g.keeper.virtual || g.told === g.keeper) return;
+    // a restored keeper who has said nothing since the wake is not named to anyone (as on master, where a wake told nobody): his
+    // grace runs out and elect tells everyone who keeps it, or he speaks first and this tells them
+    if (g.keeper.restored && !g.keeper.pAt && !g.keeper.monAt) return;
     g.told = g.keeper;
     const out = JSON.stringify(this.worlds.keeperMsg(k.map, g.keeper));
     for (const o of g.members) if (o.hello && !o.virtual) this.raw(o.sock, out);
@@ -1107,15 +1110,17 @@ export class Room {
   // map comes to him. Cheap: one subtraction unless the keeper really is quiet.
   // A keeper quiet for nearly that long books one alarm for the moment it will be (KEEPER_WATCH), so a knight playing but
   // standing still (one presence a second) gets the map as soon as the old alarm gave it; only while someone plays there.
-  keeperCheck(k) {
+  // `was` is this knight's last word before this one. When he had gone quiet too (a knight coming back to his game, or one a wake
+  // restored), a keeper already quiet gets one KEEPER_STALE to answer before the map is his: master's alarm gave a quiet keeper a
+  // new grace every 3 s while nobody there played, so a paused keeper's page heard the knight come back, streamed again and kept
+  // the map, with every hit on the boss still counted on it. No alarm watches that quiet keeper now; this is the same grace,
+  // given when it is needed, with one alarm booked for its end.
+  keeperCheck(k, was) {
     const g = k.map && this.maps.get(k.map);
     if (!g || !g.keeper || g.keeper === k || g.keeper.virtual || g.members.size < 2) return;
     const o = g.keeper, now = this.now();
-    // a keeper a wake restored who has said nothing since, and a knight who was on the map through the nap too speaks first:
-    // the keeper was silent for at least 10 s before the nap, so his grace is void against him. (A knight who arrived after the
-    // wake waits out the grace, as he always did: the map is not handed to a login that may be gone again a moment later.)
-    if (o.restored && !o.pAt && !o.monAt && k.restored) o.keeperAt = 0;
     const heard = Math.max(o.monAt || 0, o.pAt || 0, o.keeperAt || 0);
+    if (now - heard > KEEPER_STALE && now - (was || 0) > PRESENCE_STALE) { o.keeperAt = now; g.watch = now + KEEPER_STALE + 50; this.arm(); return; }
     if (now - heard > KEEPER_STALE) { g.watch = null; this.elect(k.map, null); return; }
     if (now - heard > KEEPER_STALE - KEEPER_WATCH && !(g.watch > now)) { g.watch = heard + KEEPER_STALE + 50; this.arm(); }
   }
