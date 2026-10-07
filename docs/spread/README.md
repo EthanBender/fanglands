@@ -681,6 +681,57 @@ the footprint; the migration as above. The beat gaps are unchanged and under the
 `~/.fanglands/work/spread/s5b/shots/` (laptop 1280x800 and iPad 1024x768); full map `s5b/fullmap-5b.png`. The
 fingerprint baseline is this build's (a061a1ba1ff94e2e), for 5c's diff.
 
+## Stage 5c: THE CROSSROADS INN (feat/spread5, 7 Oct 2026)
+
+`src/84-crossroads.js`. Spec §4 "New places". Points in `ATLAS.planFrame('crossroads_inn')` (offsets from 152,116).
+
+| Where | What is there | People |
+| --- | --- | --- |
+| the junction, 152..168 x 116..125 | the clearing round the Long Road, the Ash Road and the Drovers' Track (trees, rocks, flowers and mushrooms to grass; ore and berry bushes kept); the four-way signpost (Stage 4's, at the yard port: THISTLEDOWN, HOLLOWFORD, FANG'S LAIR, OUTPOST) | Jory the pedlar (wanders) |
+| the inn 'xinn', 152..163 x 126..133 | 12 x 8, two rooms: the door from the road into the common room (Mother Hobb's counter, her oven, three tables, a shelf), a doorway (rug) into the back room (three beds, a rug, a shelf, a table) | Mother Hobb, at her counter |
+| the yard, 164..168 x 126..133 | the notice board at its corner by the road, the hitching rail and a trough beside it, a well, two hay bales (DECO 'hay'), a fence on its far sides | Marigold the drover (wanders) |
+
+- **The room.** Mother Hobb: with five coins, while the room is not his yet or he is hurt, she takes five, heals him to
+  full and gives him the room (`player.xinnRested`); then her kitchen opens (meat pie 25, bread 8, baked potato 6, cooked
+  beef 12). A bed in the inn then holds his spirit like the Barrel & Boar's: 06-systems' bed reads a BUILDINGS row's
+  `inn: { flag, keeper }` (unpaid: "Pay Mother Hobb for the room first."; Dorran's paid room does not open hers).
+- **The notice board** says "Nothing is pinned to it yet." until a notice is pushed to `CROSSROADS.NOTICES` (a string or
+  a function): 86-bandits pins the Bandit Toll's there. Its paper shows on the board.
+- **Past the stakes.** The roads cross the staked box's middle and leave three free rows under them, so the inn and the
+  yard run to row 134. `ATLAS.markBuilt(id, { box })` (01-atlas `builtAt`, read by 93-spread's `placeAction`: "This is
+  the Crossroads Inn's ground. Build somewhere else.", tested in the yard past the stakes); the REGIONS line grows to
+  152..168 x 116..134 in the `HOOKS.built` pass (the banner, the Atlas zone, atlas.json and the map) and goes back to the
+  staked box before every world, with the inn and the people, in a `generateWorld` wrapper ahead of the core's own
+  generation. (First try: taken out only by a `HOOKS.world.unshift` pass, the inn was laid by the core's building loop at
+  the next world's start and 4,888 tiles re-rolled across the map; the footprint caught it.) The anchor's box is unchanged.
+- **Solid things.** The well, the trough and the board stand on 95-thistledown's TD_PROP tile (solid; outside the town's
+  plan it has no town kind) with 84's own side table (`CROSSROADS.THINGS`), drawn over the ground beneath and read in 84's
+  hooks. DECO and Stage 4's PROP are both walkable. No new tile id.
+- **The signpost** shows four arms (`markBuilt(id, { arms: 4 })`; 93-spread's `SIGN_ARMS` packs them 14 px apart).
+- **People's looks**: 83-townsart's 'crossroads' family (mother_hobb, jory, marigold; 83-townsfolk counts 87). Every line
+  is short, with no compass word; Jory and Marigold tell theirs a line at a time (role 'wayfarer').
+- **No spawns** inside the grown box (tested). Stage 4's wolf at 175,131 roams 7 tiles east of the yard (outside the ring).
+- **Other files**: 00-core (WORLD_REV 3), 01-atlas (`builtAt`, markBuilt's `box`), 06-systems (an inn's bed), 93-spread
+  (four arms; `placeAction` reads `builtAt`), 83-townsart, 83-townsfolk, 44-wiki (the kitchen's place).
+
+**The footprint: WORLD_REV 3.** `ATLAS.REVS[3]` is the grown box plus its 6-tile ring (146..174 x 110..140).
+`node tools/spread-footprint.mjs <spread5-85-riverside index.html>`: 202 tiles changed (map and variants), 0 outside;
+the region line changed (its sub and its grown box), 1 building and 3 people added, no spawns changed.
+
+**The migration with the sweep.** `--rev-base` (the 5b build, rev 2): fixture + matrix 27/27 (the footprint plank back
+to the knight, the far one kept). The real saves (the 7 Oct pre-spread-live export, locally) 94/94 straight (world 1 to
+rev 3) and 94/94 through rev 2; 0 stage changes, 0 lost machines, items or coins.
+
+**Proved on this build:** `./build.sh` (literals 0 bare, changetile, compass, boot budget: node 1,080 ms, Chromium 4x
+1,998 ms); headless ALL 1434; `--play` ALL 1435, the Fang dead (one earlier `--play` run under the full gate load failed
+76-admin's layout check once, "no chip" at the phone sizes, and passed on the rerun with nothing changed: a plaque column
+crowded at that moment, not this stage's); online 430; mmo-sim 43, `--room` 43, `--sim` 47; dom-keys 16; mmo-sim-admin 8;
+mmo-sim-party 18; mmo-sim-teacher 9; mmo-sim-world 16; sim-suite 28; build-sim `--strip --reads`; atlas-drift (hash
+c31849ec6edcba72); the footprint; the migration as above. The beat gaps hold (R1 19, R2 23, R3 29; R6's stop gap 47 -> 44
+with the inn a stop). The wiki has the place's page (its three people and Mother Hobb's Kitchen). Shots:
+`~/.fanglands/work/spread/s5c/shots/` (junction, inn inside, back room, yard; laptop 1280x800 and iPad 1024x768); full
+map `s5c/fullmap-5c.png`. The fingerprint baseline is this build's (f1e530104ef79574), for 5d's diff.
+
 ## Proving "nothing visible changed" (spec §9.4)
 
 ```

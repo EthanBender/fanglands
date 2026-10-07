@@ -72,6 +72,16 @@ Everything a feature needs is reachable through globals and the `HOOKS` registry
   `HOOKS.world.unshift` pass, so the earlier passes, which keep rings clear round people and buildings with dice, never
   see them), spawn its creatures (mark each spawn `s.by`). People need a look in 83-townsart (`addPeople`, a family of
   their own; 83-townsfolk's check counts the people). The markers are made again after `HOOKS.built` (93-spread).
+  Take your rows out BEFORE `generateWorld` too (wrap it, as `src/84-crossroads.js` does): the core's own generation lays
+  every BUILDINGS row ahead of any `HOOKS.world` pass, and the Crossroads Inn laid there re-rolled 4,888 tiles all over the
+  next world. A place whose ground must run past its stakes (the inn: the roads cross its box's middle) passes the grown
+  box to `ATLAS.markBuilt(id, { sub, box })`: `ATLAS.builtAt` (and so `placeAction`) keeps it, and the place grows its
+  REGIONS line to it in its `HOOKS.built` pass and puts it back in the same `generateWorld` wrapper (the core and every
+  earlier pass read `regionAt`). `markBuilt(id, { arms: 4 })` lets its signpost show four arms. An inn's bed: a BUILDINGS
+  row with `inn: { flag, keeper }` holds the spirit once `player[flag]` is set (06-systems' bed; the Barrel & Boar keeps
+  Dorran's `innRested`). Solid things (a well, a trough, a notice board) cannot be DECO or PROP (both walkable): 84 stands
+  them on 95-thistledown's TD_PROP tile (solid; outside the town's plan it has no kind of the town's) with a side table of
+  its own, drawn and read in its own hooks.
   **DECO** (`src/83-deco.js`, Stage 5's one tile): open ground drawn as a kind from a side table (`DECO.kind(name,
   { draw, use, ground, flat, bridge })`, `DECO.put(api, x, y, kind)` in a `HOOKS.built` pass, `DECO.at`, `DECO.cells`):
   the Old Bridge's stone deck (`bridge: true`, counted as a crossing by the scarp-seal and river checks), reeds, wheat,
