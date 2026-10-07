@@ -239,9 +239,10 @@ export class Watch {
 
   // w_say {req, text}: the teacher's own line in the game chat, under the name of the session (never a name the page sends),
   // to every knight as an admin's line (room.js teacherSay). A pause does not stop it (as an admin's); the answer is w_ok
-  // with no text (the line itself comes back as w_chat) or w_no: empty, slow.
+  // with no text (the line itself comes back as w_chat) or w_no: empty, long (over SAY_RAW_MAX letters as sent), slow.
   doSay(s, me, m, req, now) {
-    const raw = typeof m.text === 'string' && m.text.length <= SAY_RAW_MAX ? m.text : '';
+    const raw = typeof m.text === 'string' ? m.text : '';
+    if (raw.length > SAY_RAW_MAX) return this.send(s.sock, NO(req, 'long', 'That line is too long. Make it shorter.'));
     if (!raw.trim()) return this.send(s.sock, NO(req, 'empty', 'Type something to say first.'));
     const times = (this.said.get(me.id) || []).filter(t => now - t < 60000 && t <= now);
     if (times.length && now - times[times.length - 1] < SAY_EVERY) return this.send(s.sock, NO(req, 'slow', 'Wait a moment before the next line.'));

@@ -868,6 +868,8 @@ test('S2. a teacher\'s line: the word filter stars it (never a strike), 120 lett
   // empty, or not text
   clock.t += 1100; r = act(W.w, scr, { t: 'w_say', text: '   ' }); assert.equal(r.code, 'empty');
   clock.t += 1100; r = act(W.w, scr, { t: 'w_say', text: 5 }); assert.equal(r.code, 'empty');
+  // over-long as sent: its own answer, not 'empty'
+  clock.t += 1100; r = act(W.w, scr, { t: 'w_say', text: 'a'.repeat(401) }); assert.deepEqual([r.code, r.text], ['long', 'That line is too long. Make it shorter.']);
   // a pause stops the kids, never a teacher
   clock.t += 1100; r = act(W.w, scr, { t: 'w_pause', span: '15m' }); assert.equal(r.t, 'w_ok');
   clock.t += 2000; K.say(W.w, sam, { t: 'chat', text: 'can I talk' }); assert.equal(sam.last('muted').by, 'pause');

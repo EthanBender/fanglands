@@ -2660,6 +2660,7 @@ teacher_acts      (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, te
                    undone_at INTEGER NOT NULL DEFAULT 0, undone_by TEXT)
 chat_masked       (id INTEGER PRIMARY KEY)      the id of each chat row the word filter starred something in (none for the rest)
 chat_teacher      (id INTEGER PRIMARY KEY)      the id of each chat row a teacher said from the teacher screen (none for the rest)
+                  (both are in `GET /api/admin/export` as `chat_masked` and `chat_teacher`, beside `chat`)
 accounts          + sent_off_until INTEGER NOT NULL DEFAULT 0   + sent_off_by TEXT NOT NULL DEFAULT ''
 settings          'chat_pause' = {until, by, act}     'teacher_notice' = 'on' | 'off' (missing = on)
 ```
@@ -3028,7 +3029,7 @@ teacher screen.
   teacher's name with its id in `chat_teacher`, and sends every knight `{t:'chat', n: <teacher's name>, text, at, role:
   'admin', teacher: true}`: every page draws it in the admins' gold under that name, an older page too (it reads `role`; it
   never knew `teacher`). A pause never stops it (as an admin's line); a teacher has no mute. At most one line every 1.5 s and
-  20 a minute per teacher (`w_no slow`: "Wait a moment before the next line."); an empty line is `w_no empty`. No
+  20 a minute per teacher (`w_no slow`: "Wait a moment before the next line."); an empty line is `w_no empty`, and one over 400 letters as sent is `w_no long` ("That line is too long. Make it shorter."; the page's box stops at 120). No
   `teacher_acts` row and no `mod_log` row: the chat log is its record. A knight's socket never reaches it (`w_say` on a
   knight's socket is ignored by the Room, and a kid's `chat` is always his own name and role, whatever else it carries).
   The screens get it as `w_chat` with `teacher: true` (drawn "Admin TEACHER: ..."); /admin's chat log marks it "Admin
