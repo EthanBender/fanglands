@@ -17,7 +17,7 @@
 //   3. This file's load wrapper is the outermost (97 sorts after 96; 99-boot only calls load): SPREAD.finish() puts the
 //      knight at spawn, translates the positions the quest keeps (§10's table), runs every HOOKS.remake (the story's
 //      tiles at their new cells), sorts the old diffs by tile NAME (placed things refunded, machines parked round the
-//      Dozer Bay, the mare tied at Fennick's rail, crops refunded, the story's tiles already re-made, the rest dropped),
+//      Bulldozer bay, the mare tied at Fennick's rail, crops refunded, the story's tiles already re-made, the rest dropped),
 //      lets go of SAVE_LOCK and saves: the save is worldV 2 from then on, and a second load changes nothing.
 //   A preparation or a finish that throws keeps the old save byte for byte (SAVE_KEPT, 04-state's plaque).
 // What he hears, once: the Voice ("While you slept, the land grew and settled. You wake in Thistledown."), what came back
@@ -31,7 +31,7 @@
 // ============================================================================
 {
   // ---------- what each old tile is, by NAME ----------
-  // the knight's machines and their wrecks (b): parked round the Dozer Bay, never deleted; the mare: tied at her rail
+  // the knight's machines and their wrecks (b): parked round the Bulldozer bay, never deleted; the mare: tied at her rail
   const MACHINES = ['MECH', 'DOZER', 'BEAST', 'WRECK', 'DOZER_WRECK', 'BEAST_WRECK'];
   const MARE = 'HORSE';
   const MACHINE_WORDS = { MECH: ['walker', 'walkers'], DOZER: ['bulldozer', 'bulldozers'], BEAST: ['Barrelbeast', 'Barrelbeasts'],
@@ -130,43 +130,107 @@
       R.refunds[where][id] = (R.refunds[where][id] || 0) + 1;
     }
   }
+  // ---------- parking that never shuts a door ----------
+  // The review of c34fddf: two real knights' 10 to 18 machines filled the smithy yard and walled off Brakka, the forge,
+  // the anvil and the Smithy door. So a parked machine (or the mare) must pass two tests:
+  //   - it touches nothing the world built: its eight neighbours are open ground or a machine parked here, nobody
+  //     stands within two tiles, and no building or door is beside it (the bay, a station, a door keep their fronts);
+  //   - the town's walks (the proof): every cell a knight could reach from the Fountain Square before the parking he can
+  //     still reach, and every parked machine keeps a free side to stand on and climb in from.
+  // The second test is a flood over the map's tiles (4 ways, any tile that is not SOLID; a door pushes open), the same
+  // for every knight (the hover armour's water is left out). If no cell near enough passes both, the first test is
+  // dropped; the proof never is.
+  const passable = t => !SOLID.has(t);
+  function reachFrom(block) {
+    const W = MAP_W, N = MAP_W * MAP_H, seen = new Uint8Array(N), q = new Int32Array(N);
+    const sx = Math.floor(VILLAGE_SPAWN.x / TILE), sy = Math.floor(VILLAGE_SPAWN.y / TILE);
+    let n = 0;
+    const take = i => { if (i !== block && !seen[i] && passable(map[i])) { seen[i] = 1; q[n++] = i; } };
+    for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) if (inMap(sx + dx, sy + dy)) take(idx(sx + dx, sy + dy));
+    for (let k = 0; k < n; k++) {
+      const c = q[k], x = c % W;
+      if (x > 0) take(c - 1); if (x < W - 1) take(c + 1); if (c >= W) take(c - W); if (c + W < N) take(c + W);
+    }
+    return seen;
+  }
+  const sides = i => { const x = i % MAP_W, out = []; if (x > 0) out.push(i - 1); if (x < MAP_W - 1) out.push(i + 1); if (i >= MAP_W) out.push(i - MAP_W); if (i + MAP_W < MAP_W * MAP_H) out.push(i + MAP_W); return out; };
+  function newLot() {
+    const L = { before: reachFrom(-1), parked: [], floods: 0 };
+    L.touchesNothing = (x, y) => {
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        if (!dx && !dy) continue;
+        const nx = x + dx, ny = y + dy;
+        if (!inMap(nx, ny)) return false;
+        if (L.parked.includes(idx(nx, ny))) continue;
+        if (!PLACEABLE_ON.has(tileAt(nx, ny)) || buildingAt(nx, ny) || insideBuilding(nx, ny)) return false;
+      }
+      return !NPCS.some(n => (!n.map || n.map === 'over') && Math.max(Math.abs(n.x - x), Math.abs(n.y - y)) <= 2);
+    };
+    // the proof: `t` parked at (x, y) cuts nothing off and leaves every parked machine a free side
+    L.keepsWalks = (x, y, t) => {
+      const i = idx(x, y);
+      if (!SOLID.has(t)) return true;
+      const after = reachFrom(i); L.floods++;
+      const lost = L.cut(after, i);
+      return !lost.length && L.parked.concat([i]).every(p => sides(p).some(s => after[s]));
+    };
+    // the cells reached before the parking and not after (a parked cell itself, and `also`, are not counted)
+    L.cut = (after, also) => { const out = [], B = L.before; for (let k = 0; k < B.length; k++) if (B[k] && !after[k] && k !== also && !L.parked.includes(k)) out.push(k); return out; };
+    L.accept = (t, strict) => (x, y) => (!strict || L.touchesNothing(x, y)) && L.keepsWalks(x, y, t);
+    return L;
+  }
   // a cell round (cx, cy) where a machine or the mare may stand: 95-thistledown's parkSpot rings (the city's own open
   // ground, as the world made it, nothing of the knight's on it, not by a door or a person, off the High Street), 1..8,
-  // then 1..16; past that any open ground nearer than 40 that is nobody's (never lost: no cell at all throws, and the
-  // save is kept as it was)
-  function parkAround(cx, cy) {
-    if (window.CAPITAL && CAPITAL.parkSpot) { const s = CAPITAL.parkSpot(cx, cy, 8) || CAPITAL.parkSpot(cx, cy, 16); if (s) return s; }
+  // then 1..16; past that any open ground nearer than 40 that is nobody's. Each ring is tried nearest first, and `accept`
+  // has the last word (the lot's two tests). No cell at all throws, and the save is kept as it was.
+  function ringSpot(cx, cy, accept) {
     for (let r = 1; r <= 40; r++) {
-      let best = null;
+      const ring = [];
       for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
         if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
         const x = cx + dx, y = cy + dy;
         if (!inMap(x, y) || mapDiffs.has(idx(x, y)) || !PLACEABLE_ON.has(tileAt(x, y)) || insideBuilding(x, y) || buildingAt(x, y)) continue;
         if (ATLAS.reservedAt(x, y) || ATLAS.onMainRoad(x, y)) continue;
         if (NPCS.some(n => circleHitsTile(n.px, n.py, 14, x, y)) || circleHitsTile(player.x, player.y, player.r, x, y)) continue;
-        const d = Math.hypot(dx, dy); if (!best || d < best.d) best = { x, y, d };
+        ring.push({ x, y, d: Math.hypot(dx, dy) });
       }
-      if (best) return best;
+      ring.sort((a, b) => a.d - b.d);
+      for (const c of ring) if (accept(c.x, c.y)) return c;
+    }
+    return null;
+  }
+  function parkAround(L, cx, cy, t) {
+    for (const strict of [true, false]) {
+      const ok = L.accept(t, strict);
+      if (window.CAPITAL && CAPITAL.parkSpot) { const s = CAPITAL.parkSpot(cx, cy, 8, ok) || CAPITAL.parkSpot(cx, cy, 16, ok); if (s) return s; }
+      const s = ringSpot(cx, cy, ok); if (s) return s;
     }
     throw new Error('the spread: no ground near ' + cx + ',' + cy + ' to park on');
   }
   const bayCell = () => { const b = window.DOZERUP && DOZERUP.bay; return b ? [b.x, b.y] : cellOf(ATLAS.port('thistledown.dozer_bay')); };
-  function parkMachine(R, name) {
-    const [bx, by] = bayCell(), s = parkAround(bx, by);
-    changeTile(s.x, s.y, T[name]); R.parked[name] = (R.parked[name] || 0) + 1;
+  function parkMachine(R, L, name) {
+    const [bx, by] = bayCell(), s = parkAround(L, bx, by, T[name]);
+    changeTile(s.x, s.y, T[name]); L.parked.push(idx(s.x, s.y)); R.parked[name] = (R.parked[name] || 0) + 1;
     (R.parkedAt = R.parkedAt || []).push([s.x, s.y, name, Math.max(Math.abs(s.x - bx), Math.abs(s.y - by))]);
     return s;
   }
-  function tieMare(R) {
+  function tieMare(R, L) {
     if (!window.MOUNTS || !MOUNTS.tiles) return null;
     const h = player.horse || (player.horse = { owned: true, hp: MOUNTS.HP, at: null, under: null });
     h.owned = true;
     const post = MOUNTS.post || (q => q && { x: q[0], y: q[1] })(cellOf(ATLAS.port('thistledown.rail')));
-    const s = parkAround(post.x, post.y), prev = tileAt(s.x, s.y);
-    changeTile(s.x, s.y, MOUNTS.tiles.HORSE); h.at = [s.x, s.y]; h.under = tileName(prev);
+    const s = parkAround(L, post.x, post.y, MOUNTS.tiles.HORSE), prev = tileAt(s.x, s.y);
+    changeTile(s.x, s.y, MOUNTS.tiles.HORSE); L.parked.push(idx(s.x, s.y)); h.at = [s.x, s.y]; h.under = tileName(prev);
     R.mare = [s.x, s.y];
     return s;
   }
+  // the proof, after the parking: nothing the knight reached before is cut off, and every parked thing has a free side
+  function walksKept(R, L) {
+    const after = reachFrom(-1), cut = L.cut(after, -1), boxed = L.parked.filter(p => !sides(p).some(s => after[s]));
+    R.walks = { cut: cut.length, boxed: boxed.length, floods: L.floods };
+    if (cut.length || boxed.length) throw new Error('the spread: parking cut ' + cut.length + ' cells off and boxed ' + boxed.length + ' in');
+  }
+  S.reachFrom = reachFrom;
   // HOOKS.remake, every one, recording the cells each one changed (a remade old diff is one of these, at its new cell)
   function remakeAll(R, ctx) {
     const remade = new Map();
@@ -217,12 +281,16 @@
   const itemWords = (id, n) => { const w = (ITEMS[id] && ITEMS[id].name || id).toLowerCase(); return UNCOUNTED.has(w) ? `${n} ${w}` : n === 1 ? (/^[aeiou]/.test(w) ? 'an ' : 'a ') + w : `${n} ${plural(w)}`; };
   const list = parts => parts.length <= 1 ? (parts[0] || '') : parts.slice(0, -1).join(', ') + ' and ' + parts[parts.length - 1];
   const itemsList = o => list(Object.keys(o).map(id => itemWords(id, o[id])));
+  // where the machines are, in the words the game's own panel and Brakka's yard use (the review of c34fddf: no place a
+  // knight can find was called "the Dozer Bay")
+  const BAY_WORDS = "round the Bulldozer bay, behind Brakka's smithy";
+  S.BAY_WORDS = BAY_WORDS;
   function machineLine(parked) {
     const names = MACHINES.filter(n => parked[n]);
     if (!names.length) return null;
     const total = names.reduce((s, n) => s + parked[n], 0);
     const words = names.map(n => parked[n] === 1 ? MACHINE_WORDS[n][0] : `${parked[n]} ${MACHINE_WORDS[n][1]}`);
-    return `Your ${list(words)} ${total === 1 ? 'waits' : 'wait'} at the Dozer Bay.`;
+    return `Your ${list(words)} ${total === 1 ? 'waits' : 'wait'} ${BAY_WORDS}.`;
   }
   function refundLines(R) {
     const out = [];
@@ -281,11 +349,13 @@
     const got = sortDiffs(R, P, remade, placeCell);
     R.dropped.regrow = P.regrow; R.dropped.fires = P.fires;
     // the machines: the one he rode first, then every machine and wreck the old map held
-    if (mech && mech.kind !== 'horse') parkMachine(R, RIDDEN[mech.kind || 'walker'] || 'MECH');
-    for (const n of got.machines) parkMachine(R, n);
+    const L = newLot();
+    if (mech && mech.kind !== 'horse') parkMachine(R, L, RIDDEN[mech.kind || 'walker'] || 'MECH');
+    for (const n of got.machines) parkMachine(R, L, n);
     // the mare: tied at Fennick's rail (bought, standing out on the old map, or ridden)
     const ownsMare = !!(player.horse && player.horse.owned) || got.mare || !!(mech && mech.kind === 'horse') || !!P.horseAt;
-    if (ownsMare) tieMare(R);
+    if (ownsMare) tieMare(R, L);
+    walksKept(R, L);
     // the hero who follows him stands beside him (a dismissed hero waits at the inn, 21-companion's own spot)
     const c = player.companion;
     if (c && typeof c === 'object') { const s = safeSpot(player.x, player.y + TILE, 13, 'person') || { x: player.x, y: player.y }; c.x = s.x; c.y = s.y; if (c.id) c.mode = 'follow'; }
@@ -309,8 +379,10 @@
     const R = newReport('rev'); R.from = { worldRev: P.from }; R.boxes = P.boxes;
     const remade = remakeAll(R, { wreckLies: false });
     const got = sortDiffs(R, P, remade, (x, y) => [x, y]);
-    for (const n of got.machines) parkMachine(R, n);
-    if (got.mare) tieMare(R);
+    const L = newLot();
+    for (const n of got.machines) parkMachine(R, L, n);
+    if (got.mare) tieMare(R, L);
+    walksKept(R, L);
     const lines = refundLines(R);
     if (R.mare) lines.push(`${mareName()} is tied at Fennick's rail.`);
     const ml = machineLine(R.parked); if (ml) lines.push(ml);
@@ -400,7 +472,7 @@
   {
     let keep;
     const full = { told: true, owed: [{ id: 'bed', qty: 1 }], lines: ['While you slept, the land grew and settled. You wake in Thistledown.', 'Back in your bank: 3 planks, a lodestone and a bed.', 'In your pack: 2 potato seeds.',
-      'Aldous the banker is keeping a bed for you. He hands them over when your bank has room.', "Cinder is tied at Fennick's rail.", 'Your walker, 2 bulldozers, 12 walker wrecks and 3 bulldozer wrecks wait at the Dozer Bay.'] };
+      'Aldous the banker is keeping a bed for you. He hands them over when your bank has room.', "Cinder is tied at Fennick's rail.", "Your walker, 2 bulldozers, 12 walker wrecks and 3 bulldozer wrecks wait round the Bulldozer bay, behind Brakka's smithy."] };
     PLACE_KIT.scene({
       id: 'newworld', panel: 'newworld', name: 'NEW WORLD (everything to tell, and nothing)',
       setup() { keep = quest.spread; return () => { quest.spread = keep; }; },
@@ -458,15 +530,33 @@
         mare: !!player.horse.at && tileAt(player.horse.at[0], player.horse.at[1]) === MOUNTS.tiles.HORSE && !!MOUNTS.post && Math.max(Math.abs(player.horse.at[0] - MOUNTS.post.x), Math.abs(player.horse.at[1] - MOUNTS.post.y)) <= 16,
         crypt: tileAt(crypt[0], crypt[1]) === NIGHT.tiles.crypt && mapDiffs.get(idx(crypt[0], crypt[1])) === NIGHT.tiles.crypt,
         oldGone: !regrow.length && !crops.length && ![...mapDiffs.values()].some(t => t === T.CROP) && (c => mapDiffs.get(idx(c[0], c[1])) !== T.STUMP)(anyCell(...stumpOld)),
-        voice: said[0] === 'While you slept, the land grew and settled. You wake in Thistledown.' && said.includes('Back in your bank: a bed, a lodestone and a potato seed.') && said.includes('Cinder is tied at Fennick\'s rail.') && said.includes('Your walker waits at the Dozer Bay.'),
+        voice: said[0] === 'While you slept, the land grew and settled. You wake in Thistledown.' && said.includes('Back in your bank: a bed, a lodestone and a potato seed.') && said.includes('Cinder is tied at Fennick\'s rail.') && said.includes("Your walker waits round the Bulldozer bay, behind Brakka's smithy."),
         remade: !!R.remade && R.remade['35-night'] === 1,
       };
       // a second load is a no-op: the same diffs, the same knight, nothing said
       const diffs1 = JSON.stringify([...mapDiffs]), at1 = [player.x, player.y], inv1 = JSON.stringify([player.inv, player.bank]);
       dialog.queue.length = 0; dialog.cur = null; S.last = null; title.startSlot(slot0);
       r.again = JSON.stringify([...mapDiffs]) === diffs1 && player.x === at1[0] && player.y === at1[1] && JSON.stringify([player.inv, player.bank]) === inv1 && S.last === null && !dialog.cur && !dialog.queue.length;
-      check(P0 + 'a world-1 knight (a bed he slept in and a lodestone home in the old Thistledown, a crop, the walker under him, the mare out in the Wolfwood, the crypt open) wakes on the Fountain Square, gets the bed, the lodestone and the seed back in his bank, finds the walker at the Dozer Bay, the mare at Fennick\'s rail and the crypt door at the crypt; story and coins kept; the Voice says so once; the save is worldV ' + WORLD_V + '; a second load changes nothing',
+      check(P0 + 'a world-1 knight (a bed he slept in and a lodestone home in the old Thistledown, a crop, the walker under him, the mare out in the Wolfwood, the crypt open) wakes on the Fountain Square, gets the bed, the lodestone and the seed back in his bank, finds the walker round the Bulldozer bay (the Voice says where: behind Brakka\'s smithy), the mare at Fennick\'s rail and the crypt door at the crypt; story and coins kept; the Voice says so once; the save is worldV ' + WORLD_V + '; a second load changes nothing',
         Object.values(r).every(Boolean), Object.assign(r, { said: said.slice(0, 6), parkedAt, sorted: R.sorted, refunds: R.refunds }));
+      // a knight with 18 machines (as two real knights had): they are parked, and the smithy yard still walks (the review of
+      // c34fddf: they walled off Brakka, the forge, the anvil and the Smithy door); the flood is the test's own
+      { const k = knight(), cells = [], NM = { WRECK: 12, DOZER: 2, DOZER_WRECK: 3 };
+        for (const n in NM) for (let j = 0; j < NM[n]; j++) { const c = [stumpOld[0] + cells.length % 9, stumpOld[1] + 2 + Math.floor(cells.length / 9)]; cells.push(c); k.mapDiffs.push([oi(c), n]); }
+        localStorage.setItem(K(slot0), JSON.stringify(k)); dialog.queue.length = 0; dialog.cur = null; S.last = null; title.startSlot(slot0);
+        const R2 = S.last || {}, N = MAP_W * MAP_H, seen = new Uint8Array(N), q = []; const take = i => { if (!seen[i] && !SOLID.has(map[i])) { seen[i] = 1; q.push(i); } };
+        const sx = Math.floor(VILLAGE_SPAWN.x / TILE), sy = Math.floor(VILLAGE_SPAWN.y / TILE);
+        for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) take(idx(sx + dx, sy + dy));
+        for (let j = 0; j < q.length; j++) { const c = q[j], x = c % MAP_W; if (x > 0) take(c - 1); if (x < MAP_W - 1) take(c + 1); if (c >= MAP_W) take(c - MAP_W); if (c + MAP_W < N) take(c + MAP_W); }
+        const beside = (x, y) => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => inMap(x + dx, y + dy) && seen[idx(x + dx, y + dy)]);
+        const brakka = NPCS.find(n => n.id === 'brakka'), smithy = BUILDINGS.find(b => typeof b.x === 'number' && /smith/i.test(b.name || '') && b.x >= TD.x(84) && b.x <= TD.x(140));
+        const fo = ATLAS.port('thistledown.forge').map(Math.round), an = ATLAS.port('thistledown.anvil').map(Math.round), bay = window.DOZERUP && DOZERUP.bay;
+        const parked = (R2.parkedAt || []).map(e => [e[0], e[1]]), boxed = parked.filter(([x, y]) => !beside(x, y));
+        const w = { parked: Object.values(R2.parked || {}).reduce((a, b) => a + b, 0) === 18, brakka: !!brakka && (seen[idx(brakka.x, brakka.y)] || beside(brakka.x, brakka.y)),
+          forge: beside(fo[0], fo[1]), anvil: beside(an[0], an[1]), bay: !!bay && beside(bay.x, bay.y), door: !!smithy && (([dx, dy]) => seen[idx(dx, dy)] || beside(dx, dy))([smithy.x + smithy.door, smithy.y + smithy.h - 1]),
+          boxed: !boxed.length, cut: !!R2.walks && R2.walks.cut === 0 && R2.walks.boxed === 0 };
+        check(P0 + "a knight with 18 machines (a walker, 2 bulldozers, 12 walker wrecks, 3 bulldozer wrecks): all parked round the Bulldozer bay, and from the square a knight still walks to Brakka, the forge, the anvil, the bay and the Smithy door, and to a free side of every machine",
+          Object.values(w).every(Boolean), Object.assign(w, { walks: R2.walks, boxedAt: boxed, far: Math.max(0, ...(R2.parkedAt || []).map(e => e[3])) })); }
       // the NEW WORLD page opens by itself once the Voice is done, and its plate opens the map
       { const k = knight(); localStorage.setItem(K(slot0), JSON.stringify(k)); title.startSlot(slot0); closePanel(); dialog.queue.length = 0; dialog.cur = null; F.step([]); render();
         const page = panel === 'newworld', mapBtn = buttons.find(b => b.label === 'Open the map'), big = !!mapBtn && mapBtn.h >= HK.row();
@@ -507,7 +597,7 @@
         const res = { ok0, plank: count('plank') === planks0 + 1, wreck: wreckAt.length >= 1 && R.parked.WRECK === 1, stump: tileAt(...g2) === was[2] && R.dropped.STUMP === 1, kept: tileAt(...out) === T.PLANK && mapDiffs.get(idx(...out)) === T.PLANK };
         for (const [i, t] of [...mapDiffs]) if (t === T.WRECK) { mapDiffs.delete(i); setTile(i % MAP_W, Math.floor(i / MAP_W), T.DIRT); }
         changeTile(...out, was[3]); mapDiffs.delete(idx(...out)); removeItem('plank', 1); dialog.queue.length = 0; dialog.cur = null;
-        check(P0 + 'a worldRev sweep in a footprint box: a plank placed inside comes back, a walker wreck inside is parked at the Dozer Bay, a stump inside is cleared, and a plank outside the box is kept', Object.values(res).every(Boolean), res); }
+        check(P0 + 'a worldRev sweep in a footprint box: a plank placed inside comes back, a walker wreck inside is parked round the Bulldozer bay, a stump inside is cleared, and a plank outside the box is kept', Object.values(res).every(Boolean), res); }
     } finally {
       SAVE_LOCK = false; quest.spread = null;
       if (raw0 === null) localStorage.removeItem(K(slot0)); else localStorage.setItem(K(slot0), raw0);

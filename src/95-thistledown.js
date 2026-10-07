@@ -214,19 +214,19 @@
   // the nearest cell round (cx, cy), rings 1..R, where a moved machine may stand: the city's own open ground, as the world
   // made it (nothing of the knight's on it), not by a door, a gate or a person, not in a building, nobody standing on it,
   // not on a guard's post, and never on the High Street itself (rows 31..33 stay clear from gate to gate for riders)
-  function parkSpot(cx, cy, R, open, clear) {
+  function parkSpot(cx, cy, R, open, clear, accept) {
     const posts = new Set(MONSTER_SPAWNS.filter(sp => inTown(sp.tx, sp.ty)).map(sp => idx(sp.tx, sp.ty)));
     for (let r = 1; r <= R; r++) {
-      let best = null;
+      const ring = [];
       for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
         if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
         const x = cx + dx, y = cy + dy, i = idx(x, y);
         if (!inTown(x, y) || !inPlan(x, y) || (y >= TD.y(31) && y <= TD.y(33)) || posts.has(i) || !open.has(base[pi(x, y)]) || tileAt(x, y) !== base[pi(x, y)] || mapDiffs.has(i) || clear.has(i)) continue;
         if (insideBuilding(x, y) || buildingAt(x, y) || !PLACEABLE_ON.has(tileAt(x, y))) continue;
         if (NPCS.some(n => circleHitsTile(n.px, n.py, 14, x, y)) || circleHitsTile(player.x, player.y, player.r, x, y)) continue;
-        const d = Math.hypot(dx, dy); if (!best || d < best.d) best = { x, y, d };
+        ring.push({ x, y, d: Math.hypot(dx, dy) });
       }
-      if (best) return best;
+      ring.sort((a, b) => a.d - b.d); for (const c of ring) if (!accept || accept(c.x, c.y)) return c;   // `accept`: 97-spread's walks proof
     }
     return null;
   }
@@ -3433,7 +3433,7 @@
   window.CAPITAL = {
     PLAN, TILES, KIND, KIND_NAMES, base, STATS, CLOCK, WARD, migrate, paint, snap, Q, MIG, SNAP, kindAt, baseAt, pristineAt, keepClear,
     // the Great Spread's save migration (97-spread) parks machines and the mare with these rings, and refunds by this lookup
-    parkSpot: (cx, cy, R) => parkSpot(cx, cy, R, OPEN(), keepClear()), placedItemFor,
+    parkSpot: (cx, cy, R, accept) => parkSpot(cx, cy, R, OPEN(), keepClear(), accept), placedItemFor,
     timeLine, spanWords, dialAngle, lineFor, tapName, useThing, heroName, TALK, BELLST, BARK, CAT, KIDS, kidAt, swanAt, smallFolk,
     CHUNKS, get chunkMax() { return chunkMax; }, drawHook, TOWERS, TORCHES, LAMP_TOP, TREE_R, GCODE, drawTownBuilding, rimFor, TOWN_GATE_CELLS,
   };

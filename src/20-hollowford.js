@@ -555,7 +555,7 @@
   // the Great Spread's save migration (97-spread), from quest state: freed survivors leave the bars down; the Barrelbeast's
   // wreck lies where it lay (quest.hollowford.wreck, already moved onto the new map by the migration), or on the first
   // free spot by the War Shed, while it still lay there on the old map (SPREAD.remaking.wreckLies; a rebuilt beast is a
-  // machine, which the migration parks at the Dozer Bay). Outside a migration it only keeps a wreck that stands.
+  // machine, which the migration parks round the Bulldozer bay). Outside a migration it only keeps a wreck that stands.
   HOOKS.remake.push(Object.assign(() => {
     const hf = HF(), WT = T.BEAST_WRECK ?? T.WRECK;
     if (hf.freed) for (const [x, y] of BAR_TILES) if (tileAt(x, y) === T_BARS) changeTile(x, y, T.FLOOR);

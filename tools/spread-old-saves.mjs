@@ -176,6 +176,10 @@ M.push((() => {
 })());
 // 24. a knight saved mid-death
 M.push(make('fallen', 'saved while falling (hp 0, dead): his pack in Death\'s chest', `fromEnd(); player.hp = 1; die();`));
+// 25. saved mid-voyage: 26-boats' sail() saves the moment Harl pushes off, so a page shut on the water leaves one
+M.push(make('sailing', "saved mid-voyage to the Far Shore: Harl's ferry panel, its Far Shore button (sail() saves at once), half a second on the water",
+  `fromEnd(); quest.boats.where = 'dock'; quest.boats.sailing = null; give('coins', 40); openPanel('ferry'); render(); if (!F.clickButton('The Far Shore')) throw new Error('no Far Shore button: ' + buttons.map(b => b.label).join('|'));
+   F.sim(30, []); const s = quest.boats.sailing; if (!s || s.to !== 'farshore' || !(s.t > 0)) throw new Error('not sailing: ' + JSON.stringify(s));`));
 
 fs.mkdirSync(path.dirname(out), { recursive: true });
 fs.writeFileSync(out, JSON.stringify(M.map(({ name, about, save }) => ({ name, about, save })), null, 1) + '\n');

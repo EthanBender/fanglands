@@ -11,6 +11,8 @@
 //     the new one; the mare, if he had her, is tied at a rail;
 //   - he wakes on a tile he can stand on, by the Fountain Square (or the cave for a tutorial knight);
 //   - the save is stamped worldV 2 / worldRev / mapW 400, nothing is locked, and a second load changes nothing;
+//   - the town's walks: from the Fountain Square he reaches every person, building door, map marker and station a fresh
+//     game reaches, and every parked machine and the mare has a reached tile beside it (nothing parked shuts a way);
 //   - the sweep (proof 3): every position-shaped value of the migrated save (a number pair, {x, y}, {tx, ty}, 'x,y') is
 //     at a path SPREAD.HANDLED names.
 // and prints, per knight: the stage before and after, where he wakes, refunds, owed, machines parked, remakes applied.
@@ -62,7 +64,7 @@ ev(String.raw`
   { let a = 0x5EED; Math.random = () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
   var CHECK = {};
   // the paths §10 moves on purpose: left out of the "story kept" comparison
-  CHECK.moved = [/^quest\.markers\.seen/, /^quest\.graves/, /^quest\.graveNight/, /^quest\.boats\.(where|sailing)$/, /^quest\.hollowford\.wreck/, /^quest\.fang\.looted/, /^quest\.spread/,
+  CHECK.moved = [/^quest\.markers\.seen/, /^quest\.graves/, /^quest\.graveNight/, /^quest\.boats\.(where|sailing)(\.|$)/, /^quest\.hollowford\.wreck/, /^quest\.fang\.looted/, /^quest\.spread/,
     /^player\.(x|y|facing|home|bedSpawn|mech|mechHp|r|speed|region|action|walkPath|tapTarget|moving|cityV|chests)(\.|$)/, /^player\.horse\.(at|under)/, /^player\.companion\.(x|y|mode)$/,
     /^player\.(hp|dead|deadT|attackT|attackCd|hurtT|sinceHurt|walkT|inv|bank|equip)(\.|$)/];
   CHECK.prims = (o, p, out) => { if (o === null || typeof o !== 'object') { out[p] = o; return out; } if (Array.isArray(o)) { o.forEach((v, i) => CHECK.prims(v, p + '.' + i, out)); return out; } for (const k of Object.keys(o)) CHECK.prims(o[k], p ? p + '.' + k : k, out); return out; };
@@ -73,6 +75,37 @@ ev(String.raw`
   CHECK.machines = d => { const n = {}; for (const [i, t] of d.mapDiffs || []) if (SPREAD.MACHINES.includes(t)) n[t] = (n[t] || 0) + 1;
     const m = d.player && d.player.mech; if (m && m.kind !== 'horse') { const t = { dozer: 'DOZER', beast: 'BEAST' }[m.kind] || 'MECH'; n[t] = (n[t] || 0) + 1; } return n; };
   CHECK.mares = d => (d.mapDiffs || []).filter(([i, t]) => t === 'HORSE').length;
+  // the town's walks (the review of c34fddf: parked machines walled off Brakka's yard): from the Fountain Square, over the
+  // tiles (4 ways, any tile not SOLID; a door pushes open, the hover armour's water does not count), what a knight reaches.
+  // Each person, building door, map marker and station a FRESH game reaches (a tile within 1, 1 and 2 of it reached) a
+  // migrated knight must reach too, and every parked machine and the mare must have a reached tile beside it.
+  CHECK.STATIONS = ['ANVIL', 'FORGE', 'WORKBENCH', 'WORKSHOP', 'ALCHEMY', 'OVEN', 'DOZER_BAY', 'HITCH', 'BOARD', 'HOUSE_PORTAL', 'CHEST', 'LOOM'].filter(n => typeof T[n] === 'number');
+  CHECK.reach = () => {
+    // its own flood (not the migration's): 4 ways from the 5 x 5 round the square, any tile that is not SOLID
+    const W = MAP_W, N = MAP_W * MAP_H, seen = new Uint8Array(N), q = new Int32Array(N); let n = 0;
+    const take = i => { if (!seen[i] && !SOLID.has(map[i])) { seen[i] = 1; q[n++] = i; } };
+    const sx = Math.floor(VILLAGE_SPAWN.x / TILE), sy = Math.floor(VILLAGE_SPAWN.y / TILE);
+    for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) if (inMap(sx + dx, sy + dy)) take(idx(sx + dx, sy + dy));
+    for (let k = 0; k < n; k++) { const c = q[k], x = c % W; if (x > 0) take(c - 1); if (x < W - 1) take(c + 1); if (c >= W) take(c - W); if (c + W < N) take(c + W); }
+    const near = (x, y, r) => { for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) if (inMap(x + dx, y + dy) && seen[idx(x + dx, y + dy)]) return true; return false; };
+    const got = new Set();
+    for (const n of NPCS) if ((!n.map || n.map === 'over') && near(n.x, n.y, 1)) got.add('npc:' + n.id);
+    for (const b of BUILDINGS) if (typeof b.x === 'number' && near(b.x + b.door, b.y + b.h - 1, 1)) got.add('door:' + b.name + '@' + b.x + ',' + b.y);
+    if (window.MARKERS) for (const m of MARKERS.all()) if (near(m.x, m.y, 2)) got.add('marker:' + m.kind + ':' + m.label);
+    const st = new Set(CHECK.STATIONS.map(n => T[n]));
+    for (let i = 0; i < map.length; i++) if (st.has(map[i])) { const x = i % W, y = (i / W) | 0; if (near(x, y, 1)) got.add('station:' + tileName(map[i]) + '@' + x + ',' + y); }
+    return { got, seen };
+  };
+  CHECK.fresh = null;
+  CHECK.walks = R => {
+    if (!CHECK.fresh) return { lost: [], boxed: [] };
+    const { got, seen } = CHECK.reach(), lost = [...CHECK.fresh].filter(k => !got.has(k));
+    const MACH = new Set(SPREAD.MACHINES.filter(n => n in T).map(n => T[n]).concat([MOUNTS.tiles.HORSE]));
+    const free = i => { const x = i % MAP_W, y = (i / MAP_W) | 0; return [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => inMap(x + dx, y + dy) && seen[idx(x + dx, y + dy)]); };
+    const parked = (R && R.parkedAt || []).map(e => idx(e[0], e[1])).concat(R && R.mare ? [idx(R.mare[0], R.mare[1])] : []);
+    const boxed = parked.filter(i => MACH.has(map[i]) && !free(i)).map(i => (i % MAP_W) + ',' + ((i / MAP_W) | 0));
+    return { lost, boxed };
+  };
   // proof 3: every position-shaped value in a save, by path (array indices as [], a key 'x,y' or 'kind:x,y' as <x,y>)
   CHECK.sweep = d => { const found = {}, gen = p => p.replace(/\.\d+(?=\.|$)/g, '[]');
     const walk = (v, p) => {
@@ -133,10 +166,14 @@ ev(String.raw`
     title.startSlot(1);
     const again = snap() === s1 && SPREAD.last === null && localStorage.getItem(K).length > 0;
     if (!again) fail.push('a second load changed something');
+    // the town's walks: nothing a fresh game reaches is cut off, and every parked machine has a free side
+    const walks = CHECK.walks(R);
+    if (walks.lost.length) fail.push('cut off from the square: ' + walks.lost.slice(0, 6).join(', ') + (walks.lost.length > 6 ? ' and ' + (walks.lost.length - 6) + ' more' : ''));
+    if (walks.boxed.length) fail.push('parked with no free side: ' + walks.boxed.join(' '));
     const bay = window.DOZERUP && DOZERUP.bay, post = MOUNTS.post, far = Math.max(0, ...(R && R.parkedAt || []).map(e => e[3])), mareRing = R && R.mare && post ? Math.max(Math.abs(R.mare[0] - post.x), Math.abs(R.mare[1] - post.y)) : null;
-    if (far > 16) fail.push('a machine parked ' + far + ' tiles from the Dozer Bay');
+    if (far > 40) fail.push('a machine parked ' + far + ' tiles from the Bulldozer bay (the parking looks 40 out at most)');
     if (mareRing !== null && mareRing > 8) fail.push('the mare tied ' + mareRing + ' tiles from her rail');
-    const rep = R ? { far, mareRing, wake: wt, town: R.town, refunds: R.refunds, parked: R.parked, mare: R.mare, remade: R.remade, dropped: R.dropped, sorted: R.sorted, markers: R.markers, lines: R.lines, list: R.list } : null;
+    const rep = R ? { far, mareRing, walks: R.walks, wake: wt, town: R.town, refunds: R.refunds, parked: R.parked, mare: R.mare, remade: R.remade, dropped: R.dropped, sorted: R.sorted, markers: R.markers, lines: R.lines, list: R.list } : null;
     return JSON.stringify({ coverage, ok: !fail.length, fail, stageBefore: (before.quest || {}).stage, stageAfter: after.quest.stage, mb, ma, ib: Object.keys(ib).length, sweep, rep });
   };
   // proof 2: the coverage of the end-of-story save: every quest-made tile kind the old map held, at its frame-mapped cell
@@ -154,6 +191,8 @@ ev(String.raw`
 `);
 
 // ---------- run ----------
+// the fresh game's walks: a new knight on a fresh world (the baseline the town's walks proof compares against)
+ev(`localStorage.removeItem(title.slotKey(1)); title.startSlot(1); title.active = false; CHECK.fresh = CHECK.reach().got; CHECK.fresh.size`);
 const results = [];
 const t0 = Date.now();
 for (const s of saves) {
@@ -172,7 +211,7 @@ for (const r of results) {
   if (r.src !== src) { src = r.src; console.log(`\n== ${src === 'real' ? 'the real saves' : src === 'matrix' ? 'the synthetic matrix (proof 1)' : 'the end-of-story save (proof 2)'} ==`); }
   const rep = r.rep || {};
   console.log(`${r.ok ? 'PASS' : 'FAIL'}  ${String(r.name).padEnd(20)}${r.ver !== undefined ? (' v' + r.ver).padEnd(7) : ''} stage ${r.stageBefore} -> ${r.stageAfter}, wakes ${rep.town ? 'in Thistledown' : 'in the cave'} at ${rep.wake}`);
-  console.log(`      refunds ${refundWords(rep.refunds)}; machines parked ${words(rep.parked)}${rep.far ? ` (within ${rep.far} of the Dozer Bay)` : ''}; mare ${rep.mare ? `tied at ${rep.mare} (${rep.mareRing} from her rail)` : '-'}; remakes ${words(rep.remade)}; dropped ${words(Object.fromEntries(Object.entries(rep.dropped || {}).filter(([, v]) => v)))}`);
+  console.log(`      refunds ${refundWords(rep.refunds)}; machines parked ${words(rep.parked)}${rep.far ? ` (within ${rep.far} of the Bulldozer bay)` : ''}; mare ${rep.mare ? `tied at ${rep.mare} (${rep.mareRing} from her rail)` : '-'}; remakes ${words(rep.remade)}; dropped ${words(Object.fromEntries(Object.entries(rep.dropped || {}).filter(([, v]) => v)))}`);
   if (!r.ok) for (const f of r.fail) console.log('      ! ' + f);
   if (r.coverage) console.log(`      coverage: ${Object.keys(r.coverage.want).map(k => `${k} ${r.coverage.kinds[k] ? r.coverage.kinds[k].at + '/' + r.coverage.kinds[k].n : 0} (${r.coverage.want[k]})`).join('; ')}; Thistledown's box ${r.coverage.thistledown.diffs} old diffs, ${r.coverage.thistledown.storyLeft.length} story tiles left behind`);
 }
