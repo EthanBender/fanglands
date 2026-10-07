@@ -27,10 +27,10 @@
     nagged: false,   // the one "could not reach the world" line has been shown for this outage
     known: null,     // the last string the cloud is known to hold (pushed, or pulled at login)
     savedAt: -1e9,   // performance.now() of the last good push, for the tick on the HUD
-    pushedAt: -1e15, // Date.now() of the last good push (TIME_ONLY_EVERY)
     pushes: 0,
   };
   window.CLOUD = CLOUD;
+  let pushedAt = -1e15;   // Date.now() of the last good push (TIME_ONLY_EVERY); kept off CLOUD so its data is master's
   const active = () => NET.enabled && !!NET.token && !!(window.LOGIN && window.LOGIN.playing);
   CLOUD.active = active;
   const slotString = () => (typeof title === 'undefined' || title.active) ? null : lsGet(title.slotKey(title.slot));
@@ -54,7 +54,7 @@
     const raw = CLOUD.pending; CLOUD.pending = null; CLOUD.inflight = true;
     let result = null;
     const ok = () => {
-      CLOUD.inflight = false; CLOUD.fails = 0; CLOUD.nagged = false; CLOUD.known = raw; CLOUD.pushes++; CLOUD.savedAt = performance.now(); CLOUD.pushedAt = Date.now();
+      CLOUD.inflight = false; CLOUD.fails = 0; CLOUD.nagged = false; CLOUD.known = raw; CLOUD.pushes++; CLOUD.savedAt = performance.now(); pushedAt = Date.now();
       if (CLOUD.pending) schedule();
       result = true;
     };
@@ -75,7 +75,7 @@
     const raw = slotString(); if (!raw || (!force && raw === CLOUD.known)) return false;
     CLOUD.pending = raw; return CLOUD.flush();
   };
-  CLOUD.reset = () => { clearTimer(); CLOUD.pending = null; CLOUD.inflight = false; CLOUD.fails = 0; CLOUD.nagged = false; CLOUD.known = null; CLOUD.pushedAt = -1e15; };
+  CLOUD.reset = () => { clearTimer(); CLOUD.pending = null; CLOUD.inflight = false; CLOUD.fails = 0; CLOUD.nagged = false; CLOUD.known = null; pushedAt = -1e15; };
 
   // the slot string without its top-level world clock (`time`), so two saves that differ only there compare equal; the
   // cloud's side is kept for the string it was made from (CLOUD.known is also set by 71-login)
@@ -88,7 +88,7 @@
     if (CLOUD.pending != null || CLOUD.inflight || CLOUD.known == null) return true;
     if (raw === CLOUD.known) return false;
     if (sansTime(raw) !== cloudSans()) return true;
-    return Date.now() - CLOUD.pushedAt >= TIME_ONLY_EVERY;
+    return Date.now() - pushedAt >= TIME_ONLY_EVERY;
   };
 
   // ---------- save, wrapped after 14-title's wrapper (and 63-house's), so the slot string it wrote is what goes up ----------
@@ -149,7 +149,7 @@
       { const n0 = puts.length;
         save(); const same = CLOUD.pending === null && CLOUD.timer === null;
         time += 15; save(); time += 15; save(); const clockOnly = CLOUD.pending === null && CLOUD.timer === null;
-        CLOUD.pushedAt -= 600000; time += 15; save(); const tenMin = CLOUD.pending !== null; CLOUD.flush();
+        pushedAt -= 600000; time += 15; save(); const tenMin = CLOUD.pending !== null; CLOUD.flush();
         const clockUp = puts.length === n0 + 1 && JSON.parse(puts[puts.length - 1]).time === time;
         time += 15; save(); const quietAgain = CLOUD.pending === null;
         player.kills++; save(); const real = CLOUD.pending === lsGet(title.slotKey(title.slot)) && CLOUD.timer !== null; CLOUD.flush();
