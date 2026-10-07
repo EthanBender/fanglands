@@ -109,6 +109,12 @@
     }
     for (const c of Array.isArray(d.crops) ? d.crops : []) { const x = c.i % W, y = Math.floor(c.i / W); if (inBox(x, y)) P.crops.push({ x, y, stage: c.stage | 0, crop: c.crop || null }); else keepCrops.push(c); }
     d.mapDiffs = keep; d.crops = keepCrops;
+    // regrowth and fires in the boxes go too (the world-1 move clears them all): a stump's regrow left behind would grow
+    // the old world's tree back on the new place's ground once its stump diff is swept (the review of bcb559f)
+    const outside = e => !(e && typeof e.i === 'number') || !inBox(e.i % W, Math.floor(e.i / W));
+    const rg = Array.isArray(d.regrow) ? d.regrow : [], fi = Array.isArray(d.fires) ? d.fires : [];
+    d.regrow = rg.filter(outside); d.fires = fi.filter(outside);
+    P.regrow = rg.length - d.regrow.length; P.fires = fi.length - d.fires.length;
     S.pending = P;
     SAVE_LOCK = true; saveLockSay = SAVE_KEPT;
   }
@@ -379,6 +385,15 @@
     const R = newReport('rev'); R.from = { worldRev: P.from }; R.boxes = P.boxes;
     const remade = remakeAll(R, { wreckLies: false });
     const got = sortDiffs(R, P, remade, (x, y) => [x, y]);
+    R.dropped.regrow = P.regrow | 0; R.dropped.fires = P.fires | 0;
+    // a lodestone or a bed that came back takes his home and his bed's spirit with it (as finish() clears both)
+    const inBox = (x, y) => P.boxes.some(b => x >= b[0] && x <= b[2] && y >= b[1] && y <= b[3]);
+    const swept = n => P.diffs.filter(e => e.name === n);
+    if (player.bedSpawn) { const bx = Math.floor(player.bedSpawn.x / TILE), by = Math.floor(player.bedSpawn.y / TILE);
+      if ((inBox(bx, by) || swept('BED').some(e => e.x === bx && e.y === by)) && tileAt(bx, by) !== T.BED) { player.bedSpawn = null; R.homeCleared = (R.homeCleared || []).concat('bed'); } }
+    if (player.home) { const hx = Math.floor(player.home.x / TILE), hy = Math.floor(player.home.y / TILE), near = (x, y) => Math.max(Math.abs(x - hx), Math.abs(y - hy)) <= 3;
+      let stone = false; for (let dy = -3; dy <= 3 && !stone; dy++) for (let dx = -3; dx <= 3 && !stone; dx++) if (tileAt(hx + dx, hy + dy) === T.LODESTONE) stone = true;
+      if (!stone && (inBox(hx, hy) || swept('LODESTONE').some(e => near(e.x, e.y)))) { player.home = null; R.homeCleared = (R.homeCleared || []).concat('home'); } }
     const L = newLot();
     for (const n of got.machines) parkMachine(R, L, n);
     if (got.mare) tieMare(R, L);
@@ -386,6 +401,7 @@
     const lines = refundLines(R);
     if (R.mare) lines.push(`${mareName()} is tied at Fennick's rail.`);
     const ml = machineLine(R.parked); if (ml) lines.push(ml);
+    if (R.homeCleared && R.homeCleared.includes('home')) lines.push('Your lodestone came back, so home is not set. Place it again to make a new home.');
     if (lines.length) { lines.unshift('Builders came while you slept.'); for (const l of lines) say(l, 'The Voice'); }
     R.lines = lines;
     const s = quest.spread && typeof quest.spread === 'object' ? quest.spread : (quest.spread = { told: true, owed: [] });
@@ -402,6 +418,8 @@
     const P = { kind: 'rev', from: WORLD_REV, boxes, diffs: [], crops: [] };
     for (const [i, t] of [...mapDiffs]) { const x = i % MAP_W, y = Math.floor(i / MAP_W); if (!inBox(x, y)) continue; P.diffs.push({ x, y, name: tileName(t) }); mapDiffs.delete(i); setTile(x, y, ground(x, y)); }
     crops = crops.filter(c => { const x = c.i % MAP_W, y = Math.floor(c.i / MAP_W); if (!inBox(x, y)) return true; P.crops.push({ x, y, stage: c.stage | 0, crop: c.crop || null }); return false; });
+    const out = e => !inBox(e.i % MAP_W, Math.floor(e.i / MAP_W)), r0 = regrow.length, f0 = fires.length;
+    regrow = regrow.filter(out); fires = fires.filter(out); P.regrow = r0 - regrow.length; P.fires = f0 - fires.length;
     return P;
   };
 
@@ -591,13 +609,25 @@
         const g0 = [o[0] - 1, o[1]], g1 = [o[0] + 1, o[1]], g2 = [o[0], o[1] + 1];
         const ok0 = [g0, g1, g2, out].every(([x, y]) => PLACEABLE_ON.has(tileAt(x, y)));
         const was = [g0, g1, g2, out].map(([x, y]) => tileAt(x, y));
+        // (the review of bcb559f: the stump's regrow and a fire in the box go with them, and a lodestone and a bed in the box
+        // come back with his home and his bed's spirit cleared)
+        const fc = [o[0], o[1] - 1], lc = [o[0] - 2, o[1] - 2], bc = [o[0] + 2, o[1] - 2];
+        const was2 = [fc, lc, bc].map(([x, y]) => tileAt(x, y)), home0 = player.home, bed0 = player.bedSpawn, rg0 = regrow.slice(), fi0 = fires.slice();
         changeTile(...g0, T.PLANK); changeTile(...g1, T.WRECK); changeTile(...g2, T.STUMP); changeTile(...out, T.PLANK);
-        const planks0 = count('plank'), under = new Map([g0, g1, g2].map(([x, y], k) => [idx(x, y), was[k]])), P = S.sweep([box], (x, y) => under.get(idx(x, y))); const R = sweepFinish(P);
+        regrow.push({ i: idx(...g2), t: T.TREE, timer: 0.01 }, { i: idx(...out), t: T.TREE, timer: 999 });
+        changeTile(...fc, T.FIRE); fires.push({ i: idx(...fc), timer: 0.01, under: T.TREE });
+        changeTile(...lc, T.LODESTONE); player.home = { x: tc(lc[0]), y: tc(lc[1] + 1) }; changeTile(...bc, T.BED); player.bedSpawn = { x: tc(bc[0]), y: tc(bc[1]) };
+        const planks0 = count('plank'), lode0 = count('lodestone'), beds0 = count('bed');
+        const under = new Map([g0, g1, g2, fc, lc, bc].map(([x, y], k) => [idx(x, y), k < 3 ? was[k] : was2[k - 3]])), P = S.sweep([box], (x, y) => under.get(idx(x, y))); const R = sweepFinish(P);
         const wreckAt = [...mapDiffs].filter(([, t]) => t === T.WRECK).map(([i]) => [i % MAP_W, Math.floor(i / MAP_W)]);
-        const res = { ok0, plank: count('plank') === planks0 + 1, wreck: wreckAt.length >= 1 && R.parked.WRECK === 1, stump: tileAt(...g2) === was[2] && R.dropped.STUMP === 1, kept: tileAt(...out) === T.PLANK && mapDiffs.get(idx(...out)) === T.PLANK };
+        const inBoxI = i => { const x = i % MAP_W, y = Math.floor(i / MAP_W); return x >= box[0] && x <= box[2] && y >= box[1] && y <= box[3]; };
+        const res = { ok0, plank: count('plank') === planks0 + 1, wreck: wreckAt.length >= 1 && R.parked.WRECK === 1, stump: tileAt(...g2) === was[2] && R.dropped.STUMP === 1, kept: tileAt(...out) === T.PLANK && mapDiffs.get(idx(...out)) === T.PLANK,
+          regrow: !regrow.some(r => inBoxI(r.i)) && regrow.some(r => r.i === idx(...out)) && R.dropped.regrow === 1, fire: !fires.some(f => inBoxI(f.i)) && R.dropped.fires === 1 && tileAt(...fc) === was2[0],
+          home: player.home === null && count('lodestone') === lode0 + 1, bed: player.bedSpawn === null && count('bed') === beds0 + 1 && respawnPoint() !== null };
         for (const [i, t] of [...mapDiffs]) if (t === T.WRECK) { mapDiffs.delete(i); setTile(i % MAP_W, Math.floor(i / MAP_W), T.DIRT); }
-        changeTile(...out, was[3]); mapDiffs.delete(idx(...out)); removeItem('plank', 1); dialog.queue.length = 0; dialog.cur = null;
-        check(P0 + 'a worldRev sweep in a footprint box: a plank placed inside comes back, a walker wreck inside is parked round the Bulldozer bay, a stump inside is cleared, and a plank outside the box is kept', Object.values(res).every(Boolean), res); }
+        changeTile(...out, was[3]); mapDiffs.delete(idx(...out)); for (const id of ['plank', 'lodestone', 'bed']) { const b = player.bank.find(q => q && q.id === id); if (b) { if (!--b.qty) player.bank.splice(player.bank.indexOf(b), 1); } else removeItem(id, 1); } dialog.queue.length = 0; dialog.cur = null;
+        regrow = rg0; fires = fi0; player.home = home0; player.bedSpawn = bed0;
+        check(P0 + 'a worldRev sweep in a footprint box: a plank placed inside comes back, a walker wreck inside is parked round the Bulldozer bay, a stump inside is cleared with its regrowth and a fire inside goes out for good (regrowth outside kept), a lodestone and a bed inside come back with his home and his bed cleared, and a plank outside the box is kept', Object.values(res).every(Boolean), res); }
     } finally {
       SAVE_LOCK = false; quest.spread = null;
       if (raw0 === null) localStorage.removeItem(K(slot0)); else localStorage.setItem(K(slot0), raw0);
