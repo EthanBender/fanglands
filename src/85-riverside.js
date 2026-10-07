@@ -164,7 +164,7 @@
 
   // ---------- the shops ----------
   SHOPS.mill = { name: "Tamsin's Mill", stock: [['flour', 10], ['wheat_seed', 2], ['bread', 8]] };
-  SHOPS.saltmere_fish = { name: "Nan Gully's Fish Stall", stock: [['fishing_rod', 60], ['lobster_pot', 60], ['shrimp', 8], ['trout', 20]], buys: ['raw_shrimp', 'shrimp', 'raw_trout', 'trout', 'raw_lobster', 'lobster'], rate: 1 };
+  SHOPS.saltmere_fish = { name: "Nan Gully's Fish Stall", stock: [['fishing_rod', 60], ['lobster_pot', 60], ['shrimp', 8], ['trout', 20]], buys: ['raw_shrimp', 'shrimp', 'raw_trout', 'trout', 'raw_lobster', 'lobster'], rate: 1, buysWords: 'Nan Gully only buys fish.' };
 
   // ---------- the rails ----------
   const POSTS = {};

@@ -288,6 +288,59 @@
   }
   function drawDog(g, e) { drawQuad(g, e, { ground: 9.6, sh: 10.5, side: dogSide, front: dogFront, rear: dogRear, lunge: 4 }); }
 
+  // ---------- the bear (86-wildplaces' den by the Hunters' Lodge) ----------
+  // a heavy brown bear: a shoulder hump, short thick legs, small round ears, a pale muzzle; she rears her head to bite
+  const BEAR = { c: '#6b4a2e', dark: '#3e2a1a', hump: '#5a3c24', muzzle: '#b08a62', nose: '#1a120c', claw: '#e8e0d0' };
+  function bearSide(g, e, sw, bob) {
+    quadLegs(g, e, { xs: [-7.6, 4.6], y: 2.4 + bob, len: 6.4, w: 3.8, c: BEAR.c, foot: BEAR.dark, k: 0.38 });
+    g.translate(0, bob);
+    // the stub of a tail
+    ell(g, -12, -2.4, 1.8, 1.5); g.fillStyle = BEAR.dark; g.fill(); outline(g, 0.5);
+    // the body: low at the rump, the hump over the shoulders
+    g.beginPath(); g.moveTo(-12.4, 0.4); g.quadraticCurveTo(-12.6, -7.4, -5, -8.2); g.quadraticCurveTo(1, -12, 6, -8.8); g.quadraticCurveTo(10.4, -6, 10, -0.6); g.quadraticCurveTo(9.4, 4.8, 4, 5.2); g.quadraticCurveTo(-4, 6.2, -10, 4.6); g.quadraticCurveTo(-12.8, 3.4, -12.4, 0.4); g.closePath();
+    g.fillStyle = vfill(g, BEAR.c, -11, 6, 0.16, -0.28); g.fill(); outline(g, 0.9);
+    g.save(); g.clip(); g.fillStyle = BEAR.hump; ell(g, 1.6, -9.4, 6.4, 3.4, -0.15); g.fill();
+    g.strokeStyle = 'rgba(40,26,14,0.45)'; g.lineWidth = 0.6; for (const x of [-8, -5, -2, 1, 4, 7]) { g.beginPath(); g.moveTo(x, -6 + Math.abs(x) * 0.15); g.lineTo(x - 1, -3.4); g.stroke(); }
+    g.restore();
+    // the head, low and forward, raised as she bites
+    const jaw = sw >= 0 ? Math.sin(sw * Math.PI) : 0;
+    g.save(); g.translate(9.6, -4.4); g.rotate(sw >= 0 ? -0.25 * jaw : Math.sin(time * 1.4 + (e.seed || 0)) * 0.05);
+    ell(g, 1.4, 0, 5.2, 4.6); g.fillStyle = rfill(g, BEAR.c, 1.4, 0, 5); g.fill(); outline(g, 0.8);
+    for (const [x, y] of [[-1.4, -4], [2, -4.6]]) { ell(g, x, y, 1.8, 1.6); g.fillStyle = BEAR.c; g.fill(); outline(g, 0.5); ell(g, x, y + 0.2, 0.9, 0.8); g.fillStyle = BEAR.dark; g.fill(); }
+    // the muzzle: pale and blunt, the nose black
+    g.save(); g.rotate(jaw * 0.3);
+    g.beginPath(); g.moveTo(4.4, -1.6); g.quadraticCurveTo(9.4, -1.6, 9.6, 0.6); g.quadraticCurveTo(9.2, 2.8, 4.4, 2.6); g.closePath(); g.fillStyle = vfill(g, BEAR.muzzle, -1.6, 2.8); g.fill(); outline(g, 0.6);
+    ell(g, 9.4, -0.2, 1.3, 1); g.fillStyle = BEAR.nose; g.fill();
+    g.restore();
+    if (jaw > 0.05) { g.save(); g.rotate(jaw * 0.6); g.beginPath(); g.moveTo(4.6, 2.4); g.lineTo(9, 2.8); g.lineTo(5, 4.4); g.closePath(); g.fillStyle = '#a83a3a'; g.fill(); g.fillStyle = '#ffffff'; for (const x of [5.6, 7.4]) { g.beginPath(); g.moveTo(x, 2.5); g.lineTo(x + 0.5, 3.8); g.lineTo(x + 1, 2.6); g.closePath(); g.fill(); } g.restore(); }
+    ell(g, 3.6, -1.2, 0.9, 0.85); g.fillStyle = '#140e0a'; g.fill(); ell(g, 3.8, -1.45, 0.3, 0.3); g.fillStyle = '#ffffff'; g.fill();
+    g.restore();
+    // the claws on the front feet
+    g.fillStyle = BEAR.claw; for (const x of [4.6, 6.2]) for (let k = 0; k < 3; k++) { g.beginPath(); g.moveTo(x + k * 0.8 - 0.6, 8.6); g.lineTo(x + k * 0.8 + 0.4, 9.6); g.lineTo(x + k * 0.8, 8.4); g.closePath(); g.fill(); }
+    snap(g, 21, -3.4, sw);
+  }
+  function bearFront(g, e, sw) {
+    quadLegs(g, e, { xs: [-4.6, 2.6], y: 3.4, len: 5.8, w: 3.6, c: BEAR.c, foot: BEAR.dark, k: 0.2 });
+    ell(g, 0, 1, 10.4, 7.6); g.fillStyle = vfill(g, BEAR.c, -6, 8); g.fill(); outline(g, 0.9);
+    g.fillStyle = BEAR.hump; ell(g, 0, -4.4, 8.4, 3.2); g.fill();
+    const hy = -6.4; ell(g, 0, hy, 7, 6.2); g.fillStyle = rfill(g, BEAR.c, 0, hy, 6.8); g.fill(); outline(g, 0.9);
+    for (const s of [-1, 1]) { ell(g, s * 5.2, hy - 5.2, 2.2, 2); g.fillStyle = BEAR.c; g.fill(); outline(g, 0.5); ell(g, s * 5.2, hy - 5, 1.1, 1); g.fillStyle = BEAR.dark; g.fill(); }
+    ell(g, 0, hy + 2.4, 3.6, 2.8); g.fillStyle = BEAR.muzzle; g.fill(); outline(g, 0.5);
+    ell(g, 0, hy + 1.4, 1.6, 1.15); g.fillStyle = BEAR.nose; g.fill();
+    for (const s of [-1, 1]) { ell(g, s * 2.8, hy - 1.6, 0.95, 0.9); g.fillStyle = '#140e0a'; g.fill(); }
+    if (sw >= 0) { g.fillStyle = '#7a2a2a'; ell(g, 0, hy + 4.2, 2, 1 + Math.sin(sw * Math.PI) * 1.2); g.fill(); g.fillStyle = '#fff'; g.fillRect(-1.4, hy + 3.4, 0.9, 1.1); g.fillRect(0.5, hy + 3.4, 0.9, 1.1); }
+    g.fillStyle = BEAR.claw; for (const x of [-4.6, 2.6]) for (let k = 0; k < 3; k++) g.fillRect(x - 1.2 + k * 1.1, 9, 0.6, 1.2);
+  }
+  function bearRear(g, e) {
+    quadLegs(g, e, { xs: [-4.6, 2.6], y: 3.4, len: 5.8, w: 3.6, c: BEAR.c, foot: BEAR.dark, k: 0.2 });
+    ell(g, 0, 0.8, 10.4, 7.8); g.fillStyle = vfill(g, BEAR.c, -7, 8); g.fill(); outline(g, 0.9);
+    g.save(); ell(g, 0, 0.8, 10.4, 7.8); g.clip(); g.fillStyle = BEAR.hump; ell(g, 0, -5, 8, 3.6); g.fill(); g.restore();
+    ell(g, 0, 5.4, 1.8, 1.4); g.fillStyle = BEAR.dark; g.fill(); outline(g, 0.4);
+    ell(g, 0, -7, 6, 5); g.fillStyle = BEAR.c; g.fill(); outline(g, 0.7);
+    for (const s of [-1, 1]) { ell(g, s * 4.6, -11.2, 2, 1.8); g.fillStyle = BEAR.c; g.fill(); outline(g, 0.5); }
+  }
+  function drawBear(g, e) { drawQuad(g, e, { ground: 9.8, sh: 13, side: bearSide, front: bearFront, rear: bearRear, lunge: 3 }); }
+
   // ---------- into the look (MONSTER_LOOK.addType) ----------
   // boxes: [x0, y0, x1, y1] at rest, then with a bite, in game pixels round the middle (measure.cjs, 3 px all round)
   const LOOKS = {
@@ -296,6 +349,7 @@
     snake: { draw: drawSnake, size: 1.3, r: 11, pic: true, top: true, box: [-28, -28, 28, 28, -33, -33, 33, 33] },
     adder: { draw: drawAdder, size: 1.3, r: 12, pic: true, top: true, box: [-29, -29, 29, 29, -35, -35, 35, 35] },
     wild_dog: { draw: drawDog, size: 1.15, r: 13, pic: true, box: [-24, -20, 24, 19, -33, -20, 33, 19] },
+    bear: { draw: drawBear, size: 1.5, r: 18, pic: true, box: [-34, -26, 34, 24, -45, -26, 45, 24] },
   };
   if (window.MONSTER_LOOK && MONSTER_LOOK.addType) for (const t in LOOKS) MONSTER_LOOK.addType(t, LOOKS[t]);
   window.CRITTER_LOOKS = LOOKS;
@@ -305,6 +359,7 @@
     DEATHS.LEGS.crow = { n: 2, col: '#3e3c3a', w: 0.07 };
     DEATHS.LEGS.snake = { n: 0 }; DEATHS.LEGS.adder = { n: 0 };
     DEATHS.LEGS.giant_rat = { n: 4, col: '#c98a88' };
+    DEATHS.LEGS.bear = { n: 4, col: '#3e2a1a', w: 0.16 };
   }
 
   // ---------- the icons (80-icons' rules: inside -9..+9, nothing under 2 units across, never branch on size) ----------
@@ -320,6 +375,18 @@
       for (let k = 0; k < 4; k++) { const x = -4 + k * 3; g.beginPath(); g.moveTo(x, -0.2); g.lineTo(x + 1.6, -2.6 + k * 0.3); g.stroke(); }
       line(g, '#c8ccd8', 1.2, 'round');                                                                     // the quill
       g.beginPath(); g.moveTo(-9.4, 1.2); g.quadraticCurveTo(-1, -0.6, 8.2, -1.4); g.stroke();
+      g.restore();
+    });
+    ICONS.set('bear_pelt', (g, size, item) => {                         // a bearskin laid flat: a broad dark hide, the round head with its ears, four clawed paws
+      g.save(); g.scale(0.78, 0.78); g.translate(0, 0.6);
+      g.fillStyle = item.color;
+      g.beginPath(); g.moveTo(0, -5.6); g.lineTo(5.6, -5.4); g.lineTo(8.6, -7.6); g.lineTo(7.8, -3.2); g.quadraticCurveTo(6.8, 1, 7.6, 3.4); g.lineTo(8.8, 8); g.lineTo(4, 6); g.quadraticCurveTo(0, 7.6, -4, 6);
+      g.lineTo(-8.8, 8); g.lineTo(-7.6, 3.4); g.quadraticCurveTo(-6.8, 1, -7.8, -3.2); g.lineTo(-8.6, -7.6); g.lineTo(-5.6, -5.4); g.closePath(); g.fill(); line(g, 'rgba(0,0,0,0.6)', 1.6); g.stroke();
+      g.beginPath(); g.arc(0, -6.4, 3.6, 0, 7); g.fill(); g.stroke();
+      for (const s of [-1, 1]) { g.beginPath(); g.arc(s * 2.8, -9.2, 1.4, 0, 7); g.fill(); g.stroke(); }
+      g.fillStyle = 'rgba(255,230,200,0.22)'; g.beginPath(); g.ellipse(0, 1.2, 3, 4, 0, 0, 7); g.fill();
+      g.fillStyle = '#d9b48a'; g.beginPath(); g.ellipse(0, -5.4, 1.8, 1.3, 0, 0, 7); g.fill(); g.fillStyle = '#1a120c'; g.beginPath(); g.arc(0, -6, 1.35, 0, 7); g.fill();
+      g.fillStyle = '#efe6d6'; for (const [x, y] of [[7.4, -6.4], [-7.4, -6.4], [7.6, 6.8], [-7.6, 6.8]]) { g.beginPath(); g.arc(x, y, 1.35, 0, 7); g.fill(); }
       g.restore();
     });
     ICONS.set('snakeskin', (g, size, item) => {                         // a shed skin in a loose coil, papery, scaled in diamonds
@@ -343,6 +410,7 @@
       snake: ['Snake', "A grass snake that lives in the reeds round Miller's Pond. Hit it and it bites. It sheds a fine skin that shops will buy."],
       adder: ['Adder', "An adder: grey-brown, with a black zigzag down its back and a red eye. Tougher than a grass snake, and its bite hurts more. It always leaves its skin behind."],
       wild_dog: ['Wild dog', "Wild dogs hunt in packs of three, out in the fields away from the road. Come within four steps and the whole pack runs at you. Keep to the road, or come back when you are stronger."],
+      bear: ['Bear', "A big brown bear lives in a den in the wood, past the Hunters' Lodge. She stays near her den, but come close and she charges. Hilde the trapper pays well for a bear pelt."],
     };
     for (const id in BLURB) WIKI.add('monsters', { id, name: BLURB[id][0], blurb: BLURB[id][1] });
   }
@@ -356,8 +424,8 @@
       check('critter look: the book has a page for each creature under its own name, with its words, where it lives and what it drops', !bad.length, { bad }); }
     // the look: each drawn in the new hand (addType), its hit circle the rules' r, and the icons of what they leave drawn
     { const L = window.MONSTER_LOOK, bad = types.filter(t => !L || !L.ADDED.has(t) || L.HIT_R[t] !== MONSTER_DEFS[t].r || !L.BOX[t]);
-      const icons = ['crow_feather', 'snakeskin'].filter(id => !(window.ICONS && ICONS.audit && ITEMS[id]));
+      const icons = ['crow_feather', 'snakeskin', 'bear_pelt'].filter(id => !(window.ICONS && ICONS.audit && ITEMS[id]));
       const legs = window.DEATHS && DEATHS.LEGS ? [DEATHS.LEGS.crow && DEATHS.LEGS.crow.n === 2, DEATHS.LEGS.snake && DEATHS.LEGS.snake.n === 0, DEATHS.LEGS.adder && DEATHS.LEGS.adder.n === 0] : [false];
-      check('critter look: the five creatures are drawn through MONSTER_LOOK.addType with their rules\' hit circles, the feather and the skin have their items, and a falling crow shows two legs and a snake none', !bad.length && !icons.length && legs.every(Boolean), { bad, icons, legs }); }
+      check('critter look: the five creatures and the bear are drawn through MONSTER_LOOK.addType with their rules\' hit circles, the feather, the skin and the bear pelt have their items, and a falling crow shows two legs and a snake none', !bad.length && !icons.length && legs.every(Boolean), { bad, icons, legs }); }
   });
 }

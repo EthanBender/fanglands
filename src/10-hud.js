@@ -809,7 +809,7 @@ function drawShopPanel(g, narrow) {
   const sx = cols2 ? x0 + listW + 28 : x0, sy = cols2 ? py + 62 : py + ph - 12 - sellH;
   HK.wrap(g, sellHead, sellW, 3, K.FN(11)).lines.forEach((ln, i) => HK.text(g, ln, sx, sy + 12 + i * 15, { font: K.FN(11), color: armSell ? T.goldHi : T.gold, shadow: 'rgba(0,0,0,0.8)', box: { x: sx, y: sy, w: sellW, h: headH }, fitId: 'shop:sell' }));
   drawInvGrid(g, sx, sy + headH, gridCols, s, G, i => {
-    const sl = player.inv[i]; if (!sl || sl.id === 'coins') return; if (shop.buys && !shop.buys.includes(sl.id)) { notify('Fennick only wants pelts, tusks, wool, silk, scrap and coal.'); return; }
+    const sl = player.inv[i]; if (!sl || sl.id === 'coins') return; if (shop.buys && !shop.buys.includes(sl.id)) { notify(shop.buysWords || 'Fennick only wants pelts, tusks, wool, silk, scrap and coal.'); return; }
     const sell = () => { const q = player.inv[i]; if (!q) return; const price = Math.max(1, Math.floor(ITEMS[q.id].value * rate)); q.qty -= 1; if (q.qty <= 0) player.inv[i] = null; addItem('coins', price); floatText(player.x, player.y - 30, `+${price} coins`, '#ffd166'); save(); };
     if (needsConfirm(ITEMS[sl.id])) { if (confirmActive('sell') && uxConfirm.item === sl.id) { uxConfirm = null; sell(); } else { uxConfirm = { label: 'sell', until: nowMs() + 3000, item: sl.id }; sfx('open'); } } else sell();
   });

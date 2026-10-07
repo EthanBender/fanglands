@@ -909,5 +909,7 @@
   {"file": "tools/teacher-browser.mjs", "literal": "px >= 13", "context": "line('watching on an iPad sideways ' + w + 'x' + h + ': names ' + px.toFixed(1) + ' CSS px (13 at the least)', px >= 13, px);", "reason": "a font size in CSS pixels (Watch's name tags at 13 px at the least), not a map coordinate"},
   {"file": "tools/teacher-browser.mjs", "literal": "m.x - 40", "context": "player.x = m.x - 40; player.y = m.y; player.facing = { x: 1, y: 0 };", "reason": "the proof stands Sam 40 pixels west of a living monster to fight it: an offset, not a position"},
   {"file": "87-critters.js", "literal": "3 * TILE", "decl": "sight", "reason": "the crow's, the giant rat's, the snake's and the adder's sight (3 tiles): a range, not a position"},
-  {"file": "87-critters.js", "literal": "4 * TILE", "decl": "sight", "reason": "the wild dog's sight (4 tiles, spec section 4: aggro at sight 4): a range, not a position"}
+  {"file": "87-critters.js", "literal": "4 * TILE", "decl": "sight", "reason": "the wild dog's sight (4 tiles, spec section 4: aggro at sight 4): a range, not a position"},
+  {"file": "86-wildplaces.js", "literal": "4 * TILE", "decl": "sight", "reason": "the bear's sight (4 tiles: she charges at 4): a range, not a position"},
+  {"file": "86-wildplaces.js", "literal": "TILE * 4", "decl": "TOWER_REACH", "reason": "TOWER_REACH: how far a beacon tower's drawing reaches past its base, in pixels (the cull), not a position"}
 ]

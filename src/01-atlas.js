@@ -800,7 +800,7 @@
 
   // the worldRev footprints (§10 "worldRev sweeps"): a later stage that changes ground a knight may have built on (Stage 5's
   // places, Stage 6's roads) adds REVS[n] = { boxes: [[x0, y0, x1, y1], ...] } (the new map's coordinates) and bumps
-  // WORLD_REV to n; a save with an older worldRev is swept in those boxes only (97-spread's SPREAD.sweep). 1: 87-critters; 2: 85-riverside; 3: 84-crossroads.
+  // WORLD_REV to n; a save with an older worldRev is swept in those boxes only (97-spread's SPREAD.sweep). 1: 87-critters; 2: 85-riverside; 3: 84-crossroads; 4: 86-wildplaces.
   const REVS = {};
 
   Object.assign(A, {
