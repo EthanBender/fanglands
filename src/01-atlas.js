@@ -109,6 +109,9 @@
       if (r.call) p.call = r.call;
       for (const f of ['pvp', 'safe', 'loose']) if (typeof r[f] === 'boolean') p[f] = r[f];
     }
+    // a Stage 5 place built as a gang fight says so (markBuilt's `combat`: 86-outposts' rings are multi, as the camp is)
+    const built = window.ATLAS && window.ATLAS.BUILT;
+    if (built) for (const [id, info] of built) if (info.combat && byId[id]) byId[id].combat = info.combat;
     // the overworld grid: every place painted lowest priority first, so the highest one owns each tile
     const grid = new Uint8Array(MAP_W * MAP_H).fill(255);
     const painted = places.filter(p => p.map === OVER && p.kind !== 'reserved').sort((a, b) => a.pri - b.pri || a.i - b.i);
@@ -379,7 +382,7 @@
     'millbrook.gate': ['new', 86, 80], 'saltmere.gate': ['new', 252, 74], 'saltmere.huts': ['new', 251, 72], 'crossroads_inn.yard': ['new', 160, 122],
     'beacon_hills.tower_w': ['new', 116, 12], 'beacon_hills.tower_n': ['new', 128, 8], 'beacon_hills.tower_e': ['new', 139, 15],
     'hunters_lodge.door': ['new', 112, 110], 'outpost_north.road': ['new', 217, 70], 'outpost_south.road': ['new', 236, 100],
-    'bandit_hills.toll': ['new', 262, 158], 'skypier.pad': ['new', 167, 20], 'skypier.mast': ['new', 167, 12], 'brightwater.landing': ['new', 378, 150],
+    'bandit_hills.toll': ['new', 262, 158], 'bandit_hills.hideout': ['new', 257, 168], 'skypier.pad': ['new', 167, 20], 'skypier.mast': ['new', 167, 12], 'brightwater.landing': ['new', 378, 150],
     'wreck_rock.rock': ['new', 283, 117], 'alchemy.door': ['new', 125, 78], 'necromancy.door': ['new', 73, 119],
     // 63-house's Wolfwood arch landing: open forest on the Wolfwood Road west of the Old Bridge (it was a world point)
     'wolfwood.arch': ['new', 125, 104],
@@ -683,7 +686,9 @@
     spur_barrow: 'the Old Barrow', r6_ash: 'the Ash Road', r6a_shrine: 'the shrine path', path_farm: "Dunstan's farm", r7_drovers: "the Drovers' Track",
     r8_bandit: 'the Bandit Track', shaft_lane: 'the mine shaft' };
   // the landmarks an arm names when its road passes one ("→ Thistledown, south-east, past the old signpost.")
-  const PAST_MARKS = ['signpost', 'old_bridge', 'crossroads_inn', 'goblin_road'];
+  // (the Hunters' Lodge since the review of bcb559f: the Old Bridge's post named only the graveyard, the Wolfwood Road's far
+  // end, and not the Lodge, its next stop)
+  const PAST_MARKS = ['signpost', 'old_bridge', 'crossroads_inn', 'goblin_road', 'hunters_lodge'];
   const COMPASS = ['east', 'south-east', 'south', 'south-west', 'west', 'north-west', 'north', 'north-east'];
   // the words for a leg's far end: a port names its place (a reserved one says the builders are at work); a junction
   // names the road it meets
@@ -800,7 +805,7 @@
 
   // the worldRev footprints (§10 "worldRev sweeps"): a later stage that changes ground a knight may have built on (Stage 5's
   // places, Stage 6's roads) adds REVS[n] = { boxes: [[x0, y0, x1, y1], ...] } (the new map's coordinates) and bumps
-  // WORLD_REV to n; a save with an older worldRev is swept in those boxes only (97-spread's SPREAD.sweep). 1: 87-critters; 2: 85-riverside; 3: 84-crossroads; 4: 86-wildplaces.
+  // WORLD_REV to n; a save with an older worldRev is swept in those boxes only (97-spread's SPREAD.sweep). 1: 87-critters; 2: 85-riverside; 3: 84-crossroads; 4: 86-wildplaces; 5: 86-outposts; 6: 86-bandits.
   const REVS = {};
 
   Object.assign(A, {

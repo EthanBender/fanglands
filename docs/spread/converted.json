@@ -106,5 +106,8 @@
 "15-music.js",
 "tools/jiggle.mjs",
 "tools/spread-old-end.mjs",
-"tools/teacher-browser.mjs"
+"tools/teacher-browser.mjs",
+"86-outposts.js",
+"86-bandits.js",
+"86-banditart.js"
 ]

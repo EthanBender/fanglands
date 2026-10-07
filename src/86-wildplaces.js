@@ -133,6 +133,7 @@
       'Climb a tower and look around. From the top you can see places you have never been, and your map will remember them.',
       'The path up goes back and forth. It is slow, but it is the only way. The rock is too steep to climb anywhere else.',
       'Mind the snakes in the rocks below. And the crows. A crow will steal anything shiny.',
+      'Climb all three towers and come back to me. A keeper always thanks a climber.',
     ],
     hilde: [
       'Pelts, skins and furs! I pay full price for every one.',
@@ -151,13 +152,13 @@
   const WORDS = {
     trapGift: 'Want to learn traps? Take this one. Use it from your pack to set it down where goblins walk. When one steps on it, snap!',
     allThree: 'You climbed all three towers! Not many people do. Here, a keeper\'s thanks.',
-    pelts: 'Hilde only buys pelts and skins.',
+    pelts: 'Hilde only buys pelts, skins and feathers.',
     traps: 'Corvin buys nothing. He only sells.',
   };
   const PEOPLE = [
     BH.pt({ id: 'ansel', name: 'Ansel the beacon keeper', x: 20, y: 3, tunic: '#7a5a3a', hair: '#cfcac0', beard: true, role: 'beaconkeeper', lines: LINES.ansel }),
     HL.pt({ id: 'hilde_trapper', name: 'Hilde the trapper', x: 4, y: 2, tunic: '#6a4a2e', hair: '#b8742e', woman: true, role: 'shop', shop: 'lodge_pelts' }),
-    HL.pt({ id: 'corvin_hunter', name: 'Corvin the hunter', x: 9, y: 2, tunic: '#4a5a32', hair: '#3a2a1a', beard: true, role: 'shop', shop: 'lodge_traps' }),
+    HL.pt({ id: 'corvin_hunter', name: 'Corvin the hunter', x: 7, y: 3, tunic: '#4a5a32', hair: '#3a2a1a', beard: true, role: 'shop', shop: 'lodge_traps' }),
   ].map(n => Object.assign(n, { wildplaces: true }));
 
   // ---------- the bear ----------
@@ -187,7 +188,7 @@
   if (A.REVS) A.REVS[4] = { stage: '5d', by: '86-wildplaces', why: "Beacon Hills and the Hunters' Lodge: each box with its dressing ring, and the bear's den", boxes: FOOT() };
 
   // ---------- the shops ----------
-  SHOPS.lodge_pelts = { name: "Hilde's Furs", stock: [['raw_beef', 6], ['cooked_beef', 12]], buys: ['wolf_pelt', 'bear_pelt', 'snakeskin', 'boar_tusk', 'wool'], rate: 1, buysWords: WORDS.pelts };
+  SHOPS.lodge_pelts = { name: "Hilde's Furs", stock: [['raw_beef', 6], ['cooked_beef', 12]], buys: ['wolf_pelt', 'bear_pelt', 'snakeskin', 'boar_tusk', 'wool', 'crow_feather'], rate: 1, buysWords: WORDS.pelts };   // (the crow's feather: she trims her hats with them)
   SHOPS.lodge_traps = { name: "Corvin's Traps", stock: [['goblin_trap', 50], ['shortbow', 50], ['stone_arrow', 1]], buys: [], rate: 1, buysWords: WORDS.traps };
 
   // ---------- the rails ----------
@@ -492,9 +493,19 @@
   // Ansel: his story a line at a time; climb all three towers and he thanks the knight once
   HOOKS.talk.beaconkeeper = n => {
     const q = W();
+    if (!q.met) { q.met = 1; if (!TOWERS.every(tw => q.climbed[tw.id])) { quest.tracked = 'beacons'; notify(`New quest: The Three Beacons. ${touchMode() ? 'Tap QUESTS' : 'Press ' + keyName('J')} to read it.`); } save(); }
     if (TOWERS.every(tw => q.climbed[tw.id]) && !q.thanked) { q.thanked = 1; addItem('coins', 40); say(WORDS.allThree, n.name); burst(player.x, player.y, '#ffd166', 12, 60); save(); return; }
     say(nextLine(n), n.name);
   };
+  // the quest book (J) and the map: The Three Beacons, from the first word with Ansel to his thanks (the review of bcb559f)
+  QUEST_DEFS.beacons = { name: 'The Three Beacons' };
+  const climbedN = () => TOWERS.filter(tw => W().climbed[tw.id]).length;
+  HOOKS.questText.beacons = () => { const q = W(); return q.thanked ? 'Done.' : climbedN() === TOWERS.length ? 'All three towers climbed! Go back and tell Ansel.' : `Climb the three beacon towers on Beacon Hills (${climbedN()}/${TOWERS.length}). Press E at a tower's door. The path up goes back and forth.`; };
+  HOOKS.activeQuests.push(() => { const q = quest.wild; return q && q.met && !q.thanked ? ['beacons'] : []; });
+  if (HOOKS.mapTarget) HOOKS.mapTarget.push(() => { const q = quest.wild; if (!q || !q.met || q.thanked) return null;
+    const tw = TOWERS.find(t => !W().climbed[t.id]);
+    if (!tw) { const a = PEOPLE[0]; return { x: a.x, y: a.y, label: a.name, id: 'beacons' }; }
+    const [x, y] = stepOf(tw); return { x, y, label: tw.name.charAt(0).toUpperCase() + tw.name.slice(1), id: 'beacons' }; });
   // Hilde greets and opens her furs; Corvin gives the knight his first trap (once), then talks traps and opens his shop
   { const prev = HOOKS.talkBefore.shop;
     HOOKS.talkBefore.shop = n => {
@@ -609,11 +620,16 @@
         talkTo(corvin); res.gift = countItem('goblin_trap'); res.corvinShop = panel === 'shop' && panelArg === 'lodge_traps'; closePanel(); dialog.queue.length = 0; advanceDialog();
         talkTo(corvin); res.gift2 = countItem('goblin_trap'); closePanel(); dialog.queue.length = 0; advanceDialog();
         res.stock = ['goblin_trap', 'shortbow', 'stone_arrow'].every(id => SHOPS.lodge_traps.stock.some(([k]) => k === id));
+        // (the review of bcb559f) Corvin buys nothing, and his panel says so: no "Tap your pack to sell", no empty "SELLS FOR
+        // FULL PRICE:"; the crow's feathers have a buyer (Hilde)
+        res.corvinHead = shopSellHead(SHOPS.lodge_traps); res.corvinSub = shopSubtitle(SHOPS.lodge_traps);
+        res.corvinPanel = res.corvinHead === WORDS.traps.toUpperCase() && !/tap your pack/i.test(res.corvinSub) && /tap your pack/i.test(shopSubtitle(sh));
+        res.feathers = sh.buys.includes('crow_feather');
         const c0 = coins(); for (const tw of TOWERS) W().climbed[tw.id] = 1;
         talkTo(ansel); res.thanks = coins() - c0; talkTo(ansel); res.thanks2 = coins() - c0; dialog.queue.length = 0; advanceDialog();
       } finally { player.inv = keep.inv; quest.wild = keep.wild; closePanel(); dialog.queue.length = 0; advanceDialog(); }
-      check(P + "the services: Hilde's furs open and she buys wolf and bear pelts and snakeskin at full price; Corvin gives one goblin trap the first time only, and sells traps, a bow and arrows; with all three towers climbed Ansel gives 40 coins, once",
-        res.hildeShop && res.buys && res.gift === 1 && res.gift2 === 1 && res.corvinShop && res.stock && res.thanks === 40 && res.thanks2 === 40, res); }
+      check(P + "the services: Hilde's furs open and she buys wolf and bear pelts, snakeskin and crow feathers at full price; Corvin gives one goblin trap the first time only, and sells traps, a bow and arrows (his panel says he buys nothing, and never asks for a tap on the pack); with all three towers climbed Ansel gives 40 coins, once",
+        res.hildeShop && res.buys && res.corvinPanel && res.feathers && res.gift === 1 && res.gift2 === 1 && res.corvinShop && res.stock && res.thanks === 40 && res.thanks2 === 40, res); }
 
     // 7. the range: an arrow shot from the worn line strikes a target (it trains Ranged and lands at the target's foot)
     { const keep = { inv: JSON.parse(JSON.stringify(player.inv)), eq: JSON.parse(JSON.stringify(player.equip)), x: player.x, y: player.y, f: { ...player.facing }, skills: JSON.parse(JSON.stringify(player.skills)) };

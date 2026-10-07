@@ -14,7 +14,8 @@
 // The three ways in that other files already cut — the west gate lane (02-world), the vaultable split
 // (55-riding) and the Agility-25 climb (38-agility) — are not fence tiles, so converting fence leaves every
 // one of them exactly as it was. The south road gap is not fence either.
-// Feature file: registers through HOOKS only, edits no core file. window.PALISADE exposes the tally.
+// Feature file: registers through HOOKS only, edits no core file. window.PALISADE exposes the tally, and addRing (a ring
+// of stakes another file lays, drawn here: 86-outposts' goblin outposts).
 // ============================================================================
 {
   // ---------- the tiles ----------
@@ -34,8 +35,14 @@
   // Runs after 38-agility, 55-riding and the world blend, so it converts what is actually standing rather
   // than re-deriving the rectangle. Only T.FENCE is taken: every opening those files cut is left alone.
   const ring = { laid: 0, x0: 0, y0: 0, x1: 0, y1: 0, cx: 0, cy: 0 };
+  // other rings of stakes (86-outposts' two goblin outposts): { x0, y0, x1, y1, cx, cy }, each laid by its own file and
+  // drawn here as the camp's, its points leaning out from its own middle. Emptied at the start of every world (this pass
+  // runs before the passes that lay them: PALISADE.addRing)
+  const RINGS = [];
+  const addRing = (x0, y0, x1, y1) => { const r = { x0, y0, x1, y1, cx: (x0 + x1) / 2, cy: (y0 + y1) / 2 }; RINGS.push(r); return r; };
+  const ringOf = (x, y) => RINGS.find(r => x >= r.x0 && x <= r.x1 && y >= r.y0 && y <= r.y1) || ring;
   HOOKS.world.push((rnd, api) => {
-    ring.laid = 0;
+    ring.laid = 0; RINGS.length = 0;
     const camp = REGIONS.find(r => r.name === 'Goblin Camp');
     if (!camp) return;
     const cells = [];
@@ -51,8 +58,8 @@
   // Which way the points lean: away from the middle of the camp, so every stretch of wall leans at whoever
   // is standing outside it. The dominant axis wins, so a wall leans out, not sideways along itself.
   const lean = (x, y) => {
-    const hw = Math.max(1, (ring.x1 - ring.x0) / 2), hh = Math.max(1, (ring.y1 - ring.y0) / 2);
-    const dx = (x - ring.cx) / hw, dy = (y - ring.cy) / hh;
+    const R = ringOf(x, y), hw = Math.max(1, (R.x1 - R.x0) / 2), hh = Math.max(1, (R.y1 - R.y0) / 2);
+    const dx = (x - R.cx) / hw, dy = (y - R.cy) / hh;
     return Math.abs(dx) >= Math.abs(dy) ? { x: dx >= 0 ? 1 : -1, y: 0 } : { x: 0, y: dy >= 0 ? 1 : -1 };
   };
   // one fixed number per tile per slot, so a stake does not jitter between frames
@@ -121,9 +128,9 @@
   };
   // HOOKS.draw is (g, items, cam) and every pushed item's draw() takes no arguments.
   HOOKS.draw.push((g, items) => {
-    if (!ring.laid) return;
-    const x0 = Math.max(ring.x0, Math.floor(cam.x / TILE) - 1), x1 = Math.min(ring.x1, Math.ceil((cam.x + VW) / TILE) + 1);
-    const y0 = Math.max(ring.y0, Math.floor(cam.y / TILE) - 1), y1 = Math.min(ring.y1, Math.ceil((cam.y + VH) / TILE) + 1);
+    for (const R of ring.laid ? [ring, ...RINGS] : RINGS) {
+    const x0 = Math.max(R.x0, Math.floor(cam.x / TILE) - 1), x1 = Math.min(R.x1, Math.ceil((cam.x + VW) / TILE) + 1);
+    const y0 = Math.max(R.y0, Math.floor(cam.y / TILE) - 1), y1 = Math.min(R.y1, Math.ceil((cam.y + VH) / TILE) + 1);
     for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
       const t = tileAt(x, y);
       if (t !== T_PAL && t !== T_BROKEN) continue;
@@ -131,6 +138,7 @@
       const yy = y * TILE + TILE - 6;
       if (t === T_PAL) items.push({ y: yy, draw: () => drawPalisade(g, x, y) });
       else items.push({ y: yy, draw: () => drawBroken(g, x, y) });
+    }
     }
   });
 
@@ -170,7 +178,7 @@
   });
 
   window.PALISADE = {
-    tile: T_PAL, broken: T_BROKEN, ring, STAKES, PRICK_DMG, PRICK_EVERY, REGROW: PAL_REGROW, lean, hash,
+    tile: T_PAL, broken: T_BROKEN, ring, RINGS, addRing, STAKES, PRICK_DMG, PRICK_EVERY, REGROW: PAL_REGROW, lean, hash,
     resetPrick: () => { prickT = 0; hintT = -1e9; }, get prickCooldown() { return prickT; },
   };
 
@@ -264,11 +272,12 @@
         const t = tileAt(x, y);
         if (t === T_PAL) townStakes++; else if (window.TOWNWALL && t === TOWNWALL.tile) stone++;
       }
-      // not one stake outside the Goblin Camp region, and every other fence in the world still standing:
-      // the paddocks, Dunstan's field, the agility yard and the goblins' own scrap yard over the water
+      // not one stake outside the Goblin Camp region (and the other rings laid with addRing: 86-outposts'), and every
+      // other fence in the world still standing: the paddocks, Dunstan's field, the agility yard and the goblins' own scrap
+      // yard over the water
       let stray = 0, fenceElsewhere = 0;
       for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) {
-        const t = map[idx(x, y)], inCamp = x >= camp.x0 && x <= camp.x1 && y >= camp.y0 && y <= camp.y1;
+        const t = map[idx(x, y)], inCamp = (x >= camp.x0 && x <= camp.x1 && y >= camp.y0 && y <= camp.y1) || ringOf(x, y) !== ring;
         if (t === T_PAL && !inCamp) stray++;
         else if (t === T.FENCE && !inCamp) fenceElsewhere++;
       }

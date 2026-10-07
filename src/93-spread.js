@@ -47,6 +47,8 @@
     ash_wastes: "Builders' stakes. The Ash Wastes are not open yet.",
     sylvaris_growth: "Builders' stakes. Sylvaris is growing.",
     blood_portal: "Builders' stakes. Something will open here one day.",
+    // the bandits' hideout in the Bandit Hills' rock (86-bandits stakes its mouth; an instance later)
+    bandit_hideout: "Builders' stakes. The Bandit Hideout is coming.",
   };
   // a name whose last word is plural takes "are" ("The Bandit Hills are coming."), the rest "is"
   const isAre = name => /[^s']s$/.test(name.split(' ').pop()) ? 'are' : 'is';
@@ -281,8 +283,8 @@
         const { tx, ty } = frontTile(player, 40);
         const rid = inMap(tx, ty) ? A.builtAt(tx, ty) || A.reservedAt(tx, ty) : null;
         // (a built place keeps its ground: its people, paths and yards are not a knight's to build on)
-        // (a name ending in s takes a bare apostrophe: "Beacon Hills' ground")
-        if (rid && A.isBuilt(rid)) { const nm = NAMES[rid][1].replace(/^The /, 'the '); notify(`This is ${nm}${/s$/.test(nm) ? "'" : "'s"} ground. Build somewhere else.`); return; }
+        // (a name ending in s takes a bare apostrophe: "Beacon Hills' ground"; "A goblin outpost" reads "a goblin outpost's")
+        if (rid && A.isBuilt(rid)) { const nm = NAMES[rid][1].replace(/^(The|A) /, w => w.toLowerCase()); notify(`This is ${nm}${/s$/.test(nm) ? "'" : "'s"} ground. Build somewhere else.`); return; }
         if (inMap(tx, ty) && (rid || A.onMainRoad(tx, ty))) { notify('Builders have staked this ground.'); return; }
       }
       return _placeAction.apply(this, arguments);
@@ -376,8 +378,11 @@
       check(P + "a signpost stands beside every road node (" + want + " besides the story's), and the Mill Lane fork's names Millbrook, Thistledown and the cave, and says the way to Thistledown goes past the old signpost (chapter 4's sign)",
         SP.signs.length === want && !bad.length && !!words && /Millbrook/.test(words) && /Thistledown, south-east, past the old signpost\./.test(words) && /cave/.test(words), { signs: SP.signs.length, want, bad, words, skipped: S.skipped }); }
     // the road network is laid whole: each main road's centre line is open ground (a bridge, a gate or a door counts) from
-    // end to end, bar the story signpost, the gates' own tiles and Hollowford's ruins
+    // end to end, bar the story signpost, the gates' own tiles and Hollowford's ruins. A machine, a wreck or the mare left
+    // on the road by the play before this check is not the world's (a knight walks round it, and the save migration parks
+    // them as SPREAD.MACHINES): the review of bcb559f saw the camp walker's wreck land on the Goblin Road once in three runs
     { const gaps = {}, OKT = new Set([T.SIGN, Tn('WARDEN_GATE'), Tn('LAIR_GATE'), T.GATE, T.DOOR].filter(v => v >= 0)), hf = A.box('hollowford');
+      for (const n of (window.SPREAD ? SPREAD.MACHINES : []).concat(['HORSE'])) if (Tn(n) >= 0) OKT.add(Tn(n));
       for (const id of A.MAIN_ROADS) { const pl = A.track(id);
         for (let k = 1; k < pl.length; k++) { const [ax, ay] = pl[k - 1], [bx, by] = pl[k], n = Math.max(1, Math.round(Math.max(Math.abs(bx - ax), Math.abs(by - ay))));
           for (let s = 0; s <= n; s++) { const x = Math.round(ax + (bx - ax) * s / n), y = Math.round(ay + (by - ay) * s / n), t = tileAt(x, y);

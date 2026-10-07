@@ -260,6 +260,62 @@
   // no place's box, no port, no building, no person and no fixed wall or cliff with x >= MAP_W - 8 or y >= MAP_H - 8, but
   // the east sea itself and the open grounds (the Ash Wastes are reserved Wilds; the Jungle and the Grub Fields run to the edge)
   const EDGE = 8;
+  // E at a new place's hitching rail, at the mare tied beside it, or at its signposts uses that thing: no person stands
+  // where npcInFront (06-systems: 118 px, in a cone ahead) would answer first (the review of bcb559f: E at Wilf's, Wat's and
+  // Brin's rails talked to them, so the mare never came or was never mounted). For every Stage 5 rail (Fennick's stands by
+  // his own on purpose: he sells her) the post and each open cell round it (where she is tied), and every signpost in a
+  // Stage 5 footprint box: the knight on each open cell beside it, facing it, with every person at home.
+  function peopleClearOfThings() {
+    const bad = [], targets = [], HORSE = Tn('HORSE');
+    for (const r of (window.RAILS || [])) { if (r.id === 'thistledown' || r.reserved) continue; const p = r.at(); if (!p) continue;
+      targets.push({ what: r.id + ' rail', x: p.x, y: p.y, t: tileAt(p.x, p.y) });
+      for (const [dx, dy] of N8) { const x = p.x + dx, y = p.y + dy; if (inMap(x, y) && PLACEABLE_ON.has(tileAt(x, y)) && !insideBuilding(x, y)) targets.push({ what: r.id + ' mare', x, y, t: HORSE }); } }
+    const signs = new Set();
+    for (let r = 2; r <= WORLD_REV; r++) for (const b of ((A.REVS || {})[r] || {}).boxes || []) for (let y = b[1]; y <= b[3]; y++) for (let x = b[0]; x <= b[2]; x++) if (inMap(x, y) && tileAt(x, y) === T.SIGN && !signs.has(idx(x, y))) { signs.add(idx(x, y)); targets.push({ what: 'signpost', x, y, t: T.SIGN }); }
+    const keep = { x: player.x, y: player.y, f: player.facing }, homes = NPCS.map(n => [n, n.px, n.py]);
+    try {
+      for (const n of NPCS) if (n.home) { n.px = n.home.x; n.py = n.home.y; }
+      for (const g of targets) for (const [dx, dy] of N8) {
+        const sx = g.x + dx, sy = g.y + dy; if (!inMap(sx, sy) || SOLID.has(tileAt(sx, sy)) || insideBuilding(sx, sy)) continue;
+        player.x = tc(sx); player.y = tc(sy); const l = Math.hypot(dx, dy); player.facing = { x: -dx / l, y: -dy / l };
+        const n = npcInFront();
+        if (n && !(n.wander && (SOLID.has(g.t) || PUSH_THROUGH.has(g.t)))) bad.push(g.what + ' ' + g.x + ',' + g.y + ' from ' + sx + ',' + sy + ': ' + n.id);
+      }
+    } finally { player.x = keep.x; player.y = keep.y; player.facing = keep.f; for (const [n, x, y] of homes) { n.px = x; n.py = y; } }
+    return { targets: targets.length, bad: [...new Set(bad.map(b => b.replace(/ from .*: /, ': ')))], first: bad.slice(0, 6) };
+  }
+
+  // the new stories in the quest book (the review of bcb559f: none was in the book or on the map)
+  function storiesInTheBook() {
+    const out = { n: 0, bad: [], seen: {} };
+    if (!window.BANDITS || !window.OUTPOSTS || !window.WILDPLACES) { out.bad.push('a place file is missing'); return out; }
+    const rows = [
+      { id: 'wat_cart', key: 'bandits', who: BANDITS.PEOPLE[0], won: q => { q.won = 1; q.cleared = 1; }, thank: q => { q.thanked = 1; }, get: () => quest.bandits },
+      { id: 'outposts', key: 'outposts', who: OUTPOSTS.PEOPLE[0], won: q => { q.outpost_north.won = 1; q.outpost_north.cleared = 1; }, thank: q => { q.outpost_north.thanked = 1; }, get: () => quest.outposts },
+      { id: 'beacons', key: 'wild', who: WILDPLACES.PEOPLE[0], won: q => { for (const tw of WILDPLACES.TOWERS) q.climbed[tw.id] = 1; }, thank: q => { q.thanked = 1; }, get: () => quest.wild },
+    ];
+    const keep = { tracked: quest.tracked, inv: JSON.parse(JSON.stringify(player.inv)), notice };
+    for (const r of rows) {
+      const k0 = JSON.stringify(quest[r.key] === undefined ? null : quest[r.key]);
+      try {
+        quest[r.key] = r.key === 'wild' ? { climbed: {} } : {};
+        const before = activeQuests().includes(r.id);
+        dialog.queue.length = 0; dialog.cur = null; closePanel(); talkTo(r.who); closePanel(); dialog.queue.length = 0; dialog.cur = null;
+        const t1 = questText(r.id), m1 = mapTargets().find(t => t.id === r.id), on = activeQuests().includes(r.id), tracked = quest.tracked === r.id;
+        r.won(r.get()); const t2 = questText(r.id), m2 = mapTargets().find(t => t.id === r.id);
+        r.thank(r.get()); const off = !activeQuests().includes(r.id) && !mapTargets().some(t => t.id === r.id);
+        out.seen[r.id] = { t1, t2, m1: m1 && m1.label, m2: m2 && m2.label };
+        const plain = t => typeof t === 'string' && t.length > 10 && t.length <= 160 && !/\b(north|south|east|west)\b|\bmiles?\b/i.test(t);
+        if (!QUEST_DEFS[r.id] || before || !on || !tracked || !plain(t1) || !plain(t2) || !m1 || !m2 || m2.x !== r.who.x || m2.y !== r.who.y || !/tell/i.test(t2) || !off)
+          out.bad.push(r.id + ' ' + JSON.stringify({ def: !!QUEST_DEFS[r.id], before, on, tracked, t1, t2, m1: !!m1, m2: m2 && [m2.x, m2.y], off }));
+        out.n++;
+      } catch (e) { out.bad.push(r.id + ' threw ' + e.message); }
+      finally { quest[r.key] = JSON.parse(k0); if (quest[r.key] === null) delete quest[r.key]; }
+    }
+    quest.tracked = keep.tracked; player.inv = keep.inv; notice = keep.notice; dialog.queue.length = 0; dialog.cur = null;
+    return out;
+  }
+
   function edgeRing() {
     const inRing = (x, y) => x >= MAP_W - EDGE || y >= MAP_H - EDGE, bad = [];
     const boxIn = b => b[2] >= MAP_W - EDGE || b[3] >= MAP_H - EDGE;
@@ -275,10 +331,12 @@
     return { bad, dry, ring: EDGE };
   }
 
-  // ---------- the beat-gap report (§6; report-only in Stage 4) ----------
+  // ---------- the beat-gap report (§6; report-only in Stage 4, held on R1, R2 and R3 from Stage 5f) ----------
   // along each main road, the beats within 10 tiles of its centre line: a STOP is something to do (a person who talks, a
   // monster's spawn, a signpost, a built place's box, a shop or quest marker); a GLANCE is a landmark on screen (a stop,
   // a building, a reserved place's stakes, the river or the sea, a bridge, a wall). Reports the longest gap of each.
+  // the roads Stage 5 brings under the limits (§13 STAGE 5: "after 5f, the beat-gap limits hold on R1, R2 and R3")
+  const BEAT_HELD = ['r1_cave', 'r2_sea', 'r3_long'], BEAT_LIMIT = { stop: 73, glance: 36 };
   function beatGaps() {
     const segs = [], beats = [];
     const BRIDGE = Tn('BRIDGE'), WALLISH = new Set([T.TOWN_WALL, Tn('CLIFF'), Tn('PALISADE')].filter(v => v >= 0));
@@ -308,7 +366,7 @@
   let SNAP = null;
   { const _generateWorld = generateWorld; generateWorld = function () { const r = _generateWorld.apply(this, arguments); SNAP = map.slice(); return r; }; }
 
-  window.SPREAD_CHECKS = { walkClock, TRIPS, WALK_HELD, SEAM_EXEMPT, spacing, ports, gateFloods, scarpSeal, transects, roadsClear, spawnsOffRoads, edgeRing, beatGaps, walkTiles, flood, EDGE };
+  window.SPREAD_CHECKS = { BEAT_HELD, BEAT_LIMIT, walkClock, TRIPS, WALK_HELD, SEAM_EXEMPT, spacing, ports, gateFloods, scarpSeal, transects, roadsClear, spawnsOffRoads, peopleClearOfThings, storiesInTheBook, edgeRing, beatGaps, walkTiles, flood, EDGE };
 
   // ---------- the self-tests ----------
   HOOKS.selfTest.push((check, F, h) => {
@@ -337,10 +395,18 @@
         check(PF + "the main roads are clear surface: no solid tile and no builders' prop on either lane of the six main roads (gates, doors, the story signpost and Hollowford's ruins aside)", bad.length === 0, { bad: bad.slice(0, 10), more: Math.max(0, bad.length - 10) }); }
       { const r = spawnsOffRoads();
         check(PF + "every aggressive spawn stands 6+ tiles off a main road's centre line, but the fights the road leads to (the camp, the outposts, the bandit hills, the lair, the Ashfields' dragons on the Ash Road)", r.near.length === 0, r); }
+      { const r = peopleClearOfThings();
+        check(PF + "E at a Stage 5 place's hitching rail, at the mare tied beside it, or at its signposts uses it: from every open cell beside one, facing it, no person (at home) is close enough ahead to answer first (Fennick's own rail aside: he sells her)", r.bad.length === 0 && r.targets >= 9 * 4, r); }
+      { const r = storiesInTheBook();
+        check(PF + "the new places' stories are in the quest book (J) from the first word: Wat's Cart, The Goblin Outposts and The Three Beacons each go active and tracked, say what to do in plain words (no compass word) and put a ring on the map where to go; once won they send the knight back to the teller (the ring on him), and once he has thanked the knight they leave the book",
+          r.bad.length === 0 && r.n === 3, r); }
       { const r = edgeRing();
         check(PF + "ADDENDUM C: the map's outer 8-tile ring on the east and south holds no place, port, building, person, wall or cliff (the east sea aside, water end to end), so land can be added at an edge", r.bad.length === 0 && r.dry === 0, r); }
-      { const r = beatGaps();
-        check(PF + 'the beat-gap report runs (report-only in Stage 4: stakes are not stops; Stage 5 brings the Cave, Long and Sea Roads under 73 / 36 tiles)', r.length === A.MAIN_ROADS.length && r.every(q => q.length > 0), r); }
+      // (Stage 5 is built: the Cave, Sea and Long Roads hold the limits, a stop at most every 73 tiles and a glance at most every
+      // 36, each beat within 10 tiles of the road; the other main roads are reported, and Stage 6 holds them all)
+      { const r = beatGaps(), held = r.filter(q => BEAT_HELD.includes(q.road)), bad = held.filter(q => q.stopGap > BEAT_LIMIT.stop || q.glanceGap > BEAT_LIMIT.glance);
+        check(PF + 'the beat gaps (section 6): on the Cave Road, the Sea Road and the Long Road a stop comes at most every 73 tiles and a glance at most every 36, each within 10 tiles of the road (the other main roads are reported until Stage 6)',
+          r.length === A.MAIN_ROADS.length && r.every(q => q.length > 0) && held.length === BEAT_HELD.length && !bad.length, { r, bad }); }
       // regionAt asks the outlines directly (section 12): no bisect through REGIONS.find on the way
       { const nf = Object.getOwnPropertyDescriptor(REGIONS, 'find'); let calls = 0;
         Object.defineProperty(REGIONS, 'find', { value: function () { calls++; return nf.value.apply(this, arguments); }, writable: true, configurable: true, enumerable: false });

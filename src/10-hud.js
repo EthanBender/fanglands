@@ -758,6 +758,16 @@ function drawCraftPanel(g) {
 // mouse) on a pitch of row + 14; a 36 / 28 px pouch at the left; the name in Cinzel 13; the blurb in the sans at 12
 // (hidden under 520 px of content); 'Buy n' a primary plate HK.row() tall, the coin emblem, 4 px inside the row's
 // right edge; sell pouches 44 on touch, 40 with a mouse, 8 / 6 apart.
+// the sell side's heading and the panel's line under the name: a shop whose `buys` is empty buys nothing, so it says so
+// and never asks him to tap his pack (the review of bcb559f: Corvin's panel said "Tap your pack to sell" over an empty
+// "SELLS FOR FULL PRICE:")
+const shopBuysNothing = shop => Array.isArray(shop.buys) && shop.buys.length === 0;
+function shopSellHead(shop) {
+  const rate = shop.rate || 0.6;
+  if (shopBuysNothing(shop)) return (shop.buysWords || 'This shop buys nothing.').toUpperCase();
+  return shop.buys ? `SELLS FOR FULL PRICE: ${shop.buys.map(i => ITEMS[i].name).join(', ').toUpperCase()}` : `SELL FROM YOUR PACK: ${Math.round(rate * 100)}% OF WHAT IT IS WORTH`;
+}
+const shopSubtitle = shop => `You have ${coins()} coins.${shopBuysNothing(shop) ? '' : ' Tap your pack to sell.'}`;
 function drawShopPanel(g, narrow) {
   const K = PANEL_KIT, Rm = K.room(), T = HK.T, { R, G, t } = Rm;
   const shop = SHOPS[panelArg] || { name: "Fennick's Stall", stock: [], buys: ['wolf_pelt', 'boar_tusk', 'wool', 'spider_silk', 'goblin_scrap', 'coal'], rate: 1 };
@@ -768,7 +778,7 @@ function drawShopPanel(g, narrow) {
   const W = cols2 ? Math.min(Rm.aw, 820) : Math.min(Rm.aw, Math.max(gridW + 36, 480)), cw = W - 36;
   const listW = cols2 ? cw - gridW - 28 : cw, rowH = R + 8, pitch = rowH + 6, pagerH = R + 14;
   const armSell = confirmActive('sell');
-  const sellHead = armSell ? `TAP AGAIN TO SELL ${((ITEMS[uxConfirm.item] || {}).name || 'it').toUpperCase()}` : shop.buys ? `SELLS FOR FULL PRICE: ${shop.buys.map(i => ITEMS[i].name).join(', ').toUpperCase()}` : `SELL FROM YOUR PACK: ${Math.round(rate * 100)}% OF WHAT IT IS WORTH`;
+  const sellHead = armSell ? `TAP AGAIN TO SELL ${((ITEMS[uxConfirm.item] || {}).name || 'it').toUpperCase()}` : shopSellHead(shop);
   const sellW = cols2 ? gridW : cw;
   const headLines = HK.wrap(g, sellHead, sellW, 3, K.FN(11)).lines.length, headH = headLines * 15 + 6;
   const sellH = headH + gridH;
@@ -784,7 +794,7 @@ function drawShopPanel(g, narrow) {
     else { perPage = Math.max(1, Math.floor((Rm.ah - 62 - 12 - sellH - 12 - pagerH) / pitch)); h = 62 + perPage * pitch + pagerH + 12 + sellH + 12; }
   }
   const pages = Math.max(1, Math.ceil(n / perPage));
-  const { px, py, w, h: ph } = panelBox(g, W, h, shop.name, `You have ${coins()} coins. Tap your pack to sell.`);
+  const { px, py, w, h: ph } = panelBox(g, W, h, shop.name, shopSubtitle(shop));
   const x0 = px + 18, p = clamp(K.page('shop'), 0, pages - 1);
   const blurbOn = listW >= 440;
   const bw = Math.max(...shop.stock.map(([, price]) => K.verbW(g, `Buy ${price}`, 'coin', R)), K.verbW(g, 'Buy 99', 'coin', R));

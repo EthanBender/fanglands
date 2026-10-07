@@ -27,7 +27,13 @@
 //                     build (FILE, an index.html of an older WORLD_REV: what the live world's knights hold now), and that
 //                     world-2 save of the older rev is what this build loads and sweeps. On top, the end-of-story save
 //                     gets a plank on the middle of every footprint box this build adds (and one far from all of them):
-//                     each inside one comes back to the knight as a plank, the far one stays where it is.
+//                     each inside one comes back to the knight as a plank, the far one stays where it is. And a stump
+//                     with its regrowth due in every box (a burning fire in the first): after the timers run out each tile
+//                     is still the new world's own (the review of bcb559f: the sweep left the regrowth and fires behind).
+// A save that is already world 2 (the live world's own saves since the spread: --export of a newer backup) is swept, not
+// moved: he wakes where he stood (unless he stood in a swept box), his home and bed stay unless a swept lodestone or bed
+// took them, the graves stay, and every diff, regrowth and fire outside the swept boxes is the same byte for byte (a new
+// diff outside is a machine or the mare parked).
 //   [index.html]      the build to test (default: this tree's)
 // With no input flag it runs --fixture and --matrix. Exit 1 on any failed save.
 // ============================================================================
@@ -145,7 +151,8 @@ ev(String.raw`
     title.startSlot(1);
     const R = SPREAD.last, wroteRaw = localStorage.getItem(K), after = JSON.parse(wroteRaw), err = window.__saveInError || null; window.__saveInError = null;
     const fail = [];
-    if (!R) fail.push('not migrated' + (err ? ': ' + err.split('\n')[0] : '') + (SAVE_LOCK ? ' (locked: ' + (notice && notice.text) + ')' : ''));
+    const atRev = (before.worldV | 0) >= 2 && (before.worldRev | 0) >= WORLD_REV;   // a save of this very world: nothing to sweep
+    if (!R && !atRev) fail.push('not migrated' + (err ? ': ' + err.split('\n')[0] : '') + (SAVE_LOCK ? ' (locked: ' + (notice && notice.text) + ')' : ''));
     if (SAVE_LOCK) fail.push('SAVE_LOCK held');
     if (after.worldV !== WORLD_V || after.worldRev !== WORLD_REV || after.mapW !== MAP_W) fail.push('the save is not stamped: ' + JSON.stringify([after.worldV, after.worldRev, after.mapW]));
     // the story kept
@@ -162,27 +169,47 @@ ev(String.raw`
     const mb = CHECK.machines(before), ma = CHECK.machines(after), mk = [...new Set(Object.keys(mb).concat(Object.keys(ma)))];
     const mBad = mk.filter(k => (mb[k] || 0) !== (ma[k] || 0));
     if (mBad.length) fail.push('machines ' + mBad.map(k => k + ' ' + (mb[k] || 0) + '->' + (ma[k] || 0)).join(', '));
-    // a world-1 save goes back to spawn; a save already on the new map (worldV 2, only swept by a later worldRev) keeps its
-    // place ("the knight stays where he is"), so only "inside something" is a failure for it
-    const already = ((before && before.worldV) | 0) >= 2;
-    if (after.player.mech && !already) fail.push('still riding');
+    const onMare = (before.worldV | 0) >= 2 && !!(after.player.mech && after.player.mech.kind === 'horse');   // a world-2 save keeps him in the saddle or the walker
+    if (after.player.mech && (before.worldV | 0) < 2) fail.push('still riding');
     const hadMare = !!(before.player && ((before.player.horse && before.player.horse.owned) || (before.player.mech && before.player.mech.kind === 'horse'))) || CHECK.mares(before) > 0;
     const h = after.player.horse, mares = CHECK.mares(after);
-    if (hadMare && !already && !(mares === 1 && h && Array.isArray(h.at) && tileAt(h.at[0], h.at[1]) === MOUNTS.tiles.HORSE)) fail.push('the mare is not tied: ' + JSON.stringify({ mares, at: h && h.at }));
-    if (hadMare && already && CHECK.mares(after) !== CHECK.mares(before)) fail.push('mares ' + CHECK.mares(before) + ' -> ' + CHECK.mares(after));
+    if (hadMare && !onMare && !(mares === 1 && h && Array.isArray(h.at) && tileAt(h.at[0], h.at[1]) === MOUNTS.tiles.HORSE)) fail.push('the mare is not tied: ' + JSON.stringify({ mares, at: h && h.at }));
     if (!hadMare && mares) fail.push('a mare from nowhere');
-    // where he wakes
+    // where he wakes: a world-1 save at spawn; a world-2 save (a worldRev sweep, or nothing to do) where he stood, unless he
+    // stood inside a swept box (the core load lifts him out of anything solid)
     const wt = [Math.floor(player.x / TILE), Math.floor(player.y / TILE)], town = !!(before.player && before.player.visitedVillage) || (before.quest || {}).stage >= 5;
-    const sp = town ? VILLAGE_SPAWN : SPAWN, near = already || Math.hypot(player.x - sp.x, player.y - sp.y) <= 4 * TILE;
-    if (collides(player.x, player.y, player.r, playerWho()) || !near) fail.push('wakes at ' + wt + (near ? ' inside something' : ' far from spawn'));
-    if (!already && (after.player.home || after.player.bedSpawn)) fail.push('home or bed kept');
+    const w2 = (before.worldV | 0) >= 2, boxes = (R && R.boxes) || [], inBox = (x, y) => boxes.some(b => x >= b[0] && x <= b[2] && y >= b[1] && y <= b[3]);
+    if (!w2) {
+      const sp = town ? VILLAGE_SPAWN : SPAWN, near = Math.hypot(player.x - sp.x, player.y - sp.y) <= 4 * TILE;
+      if (collides(player.x, player.y, player.r, playerWho()) || !near) fail.push('wakes at ' + wt + (near ? ' inside something' : ' far from spawn'));
+      if (after.player.home || after.player.bedSpawn) fail.push('home or bed kept');
+    } else {
+      const bp = before.player || {}, bt = [Math.floor(bp.x / TILE), Math.floor(bp.y / TILE)], stood = Math.hypot(player.x - bp.x, player.y - bp.y);
+      if (collides(player.x, player.y, player.r, playerWho())) fail.push('wakes at ' + wt + ' inside something');
+      else if (!inBox(...bt) && stood > 1.5 * TILE) fail.push('wakes at ' + wt + ', ' + (stood / TILE).toFixed(1) + ' tiles from where he stood (' + bt + ')');
+      // his home and his bed: kept, unless a swept lodestone or bed took them
+      for (const k of ['home', 'bedSpawn']) { const b = bp[k], a = after.player[k];
+        if (b && !a && !(R && R.homeCleared && R.homeCleared.includes(k === 'home' ? 'home' : 'bed'))) fail.push(k + ' lost');
+        if (b && a && (a.x !== b.x || a.y !== b.y)) fail.push(k + ' moved');
+        if (a && k === 'bedSpawn' && tileAt(Math.floor(a.x / TILE), Math.floor(a.y / TILE)) !== T.BED) fail.push('bedSpawn on no bed'); }
+      // every diff outside the swept boxes is the same, byte for byte; a new one outside is a machine or the mare parked
+      const key = e => e[0] + ':' + (typeof e[1] === 'number' ? tileName(e[1]) : e[1]), outside = e => !inBox(e[0] % MAP_W, Math.floor(e[0] / MAP_W));
+      const bOut = new Set((before.mapDiffs || []).filter(outside).map(key)), aOut = new Set((after.mapDiffs || []).filter(outside).map(key));
+      const gone = [...bOut].filter(k => !aOut.has(k)), parkedI = new Set((R && R.parkedAt || []).map(e => idx(e[0], e[1])).concat(R && R.mare ? [idx(R.mare[0], R.mare[1])] : []));
+      const extra = [...aOut].filter(k => !bOut.has(k) && !parkedI.has(+k.split(':')[0]));
+      if (gone.length || extra.length) fail.push('diffs outside the boxes changed: ' + JSON.stringify({ gone: gone.slice(0, 4), extra: extra.slice(0, 4) }));
+      const rOut = e => !inBox(e.i % MAP_W, Math.floor(e.i / MAP_W)), rk = e => e.i + ':' + e.timer;
+      for (const L of ['regrow', 'fires']) { const b = new Set((before[L] || []).filter(rOut).map(rk)), a = new Set((after[L] || []).map(rk));
+        if ([...b].some(k => !a.has(k))) fail.push(L + ' outside the boxes lost');
+        if ((after[L] || []).some(e => !rOut(e))) fail.push(L + ' kept inside a swept box'); }
+    }
     // the remade tiles stand at their cells (a remade old diff's tile is on the new map where its frame puts it)
     const remadeBad = R ? R.list.filter(e => e[3] === 'remade' && tileAt(e[4][0], e[4][1]) !== T[e[2]]) : [];
     if (remadeBad.length) fail.push('remade tiles missing: ' + remadeBad.slice(0, 4).map(e => e[2] + '@' + e[4]).join(', '));
     // the sweep
     const sweep = CHECK.sweep(after), unhandled = sweep.filter(s => !s.how);
     if (unhandled.length) fail.push('positions on no handled path: ' + unhandled.map(s => s.path + ' ' + s.shape).join(', '));
-    if ((after.quest.graves || []).length) fail.push('graves kept');
+    if (!w2 && (after.quest.graves || []).length) fail.push('graves kept');
     const coverage = cov ? JSON.parse(CHECK.coverage()) : null;
     // a second load changes nothing
     const snap = () => JSON.stringify([[...mapDiffs], player.x, player.y, player.inv, player.bank, player.equip, deathKeep, quest]);
@@ -220,14 +247,26 @@ ev(`localStorage.removeItem(title.slotKey(1)); title.startSlot(1); title.active 
 // the planks on the footprint (--rev-base): one on the middle of every box this build adds, and one far from all of them
 if (revInfo) {
   const fx = saves.find(s => s.src === 'fixture');
-  if (fx) {
+  // (a base of this very WORLD_REV adds no boxes: no planks, the saves just load)
+  const nBoxes = +ev(`(() => { let n = 0; for (let r = ${revInfo.baseRev} + 1; r <= WORLD_REV; r++) { const R = ATLAS.REVS[r]; if (R && R.boxes) n += R.boxes.length; } return n; })()`);
+  if (fx && nBoxes) {
     const plan = JSON.parse(ev(`(() => { const boxes = []; for (let r = ${revInfo.baseRev} + 1; r <= WORLD_REV; r++) { const R = ATLAS.REVS[r]; if (R && R.boxes) boxes.push(...R.boxes); }
       const mid = boxes.map(b => [Math.round((b[0] + b[2]) / 2), Math.round((b[1] + b[3]) / 2)]);
       const inB = (x, y) => boxes.some(b => x >= b[0] - 1 && x <= b[2] + 1 && y >= b[1] - 1 && y <= b[3] + 1);
       let far = null; for (let r = 0; r < 40 && !far; r++) for (let dx = -r; dx <= r && !far; dx++) { const x = mid[0][0] + 12 + dx, y = mid[0][1] + 12 + r; if (inMap(x, y) && !SOLID.has(map[idx(x, y)]) && map[idx(x, y)] !== T.WATER && !inB(x, y) && !ATLAS.reservedAt(x, y)) far = [x, y]; }
-      return JSON.stringify({ mid, far, W: MAP_W }); })()`));
+      // (the review of bcb559f) a stump with its regrowth due on open ground in every box, and a burning fire in the first:
+      // the sweep must take the regrowth and the fire with the stump, so the old world's tree never grows back on the place
+      const ground = new Set([T.GRASS, T.DIRT]), stumps = [];
+      for (const [k, b] of boxes.entries()) { const [mx, my] = mid[k]; let c = null;
+        for (let r = 1; r < 12 && !c; r++) for (let dy = -r; dy <= r && !c; dy++) for (let dx = -r; dx <= r && !c; dx++) { const x = mx + dx, y = my + dy;
+          if (Math.max(Math.abs(dx), Math.abs(dy)) === r && x >= b[0] && x <= b[2] && y >= b[1] && y <= b[3] && ground.has(tileAt(x, y)) && !mapDiffs.has(idx(x, y)) && !stumps.some(s => s[0] === x && s[1] === y) && !mid.some(m => m[0] === x && m[1] === y)) c = [x, y]; }
+        if (c) stumps.push(c); }
+      return JSON.stringify({ mid, far, W: MAP_W, stumps }); })()`));
     const d = JSON.parse(fx.save), seen = new Set((d.mapDiffs || []).map(e => e[0]));
     for (const [x, y] of plan.mid.concat([plan.far])) { const i = y * plan.W + x; if (!seen.has(i)) (d.mapDiffs = d.mapDiffs || []).push([i, 'PLANK']); }
+    d.regrow = d.regrow || []; d.fires = d.fires || [];
+    plan.stumps.forEach(([x, y], k) => { const i = y * plan.W + x; if (seen.has(i)) return;
+      if (k === 0) { d.mapDiffs.push([i, 'FIRE']); d.fires.push({ i, timer: 2, under: 'TREE' }); } else { d.mapDiffs.push([i, 'STUMP']); d.regrow.push({ i, t: 'TREE', timer: 2 }); } });
     saves.push({ src: 'rev', name: 'planks-on-footprint', save: JSON.stringify(d), planks: plan });
   }
 }
@@ -244,6 +283,13 @@ for (const s of saves) {
     const back = (r.rep && r.rep.refunds) ? Object.values(r.rep.refunds).reduce((n, o) => n + (o.plank || 0), 0) : 0;
     r.planks = Object.assign(pl, { back });
     if (pl.mids.some(t => t === 'PLANK') || pl.far !== 'PLANK' || back !== s.planks.mid.length) { r.ok = false; r.fail = (r.fail || []).concat(['the footprint planks: ' + JSON.stringify(r.planks)]); }
+    // the stumps' regrowth and the fire: the world runs 8 s past their timers, the knight far off; each tile is still the
+    // new world's own
+    const rg = JSON.parse(ev(`(() => { const cells = ${JSON.stringify(s.planks.stumps)}, t0 = cells.map(([x, y]) => tileName(tileAt(x, y)));
+      for (let k = 0; k < 100; k++) update(0.1);
+      const t1 = cells.map(([x, y]) => tileName(tileAt(x, y))); return JSON.stringify({ n: cells.length, t0, t1, grew: cells.map((c, k) => t0[k] !== t1[k] ? c + ' ' + t0[k] + '->' + t1[k] : null).filter(Boolean) }); })()`));
+    r.planks.regrow = rg;
+    if (!rg.n || rg.grew.length) { r.ok = false; r.fail = (r.fail || []).concat(['the old world grew back in a box: ' + JSON.stringify(rg)]); }
   }
   if (s.coverage && r.coverage) { const c = r.coverage; if (!c.ok) { r.ok = false; r.fail = (r.fail || []).concat(['coverage: ' + JSON.stringify({ missing: c.missing, storyLeft: c.thistledown.storyLeft })]); } }
   results.push(Object.assign({ src: s.src, name: s.name, ver: s.ver }, r));
@@ -255,7 +301,7 @@ const refundWords = rf => rf ? [['bank', rf.bank], ['pack', rf.pack], ['owed', r
 let src = null;
 for (const r of results) {
   if (r.src !== src) { src = r.src; console.log(`\n== ${src === 'real' ? 'the real saves' : src === 'matrix' ? 'the synthetic matrix (proof 1)' : src === 'rev' ? 'the worldRev sweep: planks on the footprint' : 'the end-of-story save (proof 2)'}${revInfo ? ` (each moved first by ${path.basename(revInfo.file)}, WORLD_REV ${revInfo.baseRev})` : ''} ==`); }
-  if (r.planks) console.log(`      planks: ${r.planks.back} back to the knight, the footprint tiles now ${[...new Set(r.planks.mids)].join('/')}, the far one ${r.planks.far}`);
+  if (r.planks) console.log(`      planks: ${r.planks.back} back to the knight, the footprint tiles now ${[...new Set(r.planks.mids)].join('/')}, the far one ${r.planks.far}; ${r.planks.regrow ? r.planks.regrow.n + ' stumps and fires with their timers run out, ' + r.planks.regrow.grew.length + ' grew back' : ''}`);
   const rep = r.rep || {};
   console.log(`${r.ok ? 'PASS' : 'FAIL'}  ${String(r.name).padEnd(20)}${r.ver !== undefined ? (' v' + r.ver).padEnd(7) : ''} stage ${r.stageBefore} -> ${r.stageAfter}, wakes ${rep.town ? 'in Thistledown' : 'in the cave'} at ${rep.wake}`);
   console.log(`      refunds ${refundWords(rep.refunds)}; machines parked ${words(rep.parked)}${rep.far ? ` (within ${rep.far} of the Bulldozer bay)` : ''}; mare ${rep.mare ? `tied at ${rep.mare} (${rep.mareRing} from her rail)` : '-'}; remakes ${words(rep.remade)}; dropped ${words(Object.fromEntries(Object.entries(rep.dropped || {}).filter(([, v]) => v)))}`);

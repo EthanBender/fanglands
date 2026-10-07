@@ -172,6 +172,15 @@
           const S = DEFS.wild_dog.sight;
           reset(); player.x = dog.home.x + S * 1.25; player.y = dog.home.y; F.step([]); res.at5 = dog.state;
           reset(); player.x = dog.home.x + S * 0.875; player.y = dog.home.y; F.step([]); res.at35 = dog.state;
+          // the chase ends the moment he steps onto a main road, and a dog never starts one at a knight on it (the book's
+          // "keep to the road"; the review of bcb559f: a pack chased a new knight down the Cave Road)
+          { const hx = Math.floor(dog.home.x / TILE), hy = Math.floor(dog.home.y / TILE); let rc = null;
+            for (let r = 1; r < 20 && !rc; r++) for (let dy = -r; dy <= r && !rc; dy++) for (let dx = -r; dx <= r && !rc; dx++) if (Math.max(Math.abs(dx), Math.abs(dy)) === r && A.onMainRoad(hx + dx, hy + dy) && !SOLID.has(tileAt(hx + dx, hy + dy))) rc = [hx + dx, hy + dy];
+            res.road = rc;
+            // (the dog two tiles off him, well inside its chase: only the road ends it)
+            if (rc) { player.x = tc(rc[0]); player.y = tc(rc[1]); const ux = dog.home.x - player.x, uy = dog.home.y - player.y, ul = Math.hypot(ux, uy) || 1;
+              dog.x = player.x + ux / ul * 2 * TILE; dog.y = player.y + uy / ul * 2 * TILE; dog.state = 'chase'; F.step([]); res.onRoad = dog.state;
+              reset(); dog.x = player.x + S * 0.5; dog.y = player.y; F.step([]); res.onRoadNear = dog.state; } }
           // idle for 40 s with him 30 tiles off: never past 2 tiles (and the push of a packmate) from home
           reset(); player.x = dog.home.x + S * 7.5; player.y = dog.home.y; let far = 0;
           for (let i = 0; i < 2400; i++) { F.step([]); far = Math.max(far, dist(dog.x, dog.y, dog.home.x, dog.home.y)); }
@@ -189,8 +198,8 @@
           player.x = px0; player.y = py0; player.hp = hp0; window.__peace = peace0;
         }
       }
-      check(P + 'a wild dog wakes at 3.5 tiles but not at 5, idles within 2 tiles of home (and a packmate\'s push), a crow lets a knight stand beside it, and the blows that fell it pay at least its 32 melee xp',
-        !!dog && !!crow && res.at5 !== 'chase' && res.at35 === 'chase' && res.far <= 2.6 && res.calm && res.killed && res.kills === 1 && res.xp >= DEFS.crow.hp * 4, res);
+      check(P + 'a wild dog wakes at 3.5 tiles but not at 5, gives up the chase when the knight steps onto a main road and never chases one standing on it, idles within 2 tiles of home (and a packmate\'s push), a crow lets a knight stand beside it, and the blows that fell it pay at least its 32 melee xp',
+        !!dog && !!crow && res.at5 !== 'chase' && res.at35 === 'chase' && !!res.road && res.onRoad !== 'chase' && res.onRoadNear !== 'chase' && res.far <= 2.6 && res.calm && res.killed && res.kills === 1 && res.xp >= DEFS.crow.hp * 4, res);
     }
   });
 }

@@ -140,9 +140,11 @@ const HOOKS = {
 // Revs: 1 = Stage 5a, the starting creatures (87-critters: the ground each new spawn wakes on); 2 = Stage 5b, the riverside
 // places (85-riverside: the Old Bridge, Millbrook and Saltmere, each box with its dressing ring); 3 = Stage 5c, the
 // Crossroads Inn (84-crossroads: its box grown over the inn and the yard, with its dressing ring); 4 = Stage 5d, the wild
-// places (86-wildplaces: Beacon Hills and the Hunters' Lodge, each box with its dressing ring, and the bear's den).
+// places (86-wildplaces: Beacon Hills and the Hunters' Lodge, each box with its dressing ring, and the bear's den); 5 = Stage
+// 5e, the goblin outposts (86-outposts: each box with its dressing ring, and the north one's trail to the Goblin Road); 6 =
+// Stage 5f, the Bandit Hills (86-bandits: the box with its dressing ring).
 const WORLD_V = 2;
-const WORLD_REV = 4;
+const WORLD_REV = 6;
 let SAVE_LOCK = false;
 // a cell the knight could step onto but could not get across (an agility obstacle above his level): pathfinders go round it
 function pathBlocked(tx, ty, who) { for (const f of HOOKS.pathBlock) if (f(tx, ty, who)) return true; return false; }
@@ -563,6 +565,9 @@ resize();
       if (r.call) p.call = r.call;
       for (const f of ['pvp', 'safe', 'loose']) if (typeof r[f] === 'boolean') p[f] = r[f];
     }
+    // a Stage 5 place built as a gang fight says so (markBuilt's `combat`: 86-outposts' rings are multi, as the camp is)
+    const built = window.ATLAS && window.ATLAS.BUILT;
+    if (built) for (const [id, info] of built) if (info.combat && byId[id]) byId[id].combat = info.combat;
     // the overworld grid: every place painted lowest priority first, so the highest one owns each tile
     const grid = new Uint8Array(MAP_W * MAP_H).fill(255);
     const painted = places.filter(p => p.map === OVER && p.kind !== 'reserved').sort((a, b) => a.pri - b.pri || a.i - b.i);
@@ -833,7 +838,7 @@ resize();
     'millbrook.gate': ['new', 86, 80], 'saltmere.gate': ['new', 252, 74], 'saltmere.huts': ['new', 251, 72], 'crossroads_inn.yard': ['new', 160, 122],
     'beacon_hills.tower_w': ['new', 116, 12], 'beacon_hills.tower_n': ['new', 128, 8], 'beacon_hills.tower_e': ['new', 139, 15],
     'hunters_lodge.door': ['new', 112, 110], 'outpost_north.road': ['new', 217, 70], 'outpost_south.road': ['new', 236, 100],
-    'bandit_hills.toll': ['new', 262, 158], 'skypier.pad': ['new', 167, 20], 'skypier.mast': ['new', 167, 12], 'brightwater.landing': ['new', 378, 150],
+    'bandit_hills.toll': ['new', 262, 158], 'bandit_hills.hideout': ['new', 257, 168], 'skypier.pad': ['new', 167, 20], 'skypier.mast': ['new', 167, 12], 'brightwater.landing': ['new', 378, 150],
     'wreck_rock.rock': ['new', 283, 117], 'alchemy.door': ['new', 125, 78], 'necromancy.door': ['new', 73, 119],
     // 63-house's Wolfwood arch landing: open forest on the Wolfwood Road west of the Old Bridge (it was a world point)
     'wolfwood.arch': ['new', 125, 104],
@@ -1137,7 +1142,9 @@ resize();
     spur_barrow: 'the Old Barrow', r6_ash: 'the Ash Road', r6a_shrine: 'the shrine path', path_farm: "Dunstan's farm", r7_drovers: "the Drovers' Track",
     r8_bandit: 'the Bandit Track', shaft_lane: 'the mine shaft' };
   // the landmarks an arm names when its road passes one ("→ Thistledown, south-east, past the old signpost.")
-  const PAST_MARKS = ['signpost', 'old_bridge', 'crossroads_inn', 'goblin_road'];
+  // (the Hunters' Lodge since the review of bcb559f: the Old Bridge's post named only the graveyard, the Wolfwood Road's far
+  // end, and not the Lodge, its next stop)
+  const PAST_MARKS = ['signpost', 'old_bridge', 'crossroads_inn', 'goblin_road', 'hunters_lodge'];
   const COMPASS = ['east', 'south-east', 'south', 'south-west', 'west', 'north-west', 'north', 'north-east'];
   // the words for a leg's far end: a port names its place (a reserved one says the builders are at work); a junction
   // names the road it meets
@@ -1254,7 +1261,7 @@ resize();
 
   // the worldRev footprints (§10 "worldRev sweeps"): a later stage that changes ground a knight may have built on (Stage 5's
   // places, Stage 6's roads) adds REVS[n] = { boxes: [[x0, y0, x1, y1], ...] } (the new map's coordinates) and bumps
-  // WORLD_REV to n; a save with an older worldRev is swept in those boxes only (97-spread's SPREAD.sweep). 1: 87-critters; 2: 85-riverside; 3: 84-crossroads; 4: 86-wildplaces.
+  // WORLD_REV to n; a save with an older worldRev is swept in those boxes only (97-spread's SPREAD.sweep). 1: 87-critters; 2: 85-riverside; 3: 84-crossroads; 4: 86-wildplaces; 5: 86-outposts; 6: 86-bandits.
   const REVS = {};
 
   Object.assign(A, {
@@ -2395,10 +2402,14 @@ function explode(x, y, radius, dmgMin, dmgMax, owner) {
 // ---------- the Goblin Camp ----------
 // Spawns inside the palisade carry `camp: true` (02-world). A dead camp monster stays down for 30 minutes and only comes back while
 // the knight is 40+ tiles away, so a cleared camp stays cleared for a proper while. quest.campCleared gates the banner to once per clear.
+// The goblin outposts' spawns (86-outposts) and the Bandit Hills' (86-bandits) carry `outpost` (the place's id) and keep the
+// same rule; their banners are their own.
 const CAMP_RESPAWN = 1800;
-function isCampMonster(m) { const tx = Math.floor(m.home.x / TILE), ty = Math.floor(m.home.y / TILE); return MONSTER_SPAWNS.some(s => s.camp && s.tx === tx && s.ty === ty); }
+function campSpawnOf(m) { const tx = Math.floor(m.home.x / TILE), ty = Math.floor(m.home.y / TILE); return MONSTER_SPAWNS.find(s => (s.camp || s.outpost) && s.tx === tx && s.ty === ty) || null; }
+function isCampMonster(m) { return !!campSpawnOf(m); }
+function isGoblinCampMonster(m) { const s = campSpawnOf(m); return !!s && !!s.camp; }
 function checkCampCleared() {
-  const cm = monsters.filter(isCampMonster);
+  const cm = monsters.filter(isGoblinCampMonster);
   if (!cm.length || cm.some(m => !m.dead)) return false;
   if (!quest.campCleared) { quest.campCleared = true; levelBanner = { text: 'GOBLIN CAMP CLEARED', sub: 'They will not be back for a while', t: 4 }; sfx('levelup'); save(); }
   return true;
@@ -2967,7 +2978,7 @@ function update(dt) {
         const sp = safeSpot(m.home.x, m.home.y, m.r, 'beast'); // a wreck, a plank or a regrown tree on the home tile must not embed the monster
         if (!sp) { m.respawnT = 5; continue; }
         m.dead = false; m.hp = m.maxHp; m.x = sp.x; m.y = sp.y; m.angry = def.aggro; m.state = 'idle'; burst(m.x, m.y, 'rgba(255,255,255,0.6)', 10, 60);
-        if (camp && quest.campCleared) quest.campCleared = false; // the camp is filling again: the next full clear earns the banner again
+        if (camp && quest.campCleared && isGoblinCampMonster(m)) quest.campCleared = false; // the camp is filling again: the next full clear earns the banner again
       }
       continue;
     }
@@ -2979,8 +2990,11 @@ function update(dt) {
     const dHome = dist(m.x, m.y, m.home.x, m.home.y);
     const aggressive = def.aggro && cb <= def.level * 2 + 1 && !window.__peace; // high-level knights are left alone
     if (window.__peace && m.state === 'chase') m.state = 'return';
-    if (!def.harmless && m.state !== 'return' && (m.angry && !def.aggro || aggressive) && dp < def.sight && !player.dead) m.state = 'chase';
-    if (m.state === 'chase' && (dp > def.sight * 1.6 || dHome > 14 * TILE || player.dead)) m.state = 'return';
+    // a creature that keeps to its patch (def.roam: 87-critters' dogs and snakes, the bear) leaves a knight on a main road be:
+    // the book's "keep to the road" is true (the review of bcb559f: the Cave Road's dogs chased a new knight down it)
+    const roadSafe = def.roam && window.ATLAS && ATLAS.onMainRoad(Math.floor(player.x / TILE), Math.floor(player.y / TILE));
+    if (!def.harmless && m.state !== 'return' && (m.angry && !def.aggro || aggressive) && dp < def.sight && !player.dead && !roadSafe) m.state = 'chase';
+    if (m.state === 'chase' && (dp > def.sight * 1.6 || dHome > 14 * TILE || player.dead || roadSafe)) m.state = 'return';
     let vx = 0, vy = 0;
     if (m.state === 'chase') {
       const dx = player.x - m.x, dy = player.y - m.y, d = dp || 1;
@@ -4418,6 +4432,16 @@ function drawCraftPanel(g) {
 // mouse) on a pitch of row + 14; a 36 / 28 px pouch at the left; the name in Cinzel 13; the blurb in the sans at 12
 // (hidden under 520 px of content); 'Buy n' a primary plate HK.row() tall, the coin emblem, 4 px inside the row's
 // right edge; sell pouches 44 on touch, 40 with a mouse, 8 / 6 apart.
+// the sell side's heading and the panel's line under the name: a shop whose `buys` is empty buys nothing, so it says so
+// and never asks him to tap his pack (the review of bcb559f: Corvin's panel said "Tap your pack to sell" over an empty
+// "SELLS FOR FULL PRICE:")
+const shopBuysNothing = shop => Array.isArray(shop.buys) && shop.buys.length === 0;
+function shopSellHead(shop) {
+  const rate = shop.rate || 0.6;
+  if (shopBuysNothing(shop)) return (shop.buysWords || 'This shop buys nothing.').toUpperCase();
+  return shop.buys ? `SELLS FOR FULL PRICE: ${shop.buys.map(i => ITEMS[i].name).join(', ').toUpperCase()}` : `SELL FROM YOUR PACK: ${Math.round(rate * 100)}% OF WHAT IT IS WORTH`;
+}
+const shopSubtitle = shop => `You have ${coins()} coins.${shopBuysNothing(shop) ? '' : ' Tap your pack to sell.'}`;
 function drawShopPanel(g, narrow) {
   const K = PANEL_KIT, Rm = K.room(), T = HK.T, { R, G, t } = Rm;
   const shop = SHOPS[panelArg] || { name: "Fennick's Stall", stock: [], buys: ['wolf_pelt', 'boar_tusk', 'wool', 'spider_silk', 'goblin_scrap', 'coal'], rate: 1 };
@@ -4428,7 +4452,7 @@ function drawShopPanel(g, narrow) {
   const W = cols2 ? Math.min(Rm.aw, 820) : Math.min(Rm.aw, Math.max(gridW + 36, 480)), cw = W - 36;
   const listW = cols2 ? cw - gridW - 28 : cw, rowH = R + 8, pitch = rowH + 6, pagerH = R + 14;
   const armSell = confirmActive('sell');
-  const sellHead = armSell ? `TAP AGAIN TO SELL ${((ITEMS[uxConfirm.item] || {}).name || 'it').toUpperCase()}` : shop.buys ? `SELLS FOR FULL PRICE: ${shop.buys.map(i => ITEMS[i].name).join(', ').toUpperCase()}` : `SELL FROM YOUR PACK: ${Math.round(rate * 100)}% OF WHAT IT IS WORTH`;
+  const sellHead = armSell ? `TAP AGAIN TO SELL ${((ITEMS[uxConfirm.item] || {}).name || 'it').toUpperCase()}` : shopSellHead(shop);
   const sellW = cols2 ? gridW : cw;
   const headLines = HK.wrap(g, sellHead, sellW, 3, K.FN(11)).lines.length, headH = headLines * 15 + 6;
   const sellH = headH + gridH;
@@ -4444,7 +4468,7 @@ function drawShopPanel(g, narrow) {
     else { perPage = Math.max(1, Math.floor((Rm.ah - 62 - 12 - sellH - 12 - pagerH) / pitch)); h = 62 + perPage * pitch + pagerH + 12 + sellH + 12; }
   }
   const pages = Math.max(1, Math.ceil(n / perPage));
-  const { px, py, w, h: ph } = panelBox(g, W, h, shop.name, `You have ${coins()} coins. Tap your pack to sell.`);
+  const { px, py, w, h: ph } = panelBox(g, W, h, shop.name, shopSubtitle(shop));
   const x0 = px + 18, p = clamp(K.page('shop'), 0, pages - 1);
   const blurbOn = listW >= 440;
   const bw = Math.max(...shop.stock.map(([, price]) => K.verbW(g, `Buy ${price}`, 'coin', R)), K.verbW(g, 'Buy 99', 'coin', R));
@@ -5045,7 +5069,7 @@ window.FANGLANDS = {
       check('friendly fire: the bulldozer charge kills an hp-1 goblin in its path (drops roll)', ok, info);
       Object.assign(gob, gs); gob.stunT = 0; drops = drops.filter(d => dist(d.x, d.y, tc(o.x), tc(o.y)) > 3 * TILE); }
     { // the Goblin Camp (02-world's CAMP_GROUND, read, not copied): flagged spawns, 30-minute respawn that waits for the knight to be 40+ tiles off, one CLEARED banner per clear
-      const inCamp = s => s.tx >= CAMP_GROUND.x0 && s.tx <= CAMP_GROUND.x1 && s.ty >= CAMP_GROUND.y0 && s.ty <= CAMP_GROUND.y1; const camp = MONSTER_SPAWNS.filter(s => s.camp); const cm = monsters.filter(isCampMonster);
+      const inCamp = s => s.tx >= CAMP_GROUND.x0 && s.tx <= CAMP_GROUND.x1 && s.ty >= CAMP_GROUND.y0 && s.ty <= CAMP_GROUND.y1; const camp = MONSTER_SPAWNS.filter(s => s.camp); const cm = monsters.filter(isGoblinCampMonster);
       const flagged = camp.length >= 12 && camp.every(inCamp) && MONSTER_SPAWNS.every(s => !!s.camp === inCamp(s)) && cm.length === camp.length;
       const snap = cm.map(m => ({ m, dead: m.dead, hp: m.hp, respawnT: m.respawnT, deadT: m.deadT, state: m.state, x: m.x, y: m.y }));
       F.tp(...ATLAS.frame('drill_field').p(60, 40)); quest.campCleared = false; levelBanner = null; const last = cm.find(m => m.type === 'goblin');
@@ -20266,6 +20290,9 @@ window.SETTINGS = SETTINGS;
     rebuild: { giver: "The board in Hollowford's square", reward: 'A town again; 500 coins at the end', kind: 'Side quest' },
     guild: { giver: 'Old Tam, Hollowford', reward: 'Ranks, a chest, a cape (500 coins) and staff', kind: 'Side quest' },
     sky: { giver: 'Old Wren, then Queen Seraphel in Aerie', reward: "400 coins, 300 Smithing xp, Halcyon's forge", kind: 'Side quest' },
+    wat_cart: { giver: 'Wat the carter, by the Bandit Hills', reward: '60 coins (and the bandits\' sacks)', kind: 'Side quest' },
+    outposts: { giver: 'Bramble the scout and Brin the drover, by the goblin outposts', reward: '30 coins from Bramble, 40 from Brin, and a song from Marigold', kind: 'Side quest' },
+    beacons: { giver: 'Ansel the beacon keeper, Beacon Hills', reward: '40 coins, Agility xp, and every place in sight on your map', kind: 'Side quest' },
   };
   // people who live in feature places without a NPCS entry (33-goblincity, 36-skycity, 26-boats)
   const EXTRA_NPCS = {
@@ -23173,7 +23200,7 @@ window.SETTINGS = SETTINGS;
     if (!H().owned) { notify('You have no horse. Fennick the trader in Thistledown keeps a grey mare on his rail.'); return false; }
     const why = mountRefusal(); if (why) { notify(why); return false; }
     const at = horseNear();
-    if (!at) { notify(`${NAME} is not here. Whistle her at Fennick's rail in Thistledown.`); return false; }
+    if (!at) { notify(`${NAME} is not here. Whistle her at any hitching rail.`); return false; }
     return mount(at.tx, at.ty);
   }
 
@@ -23976,10 +24003,15 @@ window.SETTINGS = SETTINGS;
     const second = throwNear(), toNew = !!second.at && Math.max(Math.abs(second.at[0] - post.x), Math.abs(second.at[1] - post.y)) <= 4 && /the test rail by the signpost/.test(second.said);
     // the registry: Fennick's first, the two reserved plots' rails held (no post yet), the visited list saved on the horse
     const reg = RAILS[0].id === 'thistledown' && ['alchemy', 'necromancy'].every(id => { const r = RAILS.find(q => q.id === id); return r && r.reserved && r.at() === null; }) && Array.isArray(player.horse.rails) && player.horse.rails.includes('selftest');
-    if (riding()) dismount(true); liftHorse(); RAILS.remove('selftest'); player.horse = h0 || { owned: false, hp: HORSE_HP, at: null, under: null };
+    if (riding()) dismount(true); liftHorse(); RAILS.remove('selftest');
+    // G with her out of reach names no one rail: any rail whistles her in (the review of bcb559f: it sent him to Fennick's
+    // while he stood at a new one)
+    let hint = null; { const n0 = notice; notice = null; F.tp(post.x + 8, post.y + 8); tryRide(); hint = notice && notice.text; notice = n0; }
+    const anyRail = /Whistle her at any hitching rail\./.test(hint || '') && !/Fennick/.test(hint || '');
+    player.horse = h0 || { owned: false, hp: HORSE_HP, at: null, under: null };
     dialog.cur = dc; dialog.queue.length = 0; dialog.queue.push(...dq); h.peace(false);
-    check(P + "thrown off, she bolts to the NEAREST rail he has visited and the Voice names it: Fennick's while the new rail is unvisited, the new one once he has stood by it (RAILS: Fennick's first, the Glasshouse's and the Old Barrow's reserved)",
-      !!added && toFennick && seen && toNew && reg, { first, second, seen, reg, post: [post.x, post.y], fennick: fen && [fen.x, fen.y] });
+    check(P + "thrown off, she bolts to the NEAREST rail he has visited and the Voice names it: Fennick's while the new rail is unvisited, the new one once he has stood by it (RAILS: Fennick's first, the Glasshouse's and the Old Barrow's reserved); G with her out of reach says to whistle her at any hitching rail",
+      !!added && toFennick && seen && toNew && reg && anyRail, { first, second, seen, reg, hint, post: [post.x, post.y], fennick: fen && [fen.x, fen.y] });
   });
 }
 
@@ -33956,7 +33988,8 @@ HOOKS.selfTest.push((check, F, h) => {
 // The three ways in that other files already cut — the west gate lane (02-world), the vaultable split
 // (55-riding) and the Agility-25 climb (38-agility) — are not fence tiles, so converting fence leaves every
 // one of them exactly as it was. The south road gap is not fence either.
-// Feature file: registers through HOOKS only, edits no core file. window.PALISADE exposes the tally.
+// Feature file: registers through HOOKS only, edits no core file. window.PALISADE exposes the tally, and addRing (a ring
+// of stakes another file lays, drawn here: 86-outposts' goblin outposts).
 // ============================================================================
 {
   // ---------- the tiles ----------
@@ -33976,8 +34009,14 @@ HOOKS.selfTest.push((check, F, h) => {
   // Runs after 38-agility, 55-riding and the world blend, so it converts what is actually standing rather
   // than re-deriving the rectangle. Only T.FENCE is taken: every opening those files cut is left alone.
   const ring = { laid: 0, x0: 0, y0: 0, x1: 0, y1: 0, cx: 0, cy: 0 };
+  // other rings of stakes (86-outposts' two goblin outposts): { x0, y0, x1, y1, cx, cy }, each laid by its own file and
+  // drawn here as the camp's, its points leaning out from its own middle. Emptied at the start of every world (this pass
+  // runs before the passes that lay them: PALISADE.addRing)
+  const RINGS = [];
+  const addRing = (x0, y0, x1, y1) => { const r = { x0, y0, x1, y1, cx: (x0 + x1) / 2, cy: (y0 + y1) / 2 }; RINGS.push(r); return r; };
+  const ringOf = (x, y) => RINGS.find(r => x >= r.x0 && x <= r.x1 && y >= r.y0 && y <= r.y1) || ring;
   HOOKS.world.push((rnd, api) => {
-    ring.laid = 0;
+    ring.laid = 0; RINGS.length = 0;
     const camp = REGIONS.find(r => r.name === 'Goblin Camp');
     if (!camp) return;
     const cells = [];
@@ -33993,8 +34032,8 @@ HOOKS.selfTest.push((check, F, h) => {
   // Which way the points lean: away from the middle of the camp, so every stretch of wall leans at whoever
   // is standing outside it. The dominant axis wins, so a wall leans out, not sideways along itself.
   const lean = (x, y) => {
-    const hw = Math.max(1, (ring.x1 - ring.x0) / 2), hh = Math.max(1, (ring.y1 - ring.y0) / 2);
-    const dx = (x - ring.cx) / hw, dy = (y - ring.cy) / hh;
+    const R = ringOf(x, y), hw = Math.max(1, (R.x1 - R.x0) / 2), hh = Math.max(1, (R.y1 - R.y0) / 2);
+    const dx = (x - R.cx) / hw, dy = (y - R.cy) / hh;
     return Math.abs(dx) >= Math.abs(dy) ? { x: dx >= 0 ? 1 : -1, y: 0 } : { x: 0, y: dy >= 0 ? 1 : -1 };
   };
   // one fixed number per tile per slot, so a stake does not jitter between frames
@@ -34063,9 +34102,9 @@ HOOKS.selfTest.push((check, F, h) => {
   };
   // HOOKS.draw is (g, items, cam) and every pushed item's draw() takes no arguments.
   HOOKS.draw.push((g, items) => {
-    if (!ring.laid) return;
-    const x0 = Math.max(ring.x0, Math.floor(cam.x / TILE) - 1), x1 = Math.min(ring.x1, Math.ceil((cam.x + VW) / TILE) + 1);
-    const y0 = Math.max(ring.y0, Math.floor(cam.y / TILE) - 1), y1 = Math.min(ring.y1, Math.ceil((cam.y + VH) / TILE) + 1);
+    for (const R of ring.laid ? [ring, ...RINGS] : RINGS) {
+    const x0 = Math.max(R.x0, Math.floor(cam.x / TILE) - 1), x1 = Math.min(R.x1, Math.ceil((cam.x + VW) / TILE) + 1);
+    const y0 = Math.max(R.y0, Math.floor(cam.y / TILE) - 1), y1 = Math.min(R.y1, Math.ceil((cam.y + VH) / TILE) + 1);
     for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
       const t = tileAt(x, y);
       if (t !== T_PAL && t !== T_BROKEN) continue;
@@ -34073,6 +34112,7 @@ HOOKS.selfTest.push((check, F, h) => {
       const yy = y * TILE + TILE - 6;
       if (t === T_PAL) items.push({ y: yy, draw: () => drawPalisade(g, x, y) });
       else items.push({ y: yy, draw: () => drawBroken(g, x, y) });
+    }
     }
   });
 
@@ -34112,7 +34152,7 @@ HOOKS.selfTest.push((check, F, h) => {
   });
 
   window.PALISADE = {
-    tile: T_PAL, broken: T_BROKEN, ring, STAKES, PRICK_DMG, PRICK_EVERY, REGROW: PAL_REGROW, lean, hash,
+    tile: T_PAL, broken: T_BROKEN, ring, RINGS, addRing, STAKES, PRICK_DMG, PRICK_EVERY, REGROW: PAL_REGROW, lean, hash,
     resetPrick: () => { prickT = 0; hintT = -1e9; }, get prickCooldown() { return prickT; },
   };
 
@@ -34206,11 +34246,12 @@ HOOKS.selfTest.push((check, F, h) => {
         const t = tileAt(x, y);
         if (t === T_PAL) townStakes++; else if (window.TOWNWALL && t === TOWNWALL.tile) stone++;
       }
-      // not one stake outside the Goblin Camp region, and every other fence in the world still standing:
-      // the paddocks, Dunstan's field, the agility yard and the goblins' own scrap yard over the water
+      // not one stake outside the Goblin Camp region (and the other rings laid with addRing: 86-outposts'), and every
+      // other fence in the world still standing: the paddocks, Dunstan's field, the agility yard and the goblins' own scrap
+      // yard over the water
       let stray = 0, fenceElsewhere = 0;
       for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) {
-        const t = map[idx(x, y)], inCamp = x >= camp.x0 && x <= camp.x1 && y >= camp.y0 && y <= camp.y1;
+        const t = map[idx(x, y)], inCamp = (x >= camp.x0 && x <= camp.x1 && y >= camp.y0 && y <= camp.y1) || ringOf(x, y) !== ring;
         if (t === T_PAL && !inCamp) stray++;
         else if (t === T.FENCE && !inCamp) fenceElsewhere++;
       }
@@ -39659,7 +39700,8 @@ window.RETALIATE = RETALIATE;
   function stepRemote(m, t, dt) {
     const def = MONSTER_DEFS[m.type];
     const dp = dist(m.x, m.y, t.x, t.y), dHome = dist(m.x, m.y, m.home.x, m.home.y);
-    if (dp > def.sight * 1.6 || dHome > 14 * TILE || t.dead) { m.state = 'return'; m.moving = false; return; }
+    const roadSafe = def.roam && window.ATLAS && ATLAS.onMainRoad(Math.floor(t.x / TILE), Math.floor(t.y / TILE));   // as the core loop: a patch-keeper leaves a knight on a main road be
+    if (dp > def.sight * 1.6 || dHome > 14 * TILE || t.dead || roadSafe) { m.state = 'return'; m.moving = false; return; }
     m.state = 'chase';
     const dx = t.x - m.x, dy = t.y - m.y, d = dp || 1, stop = m.r + KNIGHT_R + 4;
     let vx = 0, vy = 0;
@@ -62538,6 +62580,70 @@ const TOWNSFOLK_ART = (() => {
     },
   });
 
+  // ---------- the goblin outposts (the Great Spread, Stage 5e: 86-outposts): Bramble the scout in her hide by the north ----------
+  // outpost, and Brin the drover at the end of his track by the south one. Drawn by the sample's own hand (npc specs)
+  // a brass spyglass, drawn out, held up by its middle
+  PROPS.op_spyglass = (g, C, o) => {
+    g.save(); g.rotate(-0.5 + Math.sin(time * 1.3 + C.seed) * 0.05);
+    for (const [x0, x1, r, c] of [[-1.5, 2.6, 1.15, '#7a5a2a'], [2.6, 5.6, 0.95, '#c9a64a'], [5.6, 8, 0.8, '#d9b65a']]) {
+      g.beginPath(); g.moveTo(x0, -r); g.lineTo(x1, -r); g.lineTo(x1, r); g.lineTo(x0, r); g.closePath(); g.fillStyle = metal(g, c, -r, r); g.fill(); outline(g, 0.3); }
+    ell(g, 8.1, 0, 0.45, 0.85); g.fillStyle = '#9ac8e8'; g.fill(); outline(g, 0.25);
+    g.restore();
+  };
+  addPeople('outposts', {
+    // ---------- Bramble the scout: a quick young woman in a leaf-green hood and cloak, a leather jerkin, short brown ----------
+    // hair and freckles, her spyglass in hand
+    bramble_scout: {
+      build: 'adult', size: 0.95, geo: { w: 7.8 }, skin: SKIN.light,
+      face: { eye: '#3a5a2a', lash: '#2a1a10', brow: '#6a3a1a', freckles: true, eyes: 'round', mouth: 'smile', lip: '#b05a5a', blush: 'rgba(235,130,110,0.35)' },
+      hair: { style: 'short', c: '#7a4a24' },
+      hat: { kind: 'hood', c: '#4e6a3a' },
+      body: { kind: 'tunic', c: '#5a7a3e', under: '#e6dcc0', laces: true, rolled: '#e6dcc0', sleeve: '#4e6a34', belt: '#3a2614', buckle: '#a8a090', pouch: '#5a3a22' },
+      over: [{ kind: 'leather', c: '#6a4a2e' }],
+      legs: { c: '#4a4a34', boot: '#3a2a1c', cuff: '#6a5a3a', patch: '#5a5a40' },
+      held: { kind: 'op_spyglass' },
+    },
+    // ---------- Brin the drover: a big, kind man with a brown beard under a wide straw hat, a blue smock and a red ----------
+    // neckerchief, and his long drover's goad
+    brin_drover: {
+      build: 'adult', size: 1.05, geo: { w: 9 }, skin: SKIN.ruddy,
+      face: { eye: '#2a3a4a', brow: '#5a3a1e', browW: 1.2, mouth: 'smile', nose: 'big', noseC: '#c98a6a', lines: true },
+      hair: { style: 'short', c: '#5a3a1e' },
+      beard: { style: 'full', c: '#5a3a1e' },
+      hat: { kind: 'straw', c: '#d8bc6a' },
+      body: { kind: 'tunic', c: '#4a6a8a', under: '#c0392b', rolled: '#e6dcc0', sleeve: '#40607e', belt: '#3a2614', buckle: '#a8a090', pouch: '#6b4a2a' },
+      legs: { c: '#5a4a36', boot: '#3a2a1c', cuff: '#7a5a3a', patch: '#6a5a44' },
+      held: { kind: 'staff', c: '#8a6a3a', len: 34 },
+    },
+  });
+
+  // ---------- the Bandit Hills (the Great Spread, Stage 5f: 86-bandits): Wat the carter, by the Bandit Track below the ----------
+  // toll gate, waiting for his cart. Drawn by the sample's own hand (npc specs)
+  // a carter's whip: a short stiff handle, its lash curling back and swinging a little
+  PROPS.bh_whip = (g, C, o) => {
+    g.save(); g.rotate(-0.35 + Math.sin(time * Math.PI + C.seed) * 0.06);   // (the standing loop is 2 s: every sway comes round in it)
+    g.beginPath(); g.moveTo(-1.2, -0.7); g.lineTo(7.4, -0.5); g.lineTo(7.4, 0.5); g.lineTo(-1.2, 0.7); g.closePath(); g.fillStyle = '#6b4a2a'; g.fill(); outline(g, 0.3);
+    g.fillStyle = '#3a2614'; g.fillRect(-1.6, -0.9, 2.2, 1.8);
+    const sw = Math.sin(time * Math.PI * 2 + C.seed) * 1.2;
+    g.strokeStyle = '#4a3420'; g.lineWidth = 0.55; g.lineCap = 'round';
+    g.beginPath(); g.moveTo(7.4, 0); g.bezierCurveTo(10.4, -2.6 + sw, 12, 1.6, 9.6, 4.2 + sw); g.stroke();
+    g.restore();
+  };
+  addPeople('bandits', {
+    // ---------- Wat the carter: a small, wiry old man with a grey stubbly chin, a flat brown cap, a patched green coat ----------
+    // over a yellow shirt, and his carter's whip (the cart is the bandits' now)
+    wat_carter: {
+      build: 'adult', size: 0.97, geo: { w: 8.2 }, skin: SKIN.tan,
+      face: { eye: '#3a2a1a', brow: '#9a948a', browW: 1.1, mouth: 'frown', nose: 'big', noseC: '#b07a5a', lines: true },
+      hair: { style: 'short', c: '#a8a49c' },
+      beard: { style: 'stubble', c: '#9a968e' },
+      hat: { kind: 'cap', c: '#6a4a2a' },
+      body: { kind: 'coat', c: '#4e6a3e', under: '#d9b84a', sleeve: '#445e36', button: '#c9b48a', belt: '#3a2614', buckle: '#a8a090', pouch: false },
+      legs: { c: '#5a4a3a', boot: '#2e2218', cuff: '#6a5a44', patch: '#7a6a4a' },
+      held: { kind: 'bh_whip' },
+    },
+  });
+
   // ---------- pieces only one person uses ----------
   // Fennick's wide felt hat: a dented crown, a red band, a blue feather swept back
   function td_feltHat(g, C, c, band, feather) {
@@ -62642,7 +62748,7 @@ const TOWNSFOLK_ART = (() => {
 
   // every person's name as the sample's people list has it (today.json), for the talking pose; the game's own name for
   // a person wins where the call site hands it in
-  const NPC_NAMES = {"sera": "Sera", "garrick": "Garrick", "marta": "Marta", "aldous": "Aldous the banker", "rosalind": "Rosalind", "brakka": "Brakka the smith", "pim": "Pim the tinker", "dorran": "Dorran the innkeeper", "duke": "Duke Ferrin", "hale": "Sergeant Hale", "tobin": "Tobin", "greta": "Greta", "fennick": "Fennick the trader", "wren": "Old Wren", "v1": "Ada", "v2": "Bram", "v3": "Cass", "v4": "Dunn", "v5": "Elsie", "v6": "Finn", "osric": "Gatewarden Osric", "ambrose": "Ambrose the bell-ringer", "hettie": "Hettie the apple seller", "mabel": "Mabel the candle maker", "moll": "Moll the flower seller", "wynn": "Wynn", "tess": "Tess", "robin": "Robin", "death2": "Death", "tam": "Old Tam", "nell": "Nell", "pip": "Pip", "hob": "Hob", "wenna": "Wenna", "harl": "Harl the ferryman", "pete": "Pete", "thrain": "King Thrain", "brunhild": "Brunhild the smith", "dagny": "Dagny", "orik": "Orik", "hilde": "Hilde", "aelith": "Queen Aelith", "lira": "Lira the archery master", "thessaly": "Thessaly the weaver", "faelan": "Faelan", "seraphel": "Queen Seraphel", "halcyon": "Master Halcyon", "pell": "Keeper Pell", "quill": "Quill Windward", "skyla": "Skyla Fleetwing", "ferris": "Old Ferris", "aldric": "Captain Aldric", "tamsin": "Tamsin the baker", "mossbeard": "Mossbeard", "aubade": "Sister Aubade", "corvin": "Guildmaster Corvin", "merriweather": "Merriweather", "orla": "Warden Orla", "brisk": "Warden Brisk", "lark": "Lark", "bellweather": "Bellweather the lamplighter", "brannoc": "Brannoc the porter", "fen": "Fen", "tilly": "Tilly", "wick": "Wick the messenger", "pippa": "Pippa the fruit seller", "maudie": "Maudie the weaver", "plume": "Old Plume the feather seller", "crockett": "Crockett the potter", "hazel": "Hazel", "wim": "Wim", "tinkerton": "Tinkerton", "grubb": "Grubb the cook", "nix": "Nix the scrapper", "snaggle": "Old Snaggle", "pipsqueak": "Pip-squeak", "gnash": "King Gnash", "mudge": "Mudge", "skritch": "Skritch", "ratchet": "Ratchet", "wilf": "Wilf the stonemason", "tamsin_miller": "Tamsin the miller", "odo": "Odo the farmer", "nan_gully": "Nan Gully", "mother_hobb": "Mother Hobb", "jory": "Jory the pedlar", "marigold": "Marigold the drover", "ansel": "Ansel the beacon keeper", "hilde_trapper": "Hilde the trapper", "corvin_hunter": "Corvin the hunter"};
+  const NPC_NAMES = {"sera": "Sera", "garrick": "Garrick", "marta": "Marta", "aldous": "Aldous the banker", "rosalind": "Rosalind", "brakka": "Brakka the smith", "pim": "Pim the tinker", "dorran": "Dorran the innkeeper", "duke": "Duke Ferrin", "hale": "Sergeant Hale", "tobin": "Tobin", "greta": "Greta", "fennick": "Fennick the trader", "wren": "Old Wren", "v1": "Ada", "v2": "Bram", "v3": "Cass", "v4": "Dunn", "v5": "Elsie", "v6": "Finn", "osric": "Gatewarden Osric", "ambrose": "Ambrose the bell-ringer", "hettie": "Hettie the apple seller", "mabel": "Mabel the candle maker", "moll": "Moll the flower seller", "wynn": "Wynn", "tess": "Tess", "robin": "Robin", "death2": "Death", "tam": "Old Tam", "nell": "Nell", "pip": "Pip", "hob": "Hob", "wenna": "Wenna", "harl": "Harl the ferryman", "pete": "Pete", "thrain": "King Thrain", "brunhild": "Brunhild the smith", "dagny": "Dagny", "orik": "Orik", "hilde": "Hilde", "aelith": "Queen Aelith", "lira": "Lira the archery master", "thessaly": "Thessaly the weaver", "faelan": "Faelan", "seraphel": "Queen Seraphel", "halcyon": "Master Halcyon", "pell": "Keeper Pell", "quill": "Quill Windward", "skyla": "Skyla Fleetwing", "ferris": "Old Ferris", "aldric": "Captain Aldric", "tamsin": "Tamsin the baker", "mossbeard": "Mossbeard", "aubade": "Sister Aubade", "corvin": "Guildmaster Corvin", "merriweather": "Merriweather", "orla": "Warden Orla", "brisk": "Warden Brisk", "lark": "Lark", "bellweather": "Bellweather the lamplighter", "brannoc": "Brannoc the porter", "fen": "Fen", "tilly": "Tilly", "wick": "Wick the messenger", "pippa": "Pippa the fruit seller", "maudie": "Maudie the weaver", "plume": "Old Plume the feather seller", "crockett": "Crockett the potter", "hazel": "Hazel", "wim": "Wim", "tinkerton": "Tinkerton", "grubb": "Grubb the cook", "nix": "Nix the scrapper", "snaggle": "Old Snaggle", "pipsqueak": "Pip-squeak", "gnash": "King Gnash", "mudge": "Mudge", "skritch": "Skritch", "ratchet": "Ratchet", "wilf": "Wilf the stonemason", "tamsin_miller": "Tamsin the miller", "odo": "Odo the farmer", "nan_gully": "Nan Gully", "mother_hobb": "Mother Hobb", "jory": "Jory the pedlar", "marigold": "Marigold the drover", "ansel": "Ansel the beacon keeper", "hilde_trapper": "Hilde the trapper", "corvin_hunter": "Corvin the hunter", "bramble_scout": "Bramble the scout", "brin_drover": "Brin the drover", "wat_carter": "Wat the carter"};
   const H = { lerp, ease, OUT, shade, hex, rr, ell, outline, vfill, rfill, metal, shadow, face4 };
   return { NEW_NPC, NPC_FAMILY, NPC_SPEC, NPC_NAMES, npc, drawPerson, npcFromToday, BUILDS, SKIN, HAIR, H, mark: f => { NPC_MARK = f || null; } };
 })();
@@ -63119,8 +63225,9 @@ const TOWNSFOLK = (() => {
         // 74 in the approved sample, and 6 more since: the Windward Market's sellers and shoppers (the Cloud Kingdom polish, 2026-10-03);
         // and 4 more: the riverside's Wilf, Tamsin the miller, Odo and Nan Gully (the Great Spread, Stage 5b); and 3 more: the
         // Crossroads Inn's Mother Hobb, Jory the pedlar and Marigold the drover (Stage 5c); and 3 more: Ansel the beacon keeper,
-        // Hilde the trapper and Corvin the hunter (Stage 5d)
-        ids.length === 90 && !bad.length && !missed.length && !dup.length && !small.length, { n: ids.length, bad: bad.slice(0, 5), missed, dup, small }); }
+        // Hilde the trapper and Corvin the hunter (Stage 5d); and 2 more: Bramble the scout and Brin the drover (Stage 5e); and 1
+        // more: Wat the carter (Stage 5f)
+        ids.length === 93 && !bad.length && !missed.length && !dup.length && !small.length, { n: ids.length, bad: bad.slice(0, 5), missed, dup, small }); }
 
     // 2. every person the game draws reaches the new look by id: each NPCS entry through the core's drawNpc, and every
     // place's own people in real frames (Hollowford's square and the guild, the ferry, Deepholm, Sylvaris, Aerie and the
@@ -63485,11 +63592,26 @@ window.TOWNSFOLK = TOWNSFOLK;
       "Lost? Read the signpost. It's never wrong. I am, sometimes.",
     ],
     marigold: [
-      "I used to walk my cows down the Drovers' Track. Then the goblins built a camp right across it.",
+      "I used to walk my cows down the Drovers' Track. Then the goblins built a fence right across it.",
       "Goblins don't even want the cows. They want the bells. Shiny, you see.",
       'My cows are safe in a field by Hollowford now. I miss walking them.',
       "If you ever chase those goblins off my track, I'll sing about you. Loudly.",
       "Mother Hobb's pie is the best thing on any road. Don't tell the baker in Thistledown.",
+    ],
+  };
+  // Marigold once the south goblin outpost on her track has been beaten (86-outposts: quest.outposts.outpost_south): her
+  // song, once, with a pie; then her cows are back (or, while the outpost fills again, the goblins are back)
+  const MARIGOLD = {
+    song: ["You chased the goblins off my track! Brin told me. I promised you a song, so here it is:",
+      "The knight, the knight, the bravest knight! The goblins ran away in fright! ... Here, have a pie. You earned it."],
+    after: [
+      "My cows are back on the track! Brin walks them to the inn again.",
+      "I sing your song to the cows every day. They like it. I think.",
+      "Mother Hobb's pie is the best thing on any road. Don't tell the baker in Thistledown.",
+    ],
+    back: [
+      "The goblins came back to my track! Brin says they are behind their fence again.",
+      "You beat them once. If you beat them again, I will sing even louder.",
     ],
   };
   const PEOPLE = [
@@ -63677,13 +63799,25 @@ window.TOWNSFOLK = TOWNSFOLK;
 
   // ---------- talking ----------
   const SAID = {};
-  HOOKS.talk.wayfarer = n => { const k = SAID[n.id] = ((SAID[n.id] === undefined ? -1 : SAID[n.id]) + 1) % n.lines.length; say(n.lines[k], n.name); };
-  // Mother Hobb: five coins for a bowl of stew (healed to full) and the room (a bed in the back room holds the knight's
-  // spirit from then on, like Dorran's at the Barrel & Boar); then her kitchen opens
+  const southOutpost = () => (quest.outposts && quest.outposts.outpost_south) || {};
+  const marigoldMood = () => { const q = southOutpost(); return q.cleared ? 'after' : q.won ? 'back' : 'before'; };
+  HOOKS.talk.wayfarer = n => {
+    let L = n.lines, key = n.id;
+    if (n.id === 'marigold' && marigoldMood() !== 'before') {
+      const x = quest.xroads && typeof quest.xroads === 'object' ? quest.xroads : (quest.xroads = {});
+      if (!x.sang) { x.sang = 1; for (const l of MARIGOLD.song) say(l, n.name); if (addItem('meat_pie', 1) !== 0) notify('Your pack is full. Marigold keeps the pie for you.'), x.sang = 0; else burst(player.x, player.y, '#ffd166', 12, 60); save(); return; }
+      L = MARIGOLD[marigoldMood()]; key = n.id + ':' + marigoldMood();
+    }
+    const k = SAID[key] = ((SAID[key] === undefined ? -1 : SAID[key]) + 1) % L.length; say(L[k], n.name);
+  };
+  // Mother Hobb: five coins, once, for a bowl of stew (healed to full) and the room (a bed in the back room holds the
+  // knight's spirit from then on, like Dorran's at the Barrel & Boar, and a sleep in it heals him for nothing); then her
+  // kitchen opens. She never takes coin again (the review of bcb559f: she took five from a hurt knight every word, even one
+  // who only wanted a potato)
   const ROOM = 5;
   const hobbWords = {
     paid: 'Five coins. Hot stew, and the bed in the back room is yours. Sleep in it and you will wake here if you fall.',
-    again: 'Five coins. Sit down and eat. You look done in.',
+    hurt: 'You look done in, love. Your bed is made up in the back room. A good sleep will mend you.',
     poor: 'A bowl of stew and a bed are five coins. Come back with coin, love.',
     home: 'Welcome back. Your bed is made. Hungry?',
   };
@@ -63691,15 +63825,15 @@ window.TOWNSFOLK = TOWNSFOLK;
     HOOKS.talkBefore.shop = n => {
       if (n.id !== 'mother_hobb') return prev ? prev(n) : false;
       const paid = !!player.xinnRested, hurt = player.hp < player.maxHp;
-      if ((!paid || hurt) && coins() >= ROOM) {
+      if (!paid && coins() >= ROOM) {
         payCoins(ROOM); player.hp = player.maxHp; player.xinnRested = true;
-        say(paid ? hobbWords.again : hobbWords.paid, n.name); burst(player.x, player.y, '#7ee787', 10, 40); save();
-      } else say(paid ? hobbWords.home : hobbWords.poor, n.name);
+        say(hobbWords.paid, n.name); burst(player.x, player.y, '#7ee787', 10, 40); save();
+      } else say(!paid ? hobbWords.poor : hurt ? hobbWords.hurt : hobbWords.home, n.name);
       openPanel('shop', n.shop); return true;
     }; }
 
   // ---------- the handle ----------
-  window.CROSSROADS = { ID, THINGS, BOX, STAKED, PLAN, INN, PEOPLE, LINES, POSTS, STATS, NOTICES, FOOT, FR: F, boardWords, hobbWords, ROOM };
+  window.CROSSROADS = { ID, THINGS, BOX, STAKED, PLAN, INN, PEOPLE, LINES, MARIGOLD, marigoldMood, POSTS, STATS, NOTICES, FOOT, FR: F, boardWords, hobbWords, ROOM };
 
   // ---------- self-tests ----------
   HOOKS.selfTest.push((check, Fh, h) => {
@@ -63758,12 +63892,28 @@ window.TOWNSFOLK = TOWNSFOLK;
         !bad.length, { bad }); }
 
     // 4. they talk: plain words, short; Jory and Marigold tell their stories a line at a time
-    { const said = {};
+    { const said = {}, op0 = quest.outposts; quest.outposts = {};
       for (const p of PEOPLE.slice(1)) { said[p.id] = []; for (let k = 0; k < p.lines.length; k++) { dialog.queue.length = 0; advanceDialog(); closePanel(); talkTo(p); const d = [dialog.cur, ...dialog.queue].find(q => q && q.who === p.name); said[p.id].push(d ? d.text : null); } closePanel(); dialog.queue.length = 0; advanceDialog(); }
-      const all = Object.values(LINES).flat().concat(Object.values(hobbWords));
+      quest.outposts = op0;
+      const all = Object.values(LINES).flat().concat(Object.values(hobbWords), MARIGOLD.song, MARIGOLD.after, MARIGOLD.back);
       const every = PEOPLE.slice(1).every(p => p.lines.every(t => said[p.id].includes(t)));
       check(P + 'Jory and Marigold each say every one of their lines in turn, every line (and every one of Mother Hobb\'s) short and plain, with no compass words (the signpost gives the ways)',
         every && all.every(t => t.length <= 140 && !/\b(north|south|east|west)\b/i.test(t)), { said }); }
+    // 4b. Marigold's promise kept (the review of bcb559f): once the south outpost on her track is beaten she sings her song
+    // and gives a meat pie, once ever; while it is cleared her cows are back, while it fills again the goblins are; and the
+    // outpost is a fence, as Brin says, not a camp
+    { const mg = PEOPLE.find(p => p.id === 'marigold'), keep = { op: quest.outposts, x: quest.xroads, inv: JSON.parse(JSON.stringify(player.inv)), s: Object.assign({}, SAID) };
+      const talk = n => { const out = []; for (let k = 0; k < n; k++) { dialog.queue.length = 0; advanceDialog(); closePanel(); talkTo(mg); out.push([dialog.cur, ...dialog.queue].filter(q => q && q.who === mg.name).map(q => q.text).join(' / ')); } closePanel(); dialog.queue.length = 0; advanceDialog(); return out; };
+      const res = {};
+      try {
+        player.inv = new Array(INV_SLOTS).fill(null); quest.xroads = {};
+        quest.outposts = { outpost_south: { cleared: 1, won: 1, thanked: 1 } };
+        const t = talk(MARIGOLD.after.length + 2); res.song = t[0]; res.after = t.slice(1); res.pie = countItem('meat_pie');
+        quest.outposts = { outpost_south: { cleared: 0, won: 1, thanked: 1 } }; res.back = talk(MARIGOLD.back.length + 1); res.pie2 = countItem('meat_pie');
+      } finally { quest.outposts = keep.op; quest.xroads = keep.x; player.inv = keep.inv; Object.keys(SAID).forEach(k => delete SAID[k]); Object.assign(SAID, keep.s); }
+      check(P + 'Marigold keeps her promise: after the south goblin outpost is beaten she sings her song and gives a meat pie, once; then only that her cows are back (never that the goblins are on her track), and while it fills again that the goblins came back; the outpost is a fence',
+        res.song === MARIGOLD.song.join(' / ') && res.pie === 1 && res.pie2 === 1 && MARIGOLD.after.every(l => res.after.includes(l)) && res.after.every(l => MARIGOLD.after.includes(l))
+        && MARIGOLD.back.every(l => res.back.includes(l)) && res.back.every(l => MARIGOLD.back.includes(l)) && /fence/.test(LINES.marigold[0]) && !LINES.marigold.some(l => /\bcamp\b/.test(l)), res); }
 
     // 5. the room and the kitchen: no coin, no room (and the bed says whose room it is); five coins heals him to full and
     // the back room's bed then holds his spirit; her kitchen opens every time; the Barrel & Boar's room is its own
@@ -63778,11 +63928,13 @@ window.TOWNSFOLK = TOWNSFOLK;
         addItem('coins', 12); player.hp = Math.max(1, player.maxHp - 5);
         talkTo(hobb); res.coins = coins(); res.healed = player.hp === player.maxHp; res.rested = !!player.xinnRested; res.shop = panel === 'shop' && panelArg === 'xinn_kitchen'; closePanel(); dialog.queue.length = 0; advanceDialog();
         talkTo(hobb); res.coins2 = coins(); closePanel(); dialog.queue.length = 0; advanceDialog();
-        res.paid = sleep(); res.at = player.bedSpawn && [Math.floor(player.bedSpawn.x / TILE), Math.floor(player.bedSpawn.y / TILE)]; res.wantAt = bed;
+        // hurt again with the room paid: a word costs nothing, she sends him to his bed, her kitchen opens; the bed heals him
+        player.hp = Math.max(1, player.maxHp - 5); talkTo(hobb); res.coins3 = coins(); res.hurtWords = ([dialog.cur, ...dialog.queue].find(q => q && q.who === hobb.name) || {}).text || null; res.shop3 = panel === 'shop' && panelArg === 'xinn_kitchen'; closePanel(); dialog.queue.length = 0; advanceDialog();
+        res.paid = sleep(); res.bedHealed = player.hp === player.maxHp; res.at = player.bedSpawn && [Math.floor(player.bedSpawn.x / TILE), Math.floor(player.bedSpawn.y / TILE)]; res.wantAt = bed;
         res.stock = ['meat_pie', 'bread'].every(id => SHOPS.xinn_kitchen.stock.some(([k]) => k === id));
       } finally { player.inv = keep.inv; player.hp = keep.hp; player.xinnRested = keep.rested; player.innRested = keep.inn; player.bedSpawn = keep.bed; player.x = keep.x; player.y = keep.y; player.facing = keep.f; closePanel(); dialog.queue.length = 0; advanceDialog(); }
-      check(P + "the room: unpaid, the bed says \"Pay Mother Hobb for the room first.\" (the Barrel & Boar's paid room does not count here); with no coin she opens her kitchen and keeps the room; five coins heals the knight to full, the room is his and a second word with him whole costs nothing; then the back room's bed holds his spirit; her kitchen sells pies and bread",
-        !res.unpaid.bed && res.unpaid.words === 'Pay Mother Hobb for the room first.' && res.poorShop && !res.poorRested && res.coins === 7 && res.healed && res.rested && res.shop && res.coins2 === 7 && res.paid.bed && !!res.at && res.at[0] === res.wantAt[0] && res.at[1] === res.wantAt[1] && res.stock,
+      check(P + "the room: unpaid, the bed says \"Pay Mother Hobb for the room first.\" (the Barrel & Boar's paid room does not count here); with no coin she opens her kitchen and keeps the room; five coins heals the knight to full and the room is his, once: a later word costs nothing, hurt or whole (hurt, she sends him to his bed, which heals him) and her kitchen opens; the back room's bed holds his spirit; her kitchen sells pies and bread",
+        !res.unpaid.bed && res.unpaid.words === 'Pay Mother Hobb for the room first.' && res.poorShop && !res.poorRested && res.coins === 7 && res.healed && res.rested && res.shop && res.coins2 === 7 && res.coins3 === 7 && res.hurtWords === hobbWords.hurt && res.shop3 && res.bedHealed && res.paid.bed && !!res.at && res.at[0] === res.wantAt[0] && res.at[1] === res.wantAt[1] && res.stock,
         res); }
 
     // 6. no creature spawns inside the place (or in its yard), and the yard's things are solid and say their words
@@ -63792,8 +63944,10 @@ window.TOWNSFOLK = TOWNSFOLK;
       const solid = things.every(([, x, y]) => SOLID.has(tiles[idx(x, y)]) && tiles[idx(x, y)] === SOLID_T() && inB(B, x, y));
       const board = boardWords();
       const hay = DECO.cells('hay').filter(([x, y]) => inB(B, x, y)).length;
-      check(P + 'no creature spawns inside the inn\'s ground; the yard has its well, trough and hay, the notice board stands by the road (nothing pinned yet), each solid',
-        !inside.length && kinds.has('well') && kinds.has('trough') && kinds.has('board') && things.length === 3 && solid && /Nothing is pinned/.test(board) && hay === 2,
+      // (86-bandits pins its WANTED notice for the Bandit Hills' bandits; without it, nothing is pinned)
+      const pinned = window.BANDITS ? /Bandit Hills/.test(board) && !/Nothing is pinned/.test(board) : /Nothing is pinned/.test(board);
+      check(P + 'no creature spawns inside the inn\'s ground; the yard has its well, trough and hay, the notice board stands by the road (86-bandits\' notice pinned to it), each solid',
+        !inside.length && kinds.has('well') && kinds.has('trough') && kinds.has('board') && things.length === 3 && solid && pinned && hay === 2,
         { inside, things, board, hay }); }
 
     // 7. the rail and the signpost: a RAILS entry on a HITCH tile in its own ground; the four-way signpost shows four
@@ -64487,11 +64641,11 @@ const MOUNT_LOOK = (() => {
       "The crows think my wheat is their dinner. Chase them off if you like. They never listen to me.",
       'Rats got into the barn again. Big as cats, they are. Bigger than some cats.',
       "Bring Tamsin your wheat. Her wheel grinds it to flour, and flour makes pies. There's an oven in my farmhouse.",
-      "That bare patch by the lane is for anyone. Dig it, plant it, eat it. Greta in Thistledown sells the seeds.",
+      "That bare patch by the lane is for anyone. Dig it, plant it, eat it. Tamsin sells the seed at the mill.",
     ],
   };
   const PEOPLE = [
-    OB.pt({ id: 'wilf', name: 'Wilf the stonemason', x: 11, y: 11, tunic: '#8a8680', hair: '#a8a098', beard: true, role: 'riverfolk', lines: LINES.wilf }),
+    OB.pt({ id: 'wilf', name: 'Wilf the stonemason', x: 16, y: 9, tunic: '#8a8680', hair: '#a8a098', beard: true, role: 'riverfolk', lines: LINES.wilf }),
     MB.pt({ id: 'tamsin_miller', name: 'Tamsin the miller', x: 15, y: 2, tunic: '#5a86b0', hair: '#6a4426', woman: true, apron: true, role: 'shop', shop: 'mill' }),
     MB.pt({ id: 'odo', name: 'Odo the farmer', x: 8, y: 11, tunic: '#5a7a3e', hair: '#5a3a1a', beard: true, role: 'riverfolk', lines: LINES.odo }),
     SM.pt({ id: 'nan_gully', name: 'Nan Gully', x: 10, y: 2, tunic: '#3a5a7a', hair: '#e8e2d6', woman: true, apron: true, role: 'shop', shop: 'saltmere_fish' }),
@@ -64514,7 +64668,9 @@ const MOUNT_LOOK = (() => {
   // ---------- the mill leat and the wheel; Saltmere's fishing spots; the marsh band ----------
   const LEAT = () => MB.box([20, 1, 25, 1]), PIT = () => MB.box([19, 0, 19, 2]);
   const WHEEL = () => MB.p(19, 1);
-  const FISH = () => SM.pts([[4, 11], [10, 10], [12, 13], [3, 14]]);
+  // (each on the water beside the jetty, so a knight stands next to every ring: the review of bcb559f found three of the
+  // first four out in open water with no foothold)
+  const FISH = () => SM.pts([[5, 9], [8, 10], [5, 12], [8, 13]]);
   const MARSH = () => SM.box([-8, 2, -1, 16]);
 
   // ---------- the footprint (§10): WORLD_REV 2 ----------
@@ -64860,6 +65016,15 @@ const MOUNT_LOOK = (() => {
       check(P + "Millbrook's wheel turns in a pit fed by a leat from the river (a dead end), its wheat stands on soil and a plot of soil waits for anyone; Saltmere has five stilt huts, a plank jetty two wide with lobster grounds off its end, drying racks, and a marsh band of pools, sand bars and reeds",
         dry === 0 && joins && wheat.length === 21 && onSoil && soil === 8 && huts === 5 && dock >= 30 && lob === 4 && DECO.cells('rack').length === 4 && M.pools > 0 && M.sand > 0 && M.reeds > 0, { dry, joins, wheat: wheat.length, soil, huts, dock, lob, marsh: M }); }
 
+    // 7b. Saltmere's fishing rings: each on water, with a tile beside it (4 ways) a knight walks to from the cave mouth
+    { const N = MAP_W * MAP_H, seen = new Uint8Array(N), q = new Int32Array(N); let n = 0;
+      const take = i => { if (!seen[i] && (!SOLID.has(tiles[i]) || PUSH_THROUGH.has(tiles[i]))) { seen[i] = 1; q[n++] = i; } };
+      { const [mx, my] = A.port('cave.mouth'); take(idx(mx, my)); }
+      for (let k = 0; k < n; k++) { const c = q[k], x = c % MAP_W; if (x > 0) take(c - 1); if (x < MAP_W - 1) take(c + 1); if (c >= MAP_W) take(c - MAP_W); if (c + MAP_W < N) take(c + MAP_W); }
+      const reach = (x, y) => !!seen[idx(x, y)];
+      const bad = FISH().map(p => p.map(Math.round)).filter(([x, y]) => tiles[idx(x, y)] !== T.WATER || ![[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => !SOLID.has(tiles[idx(x + dx, y + dy)]) && reach(x + dx, y + dy)));
+      check(P + "Saltmere's four fishing rings lie on water a knight can stand beside (the jetty), each reached from the cave mouth", FISH().length === 4 && !bad.length, { bad, fish: FISH() }); }
+
     // 8. the rails: each place's rail is in RAILS, on a HITCH tile in its own box, and the mare bolts to the nearest visited
     { const ok = IDS.every(id => { const r = RAILS.find(q => q.id === id), p = r && r.at(); return !!p && inB(A.box(id), p.x, p.y) && tileAt(p.x, p.y) === T.HITCH && RAILS.of(p.x, p.y) === r && !r.reserved; });
       check(P + 'each place has its hitching rail: a RAILS entry, its post on a HITCH tile in its own box', ok, { posts: POSTS }); }
@@ -64869,8 +65034,8 @@ const MOUNT_LOOK = (() => {
       const anyBuilders = SPREAD_GROUND.signs.map(([x, y]) => A.signText(x, y)).filter(t => /(Old Bridge|Millbrook|Saltmere) \(builders at work\)/.test(t));
       const onRoad = []; for (const b of BLDG) for (let y = b.y; y < b.y + b.h; y++) for (let x = b.x; x < b.x + b.w; x++) if (A.onMainRoad(x, y)) onRoad.push(b.id);
       for (const id of IDS) { const rows = PLAN[id]; rows.forEach((r, ry) => [...r].forEach((c, rx) => { const [x, y] = FR[id].p(rx, ry); if (/[fGHkL~]/.test(c) && A.onMainRoad(x, y)) onRoad.push(id + ' ' + c + '@' + x + ',' + y); })); }
-      check(P + "the signposts at the Old Bridge's south end and Millbrook's gate read, no signpost says the riverside's builders are still at work, and nothing built here stands on a main road",
-        words.every(Boolean) && !anyBuilders.length && !onRoad.length, { words, anyBuilders, onRoad }); }
+      check(P + "the signposts at the Old Bridge's south end and Millbrook's gate read (the bridge's names the Hunters' Lodge, the Wolfwood Road's next stop), no signpost says the riverside's builders are still at work, and nothing built here stands on a main road",
+        words.every(Boolean) && /Hunters' Lodge/.test(words[0] || '') && !anyBuilders.length && !onRoad.length, { words, anyBuilders, onRoad }); }
 
     // 10. the ground: no change outside the footprint boxes and their ring (the FOOTPRINT proof's own words, here as the
     // places say it), and placing in a built place says whose ground it is
@@ -64879,6 +65044,1306 @@ const MOUNT_LOOK = (() => {
       const res = { placed: traps() < n0, notice: notice && notice.text }; if (res.placed && tileAt(x, y) === T.TRAP) changeTile(x, y, T.DIRT);
       h.peace(false);
       check(P + "nothing is built on a built place's ground: \"This is Millbrook's ground. Build somewhere else.\"", !res.placed && res.notice === "This is Millbrook's ground. Build somewhere else.", res); }
+  });
+}
+
+// ---- src/86-banditart.js ----
+// ============================================================================
+// THE BANDITS' LOOK (the Great Spread, Stage 5f: ~/.fanglands/work/spread/spec.md §4 "Bandit hills", §13 STAGE 5)
+// src/86-banditart.js
+//
+// Pictures only (stripped from the server's copy, as 87-critterart is): the three bandit kinds of 86-bandits drawn with the
+// core's drawHuman (the spec: "drawn with drawHuman"), each through MONSTER_LOOK.addType so the monster look draws it, keeps
+// its pictures and knows its box; and their pages in the book (44-wiki). They die as 'person' (79-deaths reads their
+// MONSTER_DEFS `human`), so a falling bandit drops his weapon like a guard.
+//
+//   bandit         a brown jerkin and a dark hood, a red cloth mask over mouth and nose, a sword
+//   bandit archer  a green jerkin and hood, a grey mask, a bow and a quiver on the back (it throws bombs: a thrower)
+//   bandit chief   a dark red coat with gold shoulders, a black beard, a wide black hat with a red feather, a battleaxe
+//
+// This file loads before 86-bandits (name order): the names here are its MONSTER_DEFS names, and its self-test holds the two
+// the same. window.BANDIT_LOOKS is the test handle.
+// ============================================================================
+{
+  const NAMES = { bandit: 'Bandit', bandit_archer: 'Bandit archer', bandit_chief: 'Bandit chief' };
+  // ---------- the look: each drawn with the core's drawHuman (MONSTER_LOOK.addType), a mask over the face ----------
+  const LOOK = {
+    bandit: { tunic: '#5e4a36', hair: '#2a1a0a', helm: '#3a3530', shoulder: '#4a3a2a', weapon: { shape: 'sword', color: '#a9adb5' } },
+    bandit_archer: { tunic: '#44583a', hair: '#5a3a1e', helm: '#2f3a28', shoulder: '#5a4630', weapon: { shape: 'bow', color: '#7a5a2a' } },
+    bandit_chief: { tunic: '#6a1e1e', hair: '#1e140a', beard: true, shoulder: '#c9a36a', weapon: { shape: 'battleaxe', color: '#c9ccd3' } },
+  };
+  const MASK = { bandit: '#8a2a1e', bandit_archer: '#3a3a3a', bandit_chief: null };
+  const STATS = { drawn: 0 };
+  function drawBandit(type) {
+    return (g, v) => {
+      STATS.drawn++;
+      const f = v.facing || { x: 0, y: 1 }, fx = f.x, fy = f.y, bob = v.moving ? Math.sin(v.walkT || 0) * 1.5 : 0;
+      g.save(); g.translate(0, bob);
+      // an archer's quiver, on the back (drawn first: the body hides most of it)
+      if (type === 'bandit_archer') { g.save(); g.rotate(Math.atan2(fy, fx) + Math.PI); g.fillStyle = '#6a4a2a'; g.fillRect(4, -9, 9, 5); g.fillStyle = '#e9eef5'; g.fillRect(12, -9, 3, 1.5); g.fillRect(12, -6.5, 3, 1.5); g.restore(); }
+      drawHuman(g, v, LOOK[type]);
+      // a cloth mask over the mouth and nose (seen from the front and the sides)
+      const m = MASK[type];
+      if (m) {
+        g.save(); g.beginPath(); g.arc(0, -8, 8, 0, 7); g.clip();
+        if (fy > -0.6) { g.fillStyle = m; g.fillRect(-9, -5.2 + fy * 1.6, 18, 4); g.fillStyle = 'rgba(0,0,0,0.18)'; g.fillRect(-9, -1.8 + fy * 1.6, 18, 0.8); }
+        g.restore();
+      }
+      // the chief's wide black hat with a red feather
+      if (type === 'bandit_chief') {
+        g.fillStyle = '#1e1a18'; g.beginPath(); g.ellipse(0, -12, 12, 4.5, 0, 0, 7); g.fill();
+        g.beginPath(); g.arc(0, -13, 7, Math.PI, 0); g.fill(); g.fillStyle = '#8a2a1e'; g.fillRect(-7, -14, 14, 2);
+        g.strokeStyle = '#c0392b'; g.lineWidth = 2; g.lineCap = 'round'; g.beginPath(); g.moveTo(5, -15); g.quadraticCurveTo(12, -22, 16, -19); g.stroke(); g.lineCap = 'butt';
+      }
+      g.restore();
+    };
+  }
+  // boxes: [x0, y0, x1, y1] at rest, then swinging, in game pixels round the middle (measure.cjs: every 16th of a turn,
+  // standing, walking, swinging, 3 px all round; drawHuman holds the weapon out at rest too, so the two are the same)
+  const LOOKS = {
+    bandit: { draw: drawBandit('bandit'), size: 1.05, r: 13, pic: true, box: [-41, -43, 41, 43, -41, -43, 41, 43] },
+    bandit_archer: { draw: drawBandit('bandit_archer'), size: 1.05, r: 13, pic: true, box: [-28, -30, 28, 30, -28, -30, 28, 30] },
+    bandit_chief: { draw: drawBandit('bandit_chief'), size: 1.2, r: 15, pic: true, box: [-42, -43, 42, 43, -42, -43, 42, 43] },
+  };
+  if (window.MONSTER_LOOK && MONSTER_LOOK.addType) for (const t in LOOKS) MONSTER_LOOK.addType(t, LOOKS[t]);
+
+  // ---------- the book (44-wiki): plain words for each bandit ----------
+  if (window.WIKI && WIKI.add) {
+    const BLURB = {
+      bandit: "A bandit with a cloth mask and a sword. Bandits live in the Bandit Hills and make carts pay at their toll gate. They fight in a gang, so watch your back.",
+      bandit_archer: "A bandit with a bow and a bag of bombs. It keeps back and throws them. When a bomb lands by your feet, step away fast.",
+      bandit_chief: "The boss of the bandits: big, with a wide black hat and a huge axe. He stays near the back of the camp. Beat him and Wat the carter gets his cart back.",
+    };
+    for (const id in BLURB) WIKI.add('monsters', { id, name: NAMES[id], blurb: BLURB[id] });
+  }
+
+  window.BANDIT_LOOKS = { LOOK, LOOKS, STATS, NAMES };
+
+  // ---------- self-test ----------
+  HOOKS.selfTest.push(check => {
+    const TYPES = Object.keys(LOOKS);
+    // the look: each drawn with drawHuman through MONSTER_LOOK.addType, its hit circle the rules' r
+    { const L = window.MONSTER_LOOK, bad = TYPES.filter(t => !L || !L.ADDED.has(t) || !MONSTER_DEFS[t] || L.HIT_R[t] !== MONSTER_DEFS[t].r || !L.BOX[t] || MONSTER_DEFS[t].name !== NAMES[t]);
+      const _dh = drawHuman; let n = 0; drawHuman = function () { n++; return _dh.apply(this, arguments); };
+      const g = new Proxy({}, { get: (o, k) => (k in o ? o[k] : () => { }), set: (o, k, v) => { o[k] = v; return true; } }), d0 = STATS.drawn;
+      try { for (const t of TYPES) LOOKS[t].draw(g, { type: t, facing: { x: 0, y: 1 }, moving: false, walkT: 0, attackT: 0, hurtT: 0 }); } finally { drawHuman = _dh; }
+      check('bandit look: the bandits, the archers and the chief are drawn with drawHuman through MONSTER_LOOK.addType under their MONSTER_DEFS names, their hit circles the rules\' r', !bad.length && n === 3 && STATS.drawn - d0 === 3, { bad, n }); }
+    // the book: each one's page under its own name, with its words, where it lives and what it drops
+    if (window.WIKI && WIKI.get) {
+      const bad = TYPES.filter(t => { const e = WIKI.get('monsters', t); return !e || e.name !== NAMES[t] || !e.blurb || !(e.where || []).length || !(e.drops || []).length; });
+      check('bandit look: the book has a page for each bandit under its own name, with its words, where it lives and what it drops', !bad.length, { bad }); }
+  });
+}
+
+// ---- src/86-bandits.js ----
+// ============================================================================
+// THE BANDIT HILLS (the Great Spread, Stage 5f: ~/.fanglands/work/spread/spec.md §4 "New places", §6, §13 STAGE 5)
+// src/86-bandits.js
+//
+// The jungle's north-east corner on the Grey Sea's south shore, built on its staked ground (93-spread staked it in Stage 4):
+//
+//   THE APPROACH     the Bandit Track comes down from Hollowford through rock-and-scrub hills (the jungle cut back to
+//                    thorn scrub, boulders and dead trees). A signpost where the track comes into the hills, and Wat the
+//                    carter with his rail: the bandits took his cart at their toll gate.
+//   THE TOLL GATE    the track ends at a gap in a ring of rock (CLIFF): the bandits' gate, its pole raised, and their toll
+//                    booth beside it (bandit_hills.toll). The ring runs round the hollow on three sides; the river that
+//                    runs down to the sea closes the fourth. The gap is the one way in on foot.
+//   THE HOLLOW       the bandits' camp: two tents, a fire (cook on it), their sacks of stolen goods, Wat's cart, and in
+//                    the rock at the back the mouth of their hideout, staked by the builders for later (an instance:
+//                    "Builders' stakes. The Bandit Hideout is coming."; port bandit_hills.hideout is the step before it).
+//
+// The bandits are people (MONSTER_DEFS `human`: they walk like people, traps do not catch them, and they die as 'person'
+// in 79-deaths), drawn with the core's drawHuman (MONSTER_LOOK.addType): four bandits (lv 12), two bandit archers (lv 15,
+// throwers: they keep back and throw bombs) and the bandit chief (lv 20). The spec's ranges (12-14, 15-17) take their low
+// end, as 87-critters and 86-wildplaces did. A fight the knight chooses: the track ends at the gate, no main road comes near
+// (the nearest is 40+ tiles off), and none of them can see Wat, his rail or the signpost. Multi combat (markBuilt's
+// `combat`), and the Goblin Camp's respawn rule (06-systems: a spawn with `outpost` is a camp monster: down 30 minutes,
+// back only while the knight is 40+ tiles away). When the last one falls: "BANDIT HILLS CLEARED", the sacks may be searched
+// once, the booth is empty, and Wat thanks the knight once the chief has been beaten (once ever). The inn's notice board
+// (84-crossroads' NOTICES) carries their WANTED notice.
+//
+// Every place: its stakes taken up, its REGIONS line its own (ATLAS.markBuilt), a rail (RAILS.add), its signpost, a person
+// in the 83-townsfolk look (83-townsart's 'bandits' family), a 6-tile dressing ring outside its box (the jungle thinning
+// to scrub), and its footprint in ATLAS.REVS[6] (WORLD_REV 6): the box with its ring.
+//
+// WHERE: every point in the place's own frame (ATLAS.planFrame: offsets from the staked box's top-left, 250,148). WHEN: on
+// the finished land (HOOKS.built), as 84, 85 and the other 86 files do; Wat is taken out of NPCS before every world (a
+// generateWorld wrapper, and a HOOKS.world pass). Its dice are its own (mulberry32 of its name).
+// The booth, the tents, the cart and the hideout mouth are solid: 95-thistledown's TD_PROP tile with this file's side table
+// (THINGS). The gate, the scrub and the sacks are DECO. The hideout's stakes and plaque are 93-spread's PROP cells (its
+// side table, place 'bandit_hideout'). The signpost is a SIGN tile with this file's words (ATLAS.signText and SIGN_ARMS ask
+// here first). No new tile id.
+// Feature file: registers through HOOKS. window.BANDITS is the test handle.
+// ============================================================================
+{
+  const A = ATLAS, Tn = n => (n in T ? T[n] : -1);
+  const ID = 'bandit_hills';
+  // built: 93-spread (which loads later) names the region for the place, not the builders; multi combat (01-atlas build)
+  A.markBuilt(ID, { sub: 'Bandits behind a ring of rock', combat: 'multi' });
+  const BF = A.planFrame(ID);
+  const RING = 6;
+  const SEED = (() => { let h = 2166136261; for (const c of '86-bandits') h = Math.imul(h ^ c.charCodeAt(0), 16777619); return h >>> 0; })();
+
+  // ---------- the plan: one glyph a tile, rows from the box's top-left (a missing glyph is '.') ----------
+  //   .  the hills as the land is: jungle trees, ferns, flowers and mushrooms go to open ground, now and then thorn scrub
+  //      (DECO) or a bare dry patch (its own dice); water, sand, dirt (the track) and ore stay; boulders make the hills
+  //   g  open grass          ,  a worn path          #  rock face (CLIFF)          o  a boulder (ROCK)
+  //   G  the toll gate (DECO: open, its pole up)          H  the hitching rail
+  //   B  the toll booth, T a tent, C Wat's cart, M the hideout's mouth (solid: TD_PROP cells in THINGS)
+  //   F  the fire (FIRE: cook on it)          L  the stolen sacks (DECO)          S  the signpost (SIGN, this file's words)
+  //   k  a builders' stake, P the builders' plaque (93-spread's PROP, place 'bandit_hideout')          @  a person
+  // The Bandit Track's own cells (its centre line, as 97-spreadchecks rounds it) are worn path wherever the plan says '.'.
+  // The ring: its north wall (row 10) has the gate at the track's end (12, 10); its west wall is column 1; its south wall
+  // (row 21) holds the hideout's mouth (7, 21); the river closes its east side (the water is never painted).
+  const PLAN = [
+    '..o......................',
+    '.oo.....S................',
+    '..o........oo............',
+    '............oo...........',
+    '.....H@,,....o...........',
+    '..o......................',
+    '.o.............oo........',
+    '.oo......................',
+    '..o....o........o........',
+    '.....oo......B...........',
+    '.###########G##########..',
+    '.#..........,....o.......',
+    '.#..T......,,....T.o.....',
+    '.#........,,.............',
+    '.#.......,,..............',
+    '.#.L...F,,...............',
+    '.#o....,,................',
+    '.#.....,.................',
+    '.#.....,...C.............',
+    '.#.....,.................',
+    '.#o...kPk................',
+    '.######M####.............',
+    '.........................',
+  ];
+  const glyph = (rx, ry) => (PLAN[ry] || '')[rx] || '.';
+  // the plan's own cells of a glyph, as [rx, ry] in the frame
+  const cellsOf = ch => { const out = []; PLAN.forEach((row, ry) => [...row].forEach((c, rx) => { if (c === ch) out.push([rx, ry]); })); return out; };
+  const [GATE_AT] = cellsOf('G'), [MOUTH_AT] = cellsOf('M');
+  const GATE = () => BF.p(...GATE_AT);
+  const MOUTH = () => BF.p(...MOUTH_AT);
+  // the ring's walls: the rock face and the hideout's mouth (the gate is its one gap; the river is its fourth side), and the
+  // hollow's rows: from the gate's row down to the mouth's
+  const WALLS = () => cellsOf('#').concat([MOUTH_AT]);
+  const HOLLOW_ROWS = () => [GATE_AT[1] + 1, MOUTH_AT[1] - 1];
+
+  // ---------- the people (NPCS rows; the id is a look in 83-townsart's 'bandits' family) ----------
+  const LINES = {
+    wat_carter: [
+      'Hello there. I am Wat. I carry pots and pans in my cart, from town to town.',
+      'Bandits put a gate across this track. They wanted ten coins from me. I did not have ten coins.',
+      'So they took my whole cart! It is in their camp, past the toll gate, inside the ring of rock.',
+      'There are lots of them. Some throw bombs from far away. If one lands by your feet, step away fast!',
+      'Their chief is the biggest. He swings a huge axe. Eat some food when you get hurt.',
+      'Beat the chief and the rest, and the track is safe again. Then I can get my cart back.',
+    ],
+  };
+  // after the chief has fallen: his cart is home (and, while the hills fill again, a word that the bandits are back)
+  const AFTER = {
+    wat_carter: [
+      'My cart is home. Pots and pans for everyone!',
+      'The track is safe, so I can sell my pots in every town again.',
+      'Thank you again for beating the bandit chief. You are very brave.',
+    ],
+  };
+  const BACK = {
+    wat_carter: [
+      'The bandits came back to their camp! My cart is safe at home, at least.',
+      'You beat them once. Beat them again and the track is safe again.',
+    ],
+  };
+  const WORDS = {
+    thanks: 'You beat the bandit chief! My cart is free and the track is safe again. Thank you! Here, take these coins.',
+    booth: 'The bandits\' toll booth. A board on it says: TOLL, TEN COINS. PAY OR GO HOME.',
+    boothEmpty: 'The toll booth is empty. Nobody will make you pay today.',
+    tent: 'A bandit tent. It smells of old socks and smoke.',
+    cart: "Wat's cart, full of pots and pans. The bandits took it.",
+    cartFree: "Wat's cart, full of pots and pans. Wat can fetch it now.",
+    mouth: 'A dark hole in the rock: the way into the bandits\' hideout. Builders have blocked it for now.',
+    gate: 'The bandits\' toll gate. The pole is up. They want you to walk in.',
+    sacksGuarded: 'Sacks of stolen things. The bandits guard them. Beat them first.',
+    sacksFound: 'You dig through the sacks and find 25 coins and a meat pie.',
+    sacksEmpty: 'Nothing else in the sacks. The bandits will steal more when they come back.',
+    scrub: 'A dry thorn bush. It scratches your knees.',
+    cleared: ['BANDIT HILLS CLEARED', 'The track is safe, for now'],
+  };
+  const REWARD = { wat_carter: 60 };
+  const PEOPLE = [
+    BF.pt({ id: 'wat_carter', name: 'Wat the carter', x: 11, y: 5, place: ID, tunic: '#4e6a3e', hair: '#a8a49c', beard: true, role: 'banditwatch', lines: LINES.wat_carter }),
+  ].map(n => Object.assign(n, { bandits: true }));
+
+  // ---------- the bandits ----------
+  // XP is the core's (hp x 4, and level x 10 from level 10): bandit 320, archer 342, chief 680.
+  // drops: always [[id,min,max]], table [[id,min,max,weight]] ('nothing' allowed), rare {chance, table} (01-items)
+  const DEFS = {
+    bandit: { name: 'Bandit', level: 12, r: 13, hp: 50, att: 13, maxHit: 7, def: 11, speed: 140, aggro: true, sight: 5 * TILE, respawn: 60, human: true,
+      drops: { always: [['coins', 8, 20]], table: [['nothing', 0, 0, 12], ['bread', 1, 1, 5], ['iron_dagger', 1, 1, 3], ['iron_arrow', 3, 8, 4]], rare: { chance: 30, table: [['iron_helm', 1, 1, 2], ['steel_dagger', 1, 1, 1]] } } },
+    // a thrower (07-update): keeps two and a half to five tiles off and throws a sticky bomb
+    bandit_archer: { name: 'Bandit archer', level: 15, r: 13, hp: 48, att: 15, maxHit: 8, def: 10, speed: 135, aggro: true, sight: 6 * TILE, respawn: 70, human: true, thrower: true,
+      drops: { always: [['coins', 10, 24]], table: [['nothing', 0, 0, 10], ['iron_arrow', 5, 12, 8], ['blast_powder', 1, 1, 3], ['shortbow', 1, 1, 2]], rare: { chance: 30, table: [['oak_bow', 1, 1, 1]] } } },
+    bandit_chief: { name: 'Bandit chief', level: 20, r: 15, hp: 120, att: 20, maxHit: 11, def: 16, speed: 130, aggro: true, sight: 5 * TILE, respawn: 300, human: true,
+      drops: { always: [['coins', 40, 80]], table: [['meat_pie', 1, 2, 6], ['steel_dagger', 1, 1, 3], ['steel_helm', 1, 1, 2]], rare: { chance: 12, table: [['steel_sword', 1, 1, 1]] } } },
+  };
+  Object.assign(MONSTER_DEFS, DEFS);
+  const TYPES = Object.keys(DEFS);
+
+  // ---------- where they wake: four bandits, two archers and the chief, all in the hollow ----------
+  // (the core clears trees, rocks and ore in the 3 x 3 round every spawn after the world passes: none stands by a boulder)
+  const SPAWNS = [
+    { type: 'bandit', at: () => BF.pts([[6, 13], [13, 14], [10, 17], [3, 18]]) },
+    { type: 'bandit_archer', at: () => BF.pts([[15, 13], [9, 19]]) },
+    { type: 'bandit_chief', at: () => [BF.p(5, 17)] },
+  ];
+  const spotsOf = s => s.at().map(([x, y]) => [Math.round(x), Math.round(y)]);
+
+  // ---------- the Bandit Track's own cells in the box (its centre line, each point rounded to its tile) ----------
+  const inB = (b, x, y) => x >= b[0] && x <= b[2] && y >= b[1] && y <= b[3];
+  function trackCells() {
+    const out = new Set(), pl = A.track('r8_bandit'), b = A.box(ID);
+    for (let k = 1; k < pl.length; k++) { const [ax, ay] = pl[k - 1], [bx, by] = pl[k], n = Math.ceil(Math.hypot(bx - ax, by - ay) * 20);
+      for (let s = 0; s <= n; s++) { const x = Math.round(ax + (bx - ax) * s / n), y = Math.round(ay + (by - ay) * s / n); if (inB(b, x, y)) out.add(idx(x, y)); } }
+    return out;
+  }
+
+  // ---------- the footprint (§10): WORLD_REV 6 ----------
+  const grow = (b, d) => [b[0] - d, b[1] - d, b[2] + d, b[3] + d];
+  const FOOT = () => [grow(A.box(ID), RING)];
+  if (A.REVS) A.REVS[6] = { stage: '5f', by: '86-bandits', why: 'The Bandit Hills: the box with its dressing ring', boxes: FOOT() };
+
+  // ---------- the rail ----------
+  const POSTS = {};
+  if (window.RAILS) RAILS.add({ id: ID, place: 'the rail by the Bandit Hills', at: () => POSTS[ID] || null });
+
+  // ---------- the state (quest.bandits: no positions; won (the chief beaten, ever), cleared (now), searched, thanked) ----------
+  const Q = () => { if (!quest.bandits || typeof quest.bandits !== 'object') quest.bandits = {}; return quest.bandits; };
+  const isBandit = m => { const s = m && m.home && campSpawnOf(m); return !!s && s.outpost === ID; };
+  const gang = () => monsters.filter(m => !m.phantom && isBandit(m));
+  const standing = () => gang().filter(m => !m.dead).length;
+
+  // ---------- the look: 86-banditart (drawHuman through MONSTER_LOOK.addType; pictures only, stripped from the server's copy) ----------
+
+  // ---------- the solid things: idx -> { kind, under } on TD_PROP cells (made in the built pass, emptied each world) ----------
+  const THINGS = new Map();
+  const SOLID_T = () => Tn('TD_PROP');
+  const THING_REACH = TILE * 2;   // px: how far a thing's drawing reaches past its own tile (the cull)
+  const shadow = (g, cx, y, rx) => { g.fillStyle = 'rgba(0,0,0,0.22)'; g.beginPath(); g.ellipse(cx, y, rx, rx * 0.28, 0, 0, 7); g.fill(); };
+  const PK = {
+    // the toll booth: a plank hut with a little window, a slanted roof and the board nailed by its door
+    booth: { use: () => (Q().cleared && standing() === 0 ? WORDS.boothEmpty : WORDS.booth),
+      draw(g, px, py) {
+        const cx = px + TILE / 2, base = py + TILE - 4;
+        shadow(g, cx, base, 22);
+        g.fillStyle = '#6b4a2a'; g.fillRect(cx - 18, base - 34, 36, 34);
+        g.strokeStyle = 'rgba(40,26,10,0.55)'; g.lineWidth = 1; for (let k = -2; k <= 2; k++) { g.beginPath(); g.moveTo(cx + k * 6, base - 34); g.lineTo(cx + k * 6, base); g.stroke(); }
+        g.fillStyle = '#2a1e14'; g.fillRect(cx - 10, base - 26, 12, 9); g.fillStyle = '#8a6a3a'; g.fillRect(cx - 11, base - 18, 14, 2);
+        g.fillStyle = '#5a3a22'; g.beginPath(); g.moveTo(cx - 23, base - 32); g.lineTo(cx + 23, base - 40); g.lineTo(cx + 23, base - 34); g.lineTo(cx - 23, base - 26); g.closePath(); g.fill();
+        g.fillStyle = '#d9c49a'; g.fillRect(cx + 4, base - 15, 13, 9); g.fillStyle = '#7a2a1e'; g.fillRect(cx + 6, base - 13, 9, 1.6); g.fillRect(cx + 6, base - 10, 7, 1.6);
+      } },
+    // a bandit tent: patched brown canvas on two poles, its flap open on the dark inside
+    tent: { use: WORDS.tent,
+      draw(g, px, py) {
+        const cx = px + TILE / 2, base = py + TILE - 5;
+        shadow(g, cx, base + 1, 26);
+        g.fillStyle = '#7a6448'; g.beginPath(); g.moveTo(cx - 26, base); g.lineTo(cx, base - 38); g.lineTo(cx + 26, base); g.closePath(); g.fill();
+        g.fillStyle = '#5e4a34'; g.beginPath(); g.moveTo(cx, base - 38); g.lineTo(cx + 26, base); g.lineTo(cx + 10, base); g.closePath(); g.fill();
+        g.fillStyle = '#1e1610'; g.beginPath(); g.moveTo(cx - 9, base); g.lineTo(cx, base - 24); g.lineTo(cx + 7, base); g.closePath(); g.fill();
+        g.fillStyle = '#8e7a52'; g.fillRect(cx - 18, base - 14, 7, 6); g.fillStyle = '#6a5a3a'; g.fillRect(cx + 12, base - 20, 6, 5);
+        g.strokeStyle = '#3e2c14'; g.lineWidth = 2; g.beginPath(); g.moveTo(cx, base - 38); g.lineTo(cx, base - 44); g.stroke();
+      } },
+    // Wat's cart: a two-wheeled cart, its load of pots and pans under a rope
+    cart: { use: () => (Q().won ? WORDS.cartFree : WORDS.cart),
+      draw(g, px, py) {
+        const cx = px + TILE / 2, base = py + TILE - 6;
+        shadow(g, cx, base + 2, 22);
+        g.strokeStyle = '#6b4a2a'; g.lineWidth = 3; g.beginPath(); g.moveTo(cx + 16, base - 12); g.lineTo(cx + 30, base - 6); g.stroke();
+        g.fillStyle = '#8a5a2b'; g.fillRect(cx - 19, base - 22, 36, 14); g.fillStyle = '#6b4a2a'; g.fillRect(cx - 19, base - 10, 36, 3);
+        for (const [x, r, c] of [[-11, 6, '#8f96a3'], [-1, 5, '#b8732e'], [9, 6, '#6e7178']]) { g.fillStyle = c; g.beginPath(); g.arc(cx + x, base - 23, r, Math.PI, 0); g.fill(); }
+        g.strokeStyle = '#c9b48a'; g.lineWidth = 1.2; g.beginPath(); g.moveTo(cx - 19, base - 24); g.lineTo(cx + 17, base - 26); g.stroke();
+        g.fillStyle = '#3a2a1a'; g.beginPath(); g.arc(cx - 2, base - 4, 8, 0, 7); g.fill(); g.fillStyle = '#6b4a2a'; g.beginPath(); g.arc(cx - 2, base - 4, 3, 0, 7); g.fill();
+      } },
+    // the hideout's mouth: a dark cave in the rock face, boards nailed across it
+    mouth: { use: WORDS.mouth, rock: true,
+      draw(g, px, py) {
+        const cx = px + TILE / 2, base = py + TILE;
+        g.fillStyle = '#0e0c0a'; g.beginPath(); g.moveTo(cx - 17, base); g.quadraticCurveTo(cx - 18, base - 34, cx, base - 36); g.quadraticCurveTo(cx + 18, base - 34, cx + 17, base); g.closePath(); g.fill();
+        g.strokeStyle = 'rgba(120,110,100,0.6)'; g.lineWidth = 2; g.stroke();
+        g.fillStyle = '#8a6a3a'; for (const [y, a] of [[-26, -0.2], [-14, 0.15]]) { g.save(); g.translate(cx, base + y); g.rotate(a); g.fillRect(-19, -3, 38, 6); g.fillStyle = '#4a3a2a'; g.fillRect(-15, -1, 2, 2); g.fillRect(13, -1, 2, 2); g.fillStyle = '#8a6a3a'; g.restore(); }
+      } },
+  };
+
+  // ---------- DECO: the toll gate, thorn scrub, the stolen sacks ----------
+  DECO.kind('bandit_gate', { use: WORDS.gate, foot: 2,
+    draw(g, px, py) {
+      const base = py + TILE - 4;
+      for (const x of [px + 4, px + TILE - 8]) { g.fillStyle = '#5a3a22'; g.fillRect(x, base - 30, 5, 30); g.fillStyle = '#3e2814'; g.fillRect(x, base - 30, 5, 3); }
+      // the pole, raised: red and white bands, hinged on the left post
+      g.save(); g.translate(px + 6.5, base - 26); g.rotate(-1.15);
+      for (let k = 0; k < 6; k++) { g.fillStyle = k % 2 ? '#efe6d4' : '#b8352b'; g.fillRect(k * 7, -2.5, 7, 5); }
+      g.restore();
+      g.fillStyle = '#3e2c14'; g.fillRect(px + TILE - 9, base - 22, 7, 3);
+    } });
+  DECO.kind('bandit_scrub', { use: WORDS.scrub,
+    draw(g, px, py, c, tx, ty) {
+      const cx = px + TILE / 2 + ((tx * 7 + ty * 3) % 9) - 4, base = py + TILE - 8 - ((tx + ty * 5) % 5);
+      g.fillStyle = 'rgba(0,0,0,0.16)'; g.beginPath(); g.ellipse(cx, base + 3, 13, 4, 0, 0, 7); g.fill();
+      g.strokeStyle = '#6a5a3a'; g.lineWidth = 1.4;
+      for (let k = 0; k < 7; k++) { const a = -Math.PI / 2 + (k - 3) * 0.38; g.beginPath(); g.moveTo(cx, base); g.lineTo(cx + Math.cos(a) * (10 + (k % 3) * 2), base + Math.sin(a) * (11 + (k % 2) * 3)); g.stroke(); }
+      for (let k = 0; k < 6; k++) { g.fillStyle = k % 2 ? '#7d7a42' : '#8e8a4c'; g.beginPath(); g.ellipse(cx + ((k * 11) % 16) - 8, base - 6 - ((k * 5) % 8), 4, 2.6, k * 0.8, 0, 7); g.fill(); }
+    } });
+  DECO.kind('bandit_sacks', { use: () => sacksUse(),
+    draw(g, px, py) {
+      const cx = px + TILE / 2, base = py + TILE - 6;
+      shadow(g, cx, base + 2, 20);
+      for (const [x, y, w, h, c] of [[-9, -8, 9, 11, '#a08a5a'], [6, -7, 10, 12, '#8e7a4e'], [-1, -16, 8, 10, '#b09a6a']]) {
+        g.fillStyle = c; g.beginPath(); g.ellipse(cx + x, base + y, w, h, 0, 0, 7); g.fill(); g.fillStyle = '#5a4630'; g.fillRect(cx + x - 2, base + y - h + 1, 4, 2.5); }
+      g.fillStyle = '#d9b84a'; g.beginPath(); g.arc(cx + 14, base - 1, 2.5, 0, 7); g.arc(cx + 10, base + 1, 2.2, 0, 7); g.fill();
+    } });
+
+  // ---------- the sacks: searched once a clear ----------
+  function sacksUse() {
+    const q = Q();
+    if (!q.cleared || standing() > 0) return WORDS.sacksGuarded;
+    if (q.searched) return WORDS.sacksEmpty;
+    q.searched = 1; addItem('coins', 25); giveOrDrop('meat_pie', 1, player.x, player.y); sfx('open'); save();
+    return WORDS.sacksFound;
+  }
+
+  // ---------- the signpost: its words and its arms ----------
+  const SIGNS = new Map();   // idx -> { words, arms }
+  const SIGN_WORDS = { words: '→ The Bandit Hills, through the toll gate. Bandits! Go in only when you are strong.   → Hollowford, back along the Bandit Track.',
+    arms: [[-42, 'BANDITS', false, false], [-26, 'HOLLOWFORD', false, true]] };
+  { const prev = A.signText; A.signText = (tx, ty) => { const s = !window.__instance && SIGNS.get(idx(tx, ty)); return s && tileAt(tx, ty) === T.SIGN ? s.words : prev(tx, ty); }; }
+  let armsWrapped = false;
+  const wrapArms = () => { if (armsWrapped || typeof window.SIGN_ARMS !== 'function') return; armsWrapped = true;
+    const prev = window.SIGN_ARMS; window.SIGN_ARMS = (tx, ty) => { const s = !window.__instance && SIGNS.get(idx(tx, ty)); return s && tileAt(tx, ty) === T.SIGN ? s.arms : prev(tx, ty); }; };
+
+  // ---------- the inn's notice board (84-crossroads): the WANTED notice ----------
+  const NOTICE = () => (Q().won
+    ? 'NEWS: A brave knight beat the bandit chief in the Bandit Hills! Wat the carter has his cart back.'
+    : 'WANTED: the bandits of the Bandit Hills. They stop carts at a toll gate at the end of the Bandit Track, past Hollowford. Wat the carter will thank whoever beats their chief.');
+  if (window.CROSSROADS && Array.isArray(CROSSROADS.NOTICES)) CROSSROADS.NOTICES.push(NOTICE);
+
+  // ---------- the pass (HOOKS.built: the finished land) ----------
+  // Wat out of NPCS BEFORE a world is made (the passes before HOOKS.built keep rings clear round people with dice)
+  const unBuild = () => {
+    THINGS.clear(); SIGNS.clear();
+    for (let i = NPCS.length - 1; i >= 0; i--) if (NPCS[i].bandits) NPCS.splice(i, 1);
+  };
+  { const _generateWorld = generateWorld; generateWorld = function () { unBuild(); return _generateWorld.apply(this, arguments); }; }
+  HOOKS.world.unshift(unBuild);
+  const STATS_B = { };
+  HOOKS.built.push((rnd0, api) => {
+    const set = api.setTile, at = api.tileAt, rnd = mulberry32(SEED);
+    const S = STATS_B; S.stakes = 0; S.cliff = 0; S.ring = 0; S.scrub = 0; S.cleared = 0; S.paths = 0; S.kept = []; S.hideout = 0;
+    wrapArms();
+    const SG = window.SPREAD_GROUND;
+    const NATURE = new Set([T.TREE, T.OAK, T.FLOWERS, T.MUSHROOM, Tn('JUNGLE'), Tn('FERN'), Tn('PALM'), T.STUMP].filter(v => v >= 0));
+    // what the plan never paints over: ore, berry bushes, signposts, chests, rock faces and water (the river closes the ring)
+    const KEEP = new Set(['IRON', 'COAL', 'BLACKIRON', 'SUNSTONE', 'STORMSTONE', 'MITHRIL', 'BERRY_BUSH', 'SIGN', 'CHEST', 'CLIFF', 'WATER', 'SAND'].map(Tn).filter(v => v >= 0));
+    const CLIFF = Tn('CLIFF'), box = A.box(ID), TRACK = trackCells();
+
+    // 1. the stakes come up: each one's ground goes back
+    if (SG) for (const [i, p] of [...SG.PROPS]) if (p.place === ID) { set(i % MAP_W, (i / MAP_W) | 0, p.under); SG.PROPS.delete(i); S.stakes++; }
+
+    // 2. the plan (every tile of the box, row by row; one die for every tile, so the stream never shifts)
+    // (round every spawn and person, the ground stays clear of scrub; the track's own cells are worn path)
+    const quiet = new Set(), hush = (x, y) => { for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) quiet.add(idx(x + dx, y + dy)); };
+    for (const s of SPAWNS) for (const [x, y] of spotsOf(s)) hush(x, y);
+    for (const n of PEOPLE) hush(n.x, n.y);
+    const thing = (x, y, kind) => { const t = SOLID_T(); if (t < 0) return; THINGS.set(idx(x, y), { kind, under: at(x, y) === t ? T.GRASS : (SOLID.has(at(x, y)) ? T.DIRT : at(x, y)) }); set(x, y, t); };
+    const open = (x, y) => { const t = at(x, y); if (NATURE.has(t) || t === T.DIRT || SOLID.has(t) && !KEEP.has(t)) set(x, y, T.GRASS); };
+    const stake = (x, y, kind) => { if (!SG || T.PROP === undefined) return; SG.PROPS.set(idx(x, y), { kind, place: 'bandit_hideout', under: T.DIRT }); set(x, y, T.PROP); S.hideout++; };
+    const posts = {};
+    for (let ry = 0; ry < BF.h; ry++) for (let rx = 0; rx < BF.w; rx++) {
+      const ch = glyph(rx, ry), [x, y] = BF.p(rx, ry), t = at(x, y), i = idx(x, y), r = rnd();
+      if (!inMap(x, y)) continue;
+      if (KEEP.has(t)) { if (ch !== '.' && ch !== 'g') S.kept.push(ch + '@' + x + ',' + y + ':' + tileName(t)); continue; }
+      if (ch === '.' || ch === 'g') {
+        if (TRACK.has(i)) { set(x, y, T.DIRT); S.paths++; continue; }
+        if (NATURE.has(t) || t === Tn('DEADTREE') || t === Tn('DEAD_TREE')) { set(x, y, T.GRASS); S.cleared++; }
+        if (ch === 'g' || quiet.has(i) || at(x, y) !== T.GRASS) continue;
+        // the hills: thorn scrub now and then, a bare dry patch now and then
+        if (r < 0.13) { DECO.put(api, x, y, 'bandit_scrub'); S.scrub++; } else if (r < 0.16) set(x, y, T.DIRT);
+        continue;
+      }
+      if (ch === '#') { set(x, y, CLIFF); S.cliff++; continue; }
+      if (ch === ',') { set(x, y, T.DIRT); S.paths++; continue; }
+      if (ch === 'o') { set(x, y, T.ROCK); continue; }
+      if (ch === '@') { open(x, y); continue; }
+      if (ch === 'H') { set(x, y, T.HITCH); posts[ID] = { x, y }; continue; }
+      if (ch === 'F') { set(x, y, T.FIRE); continue; }
+      if (ch === 'G') { set(x, y, T.DIRT); DECO.put(api, x, y, 'bandit_gate'); continue; }
+      if (ch === 'L') { set(x, y, T.DIRT); DECO.put(api, x, y, 'bandit_sacks'); continue; }
+      if (ch === 'S') { open(x, y); set(x, y, T.SIGN); SIGNS.set(i, SIGN_WORDS); continue; }
+      if (ch === 'B') { set(x, y, T.DIRT); thing(x, y, 'booth'); continue; }
+      if (ch === 'T') { set(x, y, T.DIRT); thing(x, y, 'tent'); continue; }
+      if (ch === 'C') { set(x, y, T.DIRT); thing(x, y, 'cart'); continue; }
+      if (ch === 'M') { set(x, y, CLIFF); thing(x, y, 'mouth'); continue; }
+      if (ch === 'k') { set(x, y, T.DIRT); stake(x, y, 'stake'); continue; }
+      if (ch === 'P') { set(x, y, T.DIRT); stake(x, y, 'plaque'); continue; }
+    }
+    Object.keys(POSTS).forEach(k => delete POSTS[k]); Object.assign(POSTS, posts);
+
+    // 3. Wat
+    for (const n of PEOPLE) { if (!NPCS.includes(n)) NPCS.push(n); initNpc(n); if (SOLID.has(at(n.x, n.y))) set(n.x, n.y, T.GRASS); }
+
+    // 4. the bandits: each where its point says (the ground round it is open), each marked as the hills' (the camp's rule)
+    for (const s of SPAWNS) {
+      const pts = spotsOf(s), n0 = MONSTER_SPAWNS.length;
+      for (const [x, y] of pts) for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (NATURE.has(at(x + dx, y + dy))) set(x + dx, y + dy, T.GRASS);
+      api.spawnList(s.type, pts);
+      for (let k = n0; k < MONSTER_SPAWNS.length; k++) { MONSTER_SPAWNS[k].by = '86-bandits'; MONSTER_SPAWNS[k].outpost = ID; }
+    }
+
+    // 5. the dressing ring: the jungle thins to fern, grass and thorn scrub toward the box over RING tiles (its own dice),
+    // never on a road's lanes, by a person or a spawn, in the water or the Hollowford burn, or near another place's box
+    const roadD = (x, y) => { let best = 99; for (const tid of A.ROAD_IDS) { const pl = A.track(tid); for (let k = 1; k < pl.length; k++) { const [ax, ay] = pl[k - 1], [bx, by] = pl[k];
+      if (x < Math.min(ax, bx) - 4 || x > Math.max(ax, bx) + 4 || y < Math.min(ay, by) - 4 || y > Math.max(ay, by) + 4) continue;
+      const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy || 1, u = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / l2)); best = Math.min(best, Math.hypot(x - ax - u * dx, y - ay - u * dy)); } } return best; };
+    const busy = new Set(), mark = (x, y, r) => { for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) busy.add(idx(x + dx, y + dy)); };
+    for (const n of NPCS) mark(n.x, n.y, 1);
+    for (const s of MONSTER_SPAWNS) mark(s.tx, s.ty, 1);
+    for (const pid in A.PORTS) { const p = A.port(pid); if (p) mark(Math.round(p[0]), Math.round(p[1]), 1); }
+    for (const b of BUILDINGS) for (let y = b.y - 1; y <= b.y + b.h; y++) for (let x = b.x - 1; x <= b.x + b.w; x++) busy.add(idx(x, y));
+    const others = Object.keys(A.ANCHORS).filter(id => id !== ID && A.box(id)).map(id => A.box(id));
+    const JUNGLY = new Set([Tn('JUNGLE'), T.TREE, T.OAK, Tn('PALM'), Tn('FERN')].filter(v => v >= 0)), FERN = Tn('FERN');
+    const free = (x, y) => inMap(x, y) && x > 0 && y > 0 && !busy.has(idx(x, y)) && !others.some(q => x >= q[0] - 3 && x <= q[2] + 3 && y >= q[1] - 3 && y <= q[3] + 3) && roadD(x, y) > 2.5;
+    for (let y = box[1] - RING; y <= box[3] + RING; y++) for (let x = box[0] - RING; x <= box[2] + RING; x++) {
+      const d = Math.max(box[0] - x, x - box[2], box[1] - y, y - box[3]); if (d < 1) continue;
+      const r = rnd(), r2 = rnd();
+      if (!free(x, y) || !JUNGLY.has(at(x, y))) continue;
+      // (thinned most by the box, hardly at all six tiles out)
+      if (r >= 0.85 - 0.13 * (d - 1)) continue;
+      if (at(x, y) === FERN && d >= 4) continue;
+      if (d <= 3 && r2 < 0.3) { set(x, y, T.GRASS); DECO.put(api, x, y, 'bandit_scrub'); S.scrub++; }
+      else set(x, y, d >= 4 && FERN >= 0 ? FERN : T.GRASS);
+      S.ring++;
+    }
+  });
+
+  // ---------- the solid things: what E says, and how each is drawn (the ground beneath first, then the thing) ----------
+  HOOKS.use.push((t, tx, ty) => {
+    if (window.__instance || t !== SOLID_T()) return false;
+    const c = THINGS.get(idx(tx, ty)); if (!c || !PK[c.kind]) return false;
+    const u = PK[c.kind].use; notify(typeof u === 'function' ? u() : u);
+    return true;
+  });
+  HOOKS.draw.push((g, items) => {
+    if (window.__instance || !THINGS.size) return;
+    for (const [i, c] of THINGS) {
+      const tx = i % MAP_W, ty = (i / MAP_W) | 0, px = tx * TILE, py = ty * TILE;
+      if (map[i] !== SOLID_T() || !PK[c.kind]) continue;
+      if (px + TILE + THING_REACH < cam.x || px - THING_REACH > cam.x + VW || py + TILE + THING_REACH < cam.y || py - THING_REACH > cam.y + VH) continue;
+      const v = variant[i] % 3, under = PK[c.kind].rock ? Tn('CLIFF') : c.under;
+      items.push({ y: -1e9 + 1, draw: () => { const img = tex[TEX_NAME[under] + v]; if (img) g.drawImage(img, px, py, TILE, TILE); } });
+      items.push({ y: py + TILE - 3, draw: () => PK[c.kind].draw(g, px, py) });
+    }
+  });
+
+  // ---------- clearing the hills: the banner once a clear, and the sacks, the booth and the thanks it opens ----------
+  HOOKS.monsterDeath.push(m => {
+    if (!isBandit(m)) return;
+    const q = Q();
+    if (m.type === 'bandit_chief') q.won = 1;
+    if (!q.cleared && gang().length && standing() === 0) {
+      q.cleared = 1; q.searched = 0;
+      levelBanner = { text: WORDS.cleared[0], sub: WORDS.cleared[1], t: 4 }; sfx('levelup'); save();
+    }
+  });
+  // when one comes back, the hills are filling again: the next full clear earns the banner (and the sacks) again
+  let refillT = 0;
+  HOOKS.update.push(dt => {
+    if (window.__instance || (refillT -= dt) > 0) return; refillT = 1;
+    const q = quest.bandits; if (q && q.cleared && standing() > 0) q.cleared = 0;
+  });
+
+  // ---------- talking: Wat a line at a time; once the chief has been beaten, thanks (once ever), then his after-the-win
+  // lines (the review of bcb559f: he went back to "they took my cart" after paying for it) ----------
+  const SAID = {};
+  // which story he tells now: 'before' the chief falls; 'after' once he has (his cart is home); 'back' while the hills are
+  // filling again after that
+  const mood = () => { const q = Q(); return !q.won ? 'before' : (!q.cleared && standing() > 0) ? 'back' : 'after'; };
+  const linesOf = (n, m) => (m === 'before' ? n.lines : (m === 'back' ? BACK : AFTER)[n.id] || n.lines);
+  const nextLine = n => { const m = mood(), L = linesOf(n, m), key = n.id + ':' + m; const k = SAID[key] = ((SAID[key] === undefined ? -1 : SAID[key]) + 1) % L.length; return L[k]; };
+  HOOKS.talk.banditwatch = n => {
+    const q = Q();
+    if (!q.met) { q.met = 1; if (!q.won) { quest.tracked = 'wat_cart'; notify(`New quest: Wat's Cart. ${touchMode() ? 'Tap QUESTS' : 'Press ' + keyName('J')} to read it.`); } save(); }
+    if (q.won && !q.thanked) { q.thanked = 1; addItem('coins', REWARD[n.id]); say(WORDS.thanks, n.name); burst(player.x, player.y, '#ffd166', 12, 60); save(); return; }
+    say(nextLine(n), n.name);
+  };
+
+  // ---------- the quest book (J) and the map: Wat's Cart, from the first word with him to his thanks (the review of
+  // bcb559f: the story was in no book and on no map) ----------
+  QUEST_DEFS.wat_cart = { name: "Wat's Cart" };
+  HOOKS.questText.wat_cart = () => { const q = Q(); return q.thanked ? 'Done.' : q.won ? 'The bandit chief is beaten! Go back and tell Wat the carter.' : "Bandits took Wat the carter's cart. Go in past their toll gate and beat the bandit chief."; };
+  HOOKS.activeQuests.push(() => { const q = quest.bandits; return q && q.met && !q.thanked ? ['wat_cart'] : []; });
+  if (HOOKS.mapTarget) HOOKS.mapTarget.push(() => { const q = quest.bandits; if (!q || !q.met || q.thanked) return null;
+    if (q.won) { const w = PEOPLE[0]; return { x: w.x, y: w.y, label: 'Wat the carter', id: 'wat_cart' }; }
+    const [x, y] = GATE().map(Math.round); return { x, y, label: "The bandits' toll gate", id: 'wat_cart' }; });
+
+  // ---------- 42-playthrough: the bandits on the curve ----------
+  if (HOOKS.xpSource) HOOKS.xpSource.push(add => {
+    for (const [type, req, where] of [['bandit', 12, 'a bandit in the Bandit Hills'], ['bandit_archer', 15, 'a bandit archer in the Bandit Hills'], ['bandit_chief', 20, 'the bandit chief']]) {
+      const m = MONSTER_DEFS[type]; add('melee', where, req, m.hp * 4 + m.level * 10, 40, '86-bandits, the camp rule: back 30 minutes after a clear');
+    }
+  });
+
+  // ---------- the handle ----------
+  window.BANDITS = { ID, PLAN, PEOPLE, LINES, AFTER, BACK, mood, WORDS, REWARD, DEFS, SPAWNS, spotsOf, GATE, MOUTH, WALLS, POSTS, STATS: STATS_B, THINGS, SIGNS, FOOT, BF, Q, gang, standing, isBandit, trackCells, NOTICE };
+
+  // ---------- self-tests ----------
+  HOOKS.selfTest.push((check, Fh, h) => {
+    const P = 'bandits: ', tiles = window.PLAYTHROUGH ? PLAYTHROUGH.pristine : map;
+    const segD = (px, py, ax, ay, bx, by) => { const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy || 1, u = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / l2)); return Math.hypot(px - ax - u * dx, py - ay - u * dy); };
+    const roadD = (x, y, ids) => { let b = Infinity; for (const id of ids) { const pl = A.track(id); for (let k = 1; k < pl.length; k++) b = Math.min(b, segD(x, y, pl[k - 1][0], pl[k - 1][1], pl[k][0], pl[k][1])); } return b; };
+    const SG = window.SPREAD_GROUND, box = A.box(ID), CLIFF = Tn('CLIFF');
+    // a 4-connected walk from the cave mouth over the fresh map (closed: tiles shut for the walk)
+    const walk = closed => { const N = MAP_W * MAP_H, seen = new Uint8Array(N), q = new Int32Array(N); let n = 0;
+      const pass = t => !SOLID.has(t) || PUSH_THROUGH.has(t) || t === Tn('WARDEN_GATE') || t === Tn('LAIR_GATE');
+      const take = i => { if (!seen[i] && pass(tiles[i]) && !(closed && closed.has(i))) { seen[i] = 1; q[n++] = i; } };
+      const [mx, my] = A.port('cave.mouth'); take(idx(mx, my));
+      for (let k = 0; k < n; k++) { const c = q[k], x = c % MAP_W; if (x > 0) take(c - 1); if (x < MAP_W - 1) take(c + 1); if (c >= MAP_W) take(c - MAP_W); if (c + MAP_W < N) take(c + MAP_W); }
+      const at = (x, y) => inMap(x, y) && !!seen[idx(x, y)];
+      return Object.assign((x, y) => [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => at(x + dx, y + dy)), { at }); };
+    const reach = walk();
+    const mine = MONSTER_SPAWNS.filter(s => s.by === '86-bandits');
+    // the hollow: every tile the ring holds (inside its walls, west of the river)
+    const [r0, r1] = HOLLOW_ROWS(), west = Math.min(...WALLS().map(([rx]) => rx)) + 1;
+    const hollow = []; for (let ry = r0; ry <= r1; ry++) for (let rx = west; rx < BF.w; rx++) { const [x, y] = BF.p(rx, ry); if (tiles[idx(x, y)] === T.WATER) break; hollow.push([x, y]); }
+
+    // 1. built: no stake or plaque of theirs left, the region names the place, WORLD_REV 6 with the footprint; multi combat
+    { const left = SG ? [...SG.PROPS.values()].filter(p => p.place === ID).length : -1;
+      const reg = REGIONS.find(r => r.atlas === ID), sub = !!reg && reg.sub === A.BUILT.get(ID).sub && !/staked/.test(reg.sub);
+      const R = A.REVS && A.REVS[6], foot = !!R && R.boxes.some(b => b[0] <= box[0] - RING && b[1] <= box[1] - RING && b[2] >= box[2] + RING && b[3] >= box[3] + RING);
+      const mid = [(box[0] + box[2]) >> 1, (box[1] + box[3]) >> 1], zone = A.zoneAt('over', mid[0], mid[1]), combat = A.combatAt('over', mid[0], mid[1]);
+      check(P + 'the Bandit Hills are built: their builders\' stakes and plaque are gone, the region names the place, it is multi combat, and WORLD_REV 6 declares the box with its 6-tile ring as its footprint',
+        left === 0 && STATS_B.stakes > 0 && sub && WORLD_REV >= 6 && foot && A.isBuilt(ID) && zone === ID && combat === 'multi', { left, stakes: STATS_B.stakes, sub: reg && reg.sub, WORLD_REV, foot, zone, combat }); }
+
+    // 2. the ring: rock all round the hollow but the toll gate, the river on its far side; every tile of the hollow is
+    // reached from the cave mouth, and with the gate shut none is; the hideout's mouth is solid rock, staked, with its plaque;
+    // nothing the plan meant to paint was ore or water
+    { const walls = WALLS().map(([rx, ry]) => { const [x, y] = BF.p(rx, ry); return SOLID.has(tiles[idx(x, y)]) && (tiles[idx(x, y)] === CLIFF || THINGS.has(idx(x, y))); });
+      const [gx, gy] = GATE(), shut = walk(new Set([idx(gx, gy)]));
+      const open = hollow.filter(([x, y]) => !SOLID.has(tiles[idx(x, y)]));
+      const reached = open.every(([x, y]) => reach.at(x, y)), sealed = open.every(([x, y]) => !shut.at(x, y));
+      // the far side: each row of the hollow ends at the river
+      const river = []; for (let ry = r0; ry <= r1; ry++) { let rx = west; while (rx < BF.w && tiles[idx(...BF.p(rx, ry))] !== T.WATER) rx++; river.push(rx < BF.w); }
+      const [mx, my] = MOUTH(), mouth = THINGS.get(idx(mx, my)), plaque = SG && [...SG.PROPS.entries()].find(([, p]) => p.place === 'bandit_hideout' && p.kind === 'plaque');
+      const stakes = SG ? [...SG.PROPS.values()].filter(p => p.place === 'bandit_hideout' && p.kind === 'stake').length : 0;
+      const step = A.port('bandit_hills.hideout'), words = SG && SG.plaqueText ? SG.plaqueText('bandit_hideout') : null;
+      check(P + "a ring of rock with one gap (the toll gate at the Bandit Track's end) and the river on its far side: every open tile of the hollow is reached from the cave mouth, and with the gate shut none is; the hideout's mouth is solid in the rock, two builders' stakes and a plaque before it (\"Builders' stakes. The Bandit Hideout is coming.\") on its step (bandit_hills.hideout)",
+        walls.every(Boolean) && walls.length >= 40 && !SOLID.has(tiles[idx(gx, gy)]) && reach(gx, gy) && open.length >= 80 && reached && sealed && river.every(Boolean) && !!mouth && mouth.kind === 'mouth' && SOLID.has(tiles[idx(mx, my)])
+        && !!plaque && plaque[0] === idx(Math.round(step[0]), Math.round(step[1])) && stakes === 2 && words === "Builders' stakes. The Bandit Hideout is coming." && reach(Math.round(step[0]), Math.round(step[1])) && !STATS_B.kept.length,
+        { walls: walls.length, bad: walls.filter(b => !b).length, open: open.length, reached, sealed, river, mouth: !!mouth, plaque: !!plaque, stakes, words, kept: STATS_B.kept }); }
+
+    // 3. the bandits: four bandits (lv 12), two archers (lv 15, throwers), the chief (lv 20); people who die as people; each
+    // in the hollow (the Atlas zone, multi) on open ground, under the camp's rule; none can see Wat, his rail or the
+    // signpost; no main road near; no other creature wakes in the box
+    { const bad = [], want = { bandit: 4, bandit_archer: 2, bandit_chief: 1 }, got = {};
+      const D = MONSTER_DEFS, lv = TYPES.map(t => [t, D[t].level]), ok = D.bandit.level === 12 && D.bandit_archer.level === 15 && D.bandit_chief.level === 20 && TYPES.every(t => D[t].human && D[t].aggro) && D.bandit_archer.thrower && !D.bandit.thrower && !D.bandit_chief.thrower;
+      const dies = window.DEATHS ? TYPES.map(t => DEATHS.kindOf(t)) : [];
+      const inHollow = new Set(hollow.map(([x, y]) => idx(x, y)));
+      const calm = [...PEOPLE.map(p => [p.x, p.y]), ...[...SIGNS.keys()].map(i => [i % MAP_W, (i / MAP_W) | 0]), POSTS[ID] ? [POSTS[ID].x, POSTS[ID].y] : null].filter(Boolean);
+      for (const s of mine) {
+        got[s.type] = (got[s.type] || 0) + 1; const at = s.type + '@' + s.tx + ',' + s.ty, sight = D[s.type].sight / TILE;
+        if (!inHollow.has(idx(s.tx, s.ty)) || A.zoneAt('over', s.tx, s.ty) !== ID) bad.push(at + ' zone ' + A.zoneAt('over', s.tx, s.ty));
+        if (SOLID.has(tiles[idx(s.tx, s.ty)]) || !reach(s.tx, s.ty)) bad.push(at + ' not on open ground reached');
+        for (const [x, y] of calm) if (Math.hypot(x - s.tx, y - s.ty) <= sight + 2.5) bad.push(at + ' sees ' + x + ',' + y);
+        if (roadD(s.tx, s.ty, A.MAIN_ROADS) < 6) bad.push(at + ' by a main road');
+        const m = monsters.find(q => Math.floor(q.home.x / TILE) === s.tx && Math.floor(q.home.y / TILE) === s.ty && q.type === s.type);
+        if (!m || !isCampMonster(m) || isGoblinCampMonster(m) || !isBandit(m)) bad.push(at + ' not under the camp rule');
+      }
+      const others = MONSTER_SPAWNS.filter(s => s.by !== '86-bandits' && inB(box, s.tx, s.ty)).map(s => s.type + '@' + s.tx + ',' + s.ty);
+      check(P + 'the hollow holds four bandits (lv 12), two bandit archers (lv 15, throwers) and the bandit chief (lv 20): people who attack on sight and die as people, each in the hollow (its Atlas zone) on open ground under the camp\'s respawn rule; none can see Wat, his rail or the signpost, none is near a main road, and no other creature wakes in the box',
+        ok && dies.length === 3 && dies.every(k => k === 'person') && !bad.length && JSON.stringify(got) === JSON.stringify(want) && !others.length, { lv, dies, bad, got, others }); }
+
+    // 5. clearing them: the last one down shows "BANDIT HILLS CLEARED" once (not the camp's banner); each stays down 30
+    // minutes and waits while the knight is near; then the sacks give 25 coins and a meat pie once, the booth is empty, and Wat
+    // thanks the knight once (60 coins); far off they come back and the hills fill again
+    { const g = gang(), snap = g.map(m => ({ m, dead: m.dead, hp: m.hp, respawnT: m.respawnT, deadT: m.deadT, state: m.state, x: m.x, y: m.y }));
+      const keep = { bq: JSON.parse(JSON.stringify(quest.bandits || {})), inv: JSON.parse(JSON.stringify(player.inv)), camp: quest.campCleared, x: player.x, y: player.y, f: { ...player.facing } };
+      const res = {};
+      try {
+        quest.bandits = {}; quest.campCleared = false; player.inv = new Array(INV_SLOTS).fill(null);
+        Fh.tp(...ATLAS.frame('drill_field').p(60, 40)); levelBanner = null; dialog.queue.length = 0; advanceDialog();
+        res.guarded = sacksUse();
+        const last = g.find(m => m.type === 'bandit');
+        for (const m of g) if (m !== last) { m.dead = true; m.deadT = 0; m.respawnT = 999; if (m.type === 'bandit_chief') Q().won = 1; }
+        res.notYet = !Q().cleared;
+        const booth = [...THINGS].find(([, c]) => c.kind === 'booth'); notice = null; for (const f of HOOKS.use) if (f(SOLID_T(), booth[0] % MAP_W, (booth[0] / MAP_W) | 0)) break; res.boothBefore = notice && notice.text;
+        last.dead = false; last.hp = 1; last.x = last.home.x; last.y = last.home.y; killMonster(last);
+        res.banner = !!levelBanner && levelBanner.text === WORDS.cleared[0] && levelBanner.sub === WORDS.cleared[1];
+        res.campBanner = quest.campCleared; res.slow = last.respawnT === CAMP_RESPAWN; res.cleared = Q().cleared === 1 && Q().won === 1;
+        notice = null; for (const f of HOOKS.use) if (f(SOLID_T(), booth[0] % MAP_W, (booth[0] / MAP_W) | 0)) break; res.booth = notice && notice.text;
+        const c0 = coins(); res.found = sacksUse(); res.coins = coins() - c0; res.pie = countItem('meat_pie'); res.again = sacksUse();
+        const wat = PEOPLE[0]; const c1 = coins(); talkTo(wat); res.thanks = coins() - c1; talkTo(wat); res.thanks2 = coins() - c1; dialog.queue.length = 0; advanceDialog();
+        res.notice = /NEWS/.test(NOTICE());
+        // near (by Wat, 10 tiles off) it waits; far off it comes back, and the hills fill again
+        levelBanner = null; last.respawnT = 0; Fh.tp(wat.x, wat.y + 1); h.peace(true); Fh.sim(5, []); res.waits = last.dead;
+        Fh.tp(...ATLAS.frame('drill_field').p(60, 40)); Fh.sim(80, []); h.peace(false); res.back = !last.dead && Q().cleared === 0;
+      } finally {
+        for (const s of snap) Object.assign(s.m, { dead: s.dead, hp: s.hp, respawnT: s.respawnT, deadT: s.deadT, state: s.state, x: s.x, y: s.y });
+        quest.bandits = keep.bq; player.inv = keep.inv; quest.campCleared = keep.camp; player.x = keep.x; player.y = keep.y; player.facing = keep.f; levelBanner = null; notice = null;
+        dialog.queue.length = 0; advanceDialog(); drops = drops.filter(d => !g.some(m => dist(d.x, d.y, m.home.x, m.home.y) < THING_REACH));
+      }
+      check(P + 'clearing the hills: the last bandit down shows "BANDIT HILLS CLEARED" (not the camp\'s banner), each stays down 30 minutes and waits while the knight is near; the sacks give 25 coins and a meat pie once, the toll booth is empty, Wat thanks the knight once (60 coins) and the inn\'s notice tells the news; far off they come back and the hills fill again',
+        res.guarded === WORDS.sacksGuarded && res.notYet && res.boothBefore === WORDS.booth && res.banner && !res.campBanner && res.slow && res.cleared && res.booth === WORDS.boothEmpty && res.found === WORDS.sacksFound && res.coins === 25 && res.pie === 1
+        && res.again === WORDS.sacksEmpty && res.thanks === REWARD.wat_carter && res.thanks2 === REWARD.wat_carter && res.notice && res.waits && res.back, res); }
+
+    // 6. Wat: on open ground in the place (its Atlas zone), reached from the cave mouth, in the townsfolk look; the rail, the
+    // signpost, the gate, the booth, the fire, the sacks, the tents and the cart are reached too
+    { const bad = [];
+      for (const p of PEOPLE) {
+        const zone = A.zoneAt('over', p.x, p.y);
+        if (!NPCS.includes(p)) bad.push(p.id + ' not in NPCS');
+        if (SOLID.has(tileAt(p.x, p.y))) bad.push(p.id + ' on ' + tileName(tileAt(p.x, p.y)));
+        if (!reach(p.x, p.y)) bad.push(p.id + ' not reached from the cave');
+        if (zone !== ID) bad.push(p.id + ' zone ' + zone);
+        if (!TOWNSFOLK_ART.NEW_NPC[p.id]) bad.push(p.id + ' has no look');
+      }
+      const p = POSTS[ID]; if (!p || tileAt(p.x, p.y) !== T.HITCH || !reach(p.x, p.y)) bad.push('rail');
+      for (const [i, c] of THINGS) if (c.kind !== 'mouth' && !reach(i % MAP_W, (i / MAP_W) | 0)) bad.push(c.kind + ' not reached');
+      for (const k of ['bandit_sacks', 'bandit_gate']) for (const [x, y] of DECO.cells(k)) if (!reach.at(x, y)) bad.push(k + ' not reached');
+      PLAN.forEach((row, ry) => [...row].forEach((c, rx) => { if (c !== 'F') return; const [x, y] = BF.p(rx, ry); if (tileAt(x, y) !== T.FIRE || !reach(x, y)) bad.push('fire'); }));
+      const kinds = [...THINGS.values()].map(c => c.kind).sort().join();
+      check(P + 'Wat the carter stands by the Bandit Track in the place\'s Atlas zone in the townsfolk look; a knight walks to him, the rail, the signpost, the toll gate and booth, and in the hollow the fire (cook on it), the sacks, the two tents and Wat\'s cart, from the cave mouth',
+        !bad.length && kinds === 'booth,cart,mouth,tent,tent', { bad, kinds }); }
+
+    // 7. Wat talks: a line at a time; plain words, short, no compass word
+    // (after the chief has fallen his cart is home: only his after-the-win lines, and while the hills fill again that the
+    // bandits came back; never "they took my cart" again: the review of bcb559f)
+    { const said = {}; const keep = { s: Object.assign({}, SAID), bq: JSON.parse(JSON.stringify(quest.bandits || {})) };
+      const p = PEOPLE[0], up = gang().filter(m => !m.dead).length > 0;
+      const MOODS = { before: {}, after: { won: 1, cleared: 1, thanked: 1, searched: 1 }, back: { won: 1, cleared: 0, thanked: 1 } };
+      const want = m => m === 'before' ? p.lines : (m === 'after' ? AFTER : BACK)[p.id];
+      for (const m of Object.keys(MOODS)) { quest.bandits = Object.assign({}, MOODS[m]); said[m] = [];
+        for (let k = 0; k < want(m).length + 2; k++) { dialog.queue.length = 0; advanceDialog(); talkTo(p); const d = [dialog.cur, ...dialog.queue].find(q => q && q.who === p.name); said[m].push(d ? d.text : null); } }
+      Object.keys(SAID).forEach(k => delete SAID[k]); Object.assign(SAID, keep.s); quest.bandits = keep.bq; dialog.queue.length = 0; advanceDialog();
+      const lines = LINES.wat_carter.concat(AFTER.wat_carter, BACK.wat_carter, [WORDS.thanks, WORDS.booth, WORDS.boothEmpty, WORDS.tent, WORDS.cart, WORDS.cartFree, WORDS.mouth, WORDS.gate, WORDS.sacksGuarded, WORDS.sacksFound, WORDS.sacksEmpty, WORDS.scrub]);
+      const told = up && Object.keys(MOODS).every(m => want(m).every(t => said[m].includes(t)) && said[m].every(t => want(m).includes(t)));
+      check(P + 'Wat tells his story a line at a time; once the chief has fallen only his after-the-win lines (his cart is home), and while the hills fill again that the bandits came back; every line (and every word the hills say) is short and plain, with no compass word',
+        told && lines.every(t => t.length <= 140 && !/\b(north|south|east|west)\b|\bmiles?\b/i.test(t)), { said, up }); }
+
+    // 8. the rail, the signpost and the track: a RAILS entry on a HITCH tile in the box; a signpost by the track names the
+    // Bandit Hills (its arm drawn); Hollowford's signpost no longer says "builders at work"; the Bandit Track's own cells
+    // are open and none FIXED_SOLID; nothing built stands on a main road; placing on the ground says whose it is
+    { const r = RAILS.find(q => q.id === ID), rp = r && r.at(), rail = !!rp && inB(box, rp.x, rp.y) && tileAt(rp.x, rp.y) === T.HITCH && RAILS.of(rp.x, rp.y) === r && !r.reserved;
+      const signs = [...SIGNS.keys()].map(i => { const x = i % MAP_W, y = (i / MAP_W) | 0, w = A.signText(x, y), arms = window.SIGN_ARMS && SIGN_ARMS(x, y);
+        return { at: [x, y], sign: tileAt(x, y) === T.SIGN, hills: /Bandit Hills/.test(w || ''), arms: !!arms && arms.some(a => a[1] === 'BANDITS'), track: roadD(x, y, ['r8_bandit']), reached: reach(x, y) }; });
+      const words = SG ? SG.signs.map(([x, y]) => A.signText(x, y)) : [];
+      const builders = words.filter(t => /Bandit Hills \(builders at work\)/i.test(t)), named = words.filter(t => /The Bandit Hills/.test(t)).length;
+      const fixed = A.fixed, track = [...trackCells()].filter(i => SOLID.has(tiles[i]) || (fixed && fixed[i])).map(i => (i % MAP_W) + ',' + ((i / MAP_W) | 0) + ' ' + tileName(tiles[i]));
+      const onRoad = []; PLAN.forEach((row, ry) => [...row].forEach((c, rx) => { const [x, y] = BF.p(rx, ry); if (c !== '.' && c !== 'g' && A.onMainRoad(x, y)) onRoad.push(c + '@' + x + ',' + y); }));
+      h.give('goblin_trap', 2); h.peace(true);
+      const [px, py] = BF.p(4, 7), n0 = countItem('goblin_trap'); Fh.tp(px, py); player.facing = { x: 0, y: 1 }; notice = null; placeAction('goblin_trap');
+      const placed = { placed: countItem('goblin_trap') < n0, notice: notice && notice.text };
+      h.peace(false);
+      check(P + "the hills have their hitching rail (a RAILS entry, on a HITCH tile in the box); a signpost by the Bandit Track names the Bandit Hills (its arm drawn); Hollowford's signpost names them without \"builders at work\"; the track's own cells are open ground, none fixed solid; nothing built stands on a main road; \"This is the Bandit Hills' ground. Build somewhere else.\"",
+        rail && signs.length === 1 && signs.every(s => s.sign && s.hills && s.arms && s.track <= 2 && s.reached) && !builders.length && named >= 1 && !track.length && !onRoad.length
+        && !placed.placed && placed.notice === "This is the Bandit Hills' ground. Build somewhere else.", { rail, signs, builders, named, track, onRoad, placed }); }
+  });
+}
+
+// ---- src/86-outposts.js ----
+// ============================================================================
+// THE GOBLIN OUTPOSTS (the Great Spread, Stage 5e: ~/.fanglands/work/spread/spec.md §4 "New places", §6, §13 STAGE 5)
+// src/86-outposts.js
+//
+// Two goblin outposts on the Goblin Road, each built on its staked ground (93-spread staked them in Stage 4):
+//
+//   THE NORTH OUTPOST   in the fields between the camp and the river, west of the road. A ring of 65-palisade's
+//                       sharpened stakes with one gap, which faces the road (13 tiles off it): a worn trail runs from the
+//                       road to the gap, with a signpost where it leaves the road. Inside, a lookout of lashed poles, a
+//                       scrap heap and a fire. Three goblins and a sapper. Bramble the scout watches it from her hide.
+//   THE SOUTH OUTPOST   below the goblin bridge, between the Goblin Road and the river's rock face (the scarp closes its
+//                       corner). The ring's gap is on the far side (12 tiles off the road); the Drovers' Track ends at
+//                       its wall, and a worn path goes round to the gap. Inside, a lookout over the road, a scrap heap
+//                       and a fire. Three goblins and a brute. Brin the drover waits at the end of his track, with a
+//                       signpost where the track leaves the road.
+//
+// Both are fights the knight chooses: the road passes 12+ tiles off each gap and no goblin there can see the road. Each is
+// multi combat (markBuilt's `combat`: the gang fights, as at the camp), and keeps the camp's respawn rule (06-systems: a
+// spawn with `outpost` is a camp monster: down 30 minutes, back only while the knight is 40+ tiles away). When the last
+// one falls: "GOBLIN OUTPOST CLEARED", the heap may be dug through once, and the watcher thanks the knight (once ever).
+//
+// Every place: its stakes taken up, its REGIONS line its own (ATLAS.markBuilt), a rail (RAILS.add), its signpost, a person
+// in the 83-townsfolk look (83-townsart's 'outposts' family), a 6-tile dressing ring of worn ground outside its box, and
+// its footprint in ATLAS.REVS[5] (WORLD_REV 5): each box with its ring, and the north trail's run to the road.
+//
+// WHERE: every point in its place's own frame (ATLAS.planFrame: offsets from the staked box's top-left). WHEN: on the
+// finished land (HOOKS.built), as 84, 85 and 86-wildplaces do; the people are taken out of NPCS before every world (a
+// generateWorld wrapper, and a HOOKS.world pass). Its dice are its own (mulberry32 of its name).
+// The stakes are 65-palisade's PALISADE tile (PALISADE.addRing draws them leaning out from each ring's middle; the
+// bulldozer smashes them and they are driven in again). The lookouts are solid: 95-thistledown's TD_PROP tile with this
+// file's side table (THINGS), as 84's well and 86-wildplaces' towers. The fire is the core's FIRE (cook on it). The heap,
+// the hide and the junk are DECO. The two signposts are SIGN tiles whose words are this file's (ATLAS.signText and
+// SIGN_ARMS ask here first). No new tile id.
+// Feature file: registers through HOOKS. window.OUTPOSTS is the test handle.
+// ============================================================================
+{
+  const A = ATLAS, Tn = n => (n in T ? T[n] : -1);
+  const IDS = ['outpost_north', 'outpost_south'];
+  // built: 93-spread (which loads later) names these regions for the place, not the builders; multi combat (01-atlas build)
+  A.markBuilt('outpost_north', { sub: 'Goblins behind sharp stakes', combat: 'multi' });
+  A.markBuilt('outpost_south', { sub: 'Goblins behind sharp stakes', combat: 'multi' });
+  const ON = A.planFrame('outpost_north'), OS = A.planFrame('outpost_south');
+  const FR = { outpost_north: ON, outpost_south: OS };
+  const RING = 6;
+  const SEED = (() => { let h = 2166136261; for (const c of '86-outposts') h = Math.imul(h ^ c.charCodeAt(0), 16777619); return h >>> 0; })();
+
+  // ---------- the plans: one glyph a tile, rows from the box's top-left ----------
+  //   .  as the land is (a stray stretch of old dirt in the box goes back to grass)
+  //   g  open grass (trees, rocks, flowers and mushrooms go; ore and berry bushes stay)
+  //   ,  trampled earth or a worn path          p  sharpened stakes (65-palisade)
+  //   L  the lookout (solid: a TD_PROP cell in THINGS)          F  the fire (FIRE: cook on it)
+  //   s  the scrap heap (DECO)          h  the scout's hide (DECO)          H  the hitching rail
+  //   S  the signpost (SIGN, this file's words)                  @  a person (open grass)
+  // Ore and berry bushes are never painted over (the outposts keep theirs inside the ring); a rock face is never touched.
+  // A row may run past the box: the north trail goes on to the road, the south path round below the ring.
+  const PLAN = {
+    // the gap is the east wall's (10, 5), toward the road; the trail runs from it to the road at (23, 5), the signpost
+    // above its end
+    outpost_north: [
+      '.@h.......H',
+      'ppppppppppp',
+      'pL,,,,,,,,p',
+      'p,,,,,,,,,p',
+      'p,,,,F,,,,p..........S',
+      'p,,,,,,,,,,,,,,,,,,,,,,,',
+      'p,,,,,,,,,p',
+      'p,,.,,,,s,p',
+      'ppppppppppp',
+    ],
+    // the river's rock face (CLIFF) closes the north-east corner ((9, 1), (10, 1), (10, 2)); the gap is the bottom wall's
+    // (7, 8), on the far side from the road; the Drovers' Track ends at the west wall, by Brin, and the worn path goes
+    // round below the ring to the gap (it steps round an iron rock at (5, 9), which stays)
+    outpost_south: [
+      'gggggggg...',
+      'Hpppppppp..',
+      '@pL,,,,,,,.',
+      ',p,,,,,,,,p',
+      ',p,,,,F,,,p',
+      ',p,,,,,,,,p',
+      ',p,,,,,,,,p',
+      ',p,,,.,,,sp',
+      ',pppppp,ppp',
+      ',,,,,.,,',
+      '....,,,',
+    ],
+  };
+  const GAP = { outpost_north: () => ON.p(10, 5), outpost_south: () => OS.p(7, 8) };
+  const gapOf = id => GAP[id]();
+  // the south outpost's signpost, where the Drovers' Track leaves the Goblin Road (west of the box: no plan row reaches it)
+  const SOUTH_SIGN = () => OS.p(-2, 5);
+  // the north trail's run from the box's dressing ring to the road (and its signpost): footprint beyond the ring
+  const LANE = () => ON.box([17, 3, 24, 6]);
+
+  // ---------- the people (NPCS rows; each id is a look in 83-townsart's 'outposts' family) ----------
+  const LINES = {
+    bramble_scout: [
+      'Shh! I am Bramble, a scout from Thistledown. I watch this goblin outpost from my hide.',
+      'Three goblins and a sapper live in there. The sapper is the one who throws bombs.',
+      'When a bomb lands by your feet, step away fast. It goes bang a moment later.',
+      'There is only one way in: the gap in the spikes. Walk into the spikes and they prick you.',
+      'Beat them all and they stay away for a long while. Goblins hate losing.',
+    ],
+    brin_drover: [
+      'I am Brin. I drive cows along this track to the inn. Then the goblins built a fence right across it!',
+      'Three goblins and a big brute are in there. The brute hits very hard. Eat some food when you get hurt.',
+      'The way in is round the far side. Follow the worn path round the spikes.',
+      'My sister Marigold is at the Crossroads Inn. She drives cows too.',
+      'My cows will not walk past goblins. Cows are clever like that.',
+    ],
+  };
+  // while the outpost is cleared (after the thanks); and once it has been won, while it fills again
+  const AFTER = {
+    bramble_scout: [
+      'Empty! I will keep watch in case they come back.',
+      'The guards in town were very pleased when I told them about you.',
+      'Goblins hate losing. They will stay away for a long while.',
+    ],
+    brin_drover: [
+      'The cows walk this way again. Listen to them moo!',
+      'Marigold at the Crossroads Inn heard what you did. She will want to thank you.',
+      'Goblins do not stay away for ever. If they come back, I will tell you.',
+    ],
+  };
+  const BACK = {
+    bramble_scout: [
+      'Shh! The goblins came back. Three goblins and a sapper, the same as before.',
+      'You beat them once. Beat them again and they stay away for a long while.',
+    ],
+    brin_drover: [
+      'The goblins came back! My cows will not walk past them again.',
+      'You beat them once. You can beat them again. Eat some food when you get hurt.',
+    ],
+  };
+  const WORDS = {
+    thanks: {
+      bramble_scout: 'You beat the whole outpost! I will tell the guards in town. Here, take this for being so brave.',
+      brin_drover: 'You beat them all! Now my cows can walk this way again. Thank you! Here, it is all I have.',
+    },
+    lookout: 'A goblin lookout, lashed together from poles. From up there they watch the road.',
+    lookoutEmpty: 'The lookout is empty. The goblins are gone, for now.',
+    heapGuarded: 'A heap of goblin junk. The goblins guard it. Beat them first, then dig through it.',
+    heapFound: 'You dig through the heap and find 15 coins and two bits of goblin scrap.',
+    heapEmpty: 'Nothing else worth having in the heap. The goblins will bring more when they come back.',
+    hide: "Bramble's hide: cut branches leaned together. From behind it she can watch without being seen.",
+    junk: 'Bent nails and a broken goblin pot.',
+    cleared: ['GOBLIN OUTPOST CLEARED', 'They will not be back for a while'],
+  };
+  const REWARD = { bramble_scout: 30, brin_drover: 40 };
+  const PEOPLE = [
+    ON.pt({ id: 'bramble_scout', name: 'Bramble the scout', x: 1, y: 0, place: 'outpost_north', tunic: '#4e6a3a', hair: '#7a4a24', woman: true, role: 'outpostwatch', lines: LINES.bramble_scout }),
+    OS.pt({ id: 'brin_drover', name: 'Brin the drover', x: 0, y: 7, place: 'outpost_south', tunic: '#7a5a3a', hair: '#5a3a1e', beard: true, role: 'outpostwatch', lines: LINES.brin_drover }),
+  ].map(n => Object.assign(n, { outposts: true }));
+
+  // ---------- the goblins: north three goblins and a sapper, south three goblins and a brute ----------
+  // (the core clears ore, trees and rocks in the 3 x 3 round every spawn after the world passes: none stands by an ore)
+  const SPAWNS = [
+    { place: 'outpost_north', type: 'goblin', at: () => ON.pts([[3, 3], [7, 3], [5, 6]]) },
+    { place: 'outpost_north', type: 'sapper', at: () => [ON.p(7, 6)] },
+    { place: 'outpost_south', type: 'goblin', at: () => OS.pts([[4, 3], [8, 3], [3, 6]]) },
+    { place: 'outpost_south', type: 'brute', at: () => [OS.p(7, 6)] },
+  ];
+  const spotsOf = s => s.at().map(([x, y]) => [Math.round(x), Math.round(y)]);
+
+  // ---------- the footprint (§10): WORLD_REV 5 ----------
+  const grow = (b, d) => [b[0] - d, b[1] - d, b[2] + d, b[3] + d];
+  const FOOT = () => [...IDS.map(id => grow(A.box(id), RING)), LANE()];
+  if (A.REVS) A.REVS[5] = { stage: '5e', by: '86-outposts', why: 'The goblin outposts: each box with its dressing ring, and the north trail to the Goblin Road', boxes: FOOT() };
+
+  // ---------- the rails ----------
+  const POSTS = {};
+  const RAIL_NAMES = { outpost_north: 'the rail by the north goblin outpost', outpost_south: 'the rail by the south goblin outpost' };
+  if (window.RAILS) for (const id of IDS) RAILS.add({ id, place: RAIL_NAMES[id], at: () => POSTS[id] || null });
+
+  // ---------- the state (quest.outposts: no positions; per place: won (ever cleared), cleared (now), searched, thanked) ----------
+  const Q = id => { if (!quest.outposts || typeof quest.outposts !== 'object') quest.outposts = {}; const q = quest.outposts;
+    if (!q[id] || typeof q[id] !== 'object') q[id] = {}; return q[id]; };
+  const outpostOf = m => { const s = m && m.home && campSpawnOf(m); return s && s.outpost && IDS.includes(s.outpost) ? s.outpost : null; };
+  const gang = id => monsters.filter(m => !m.phantom && outpostOf(m) === id);
+  const standing = id => gang(id).filter(m => !m.dead).length;
+
+  // ---------- the solid things: idx -> { kind, under, place } on TD_PROP cells (made in the built pass, emptied each world) ----------
+  const THINGS = new Map();
+  const SOLID_T = () => Tn('TD_PROP');
+  const LOOKOUT_REACH = TILE * 3;   // px: how far a lookout's drawing reaches past its base (the cull)
+  const shadow = (g, cx, y, rx) => { g.fillStyle = 'rgba(0,0,0,0.22)'; g.beginPath(); g.ellipse(cx, y, rx, rx * 0.28, 0, 0, 7); g.fill(); };
+  // a goblin lookout: four leaning poles lashed with rope, a plank platform two tiles up with sharpened stakes round its
+  // rail, a ladder up the front and a rag flag; while the outpost holds goblins, one peeks over the rail
+  function drawLookout(g, tx, ty, place) {
+    const cx = (tx + 0.5) * TILE, foot = (ty + 1) * TILE - 4, top = foot - TILE * 2.3, w0 = TILE * 0.95, w1 = TILE * 0.7;
+    shadow(g, cx + 4, foot, TILE * 0.6);
+    g.lineCap = 'round';
+    // the poles, splayed at the foot
+    g.strokeStyle = '#4e3719'; g.lineWidth = 5;
+    for (const s of [-1, 1]) { g.beginPath(); g.moveTo(cx + s * w0 / 2, foot); g.lineTo(cx + s * w1 / 2, top + 6); g.stroke(); }
+    g.strokeStyle = '#3e2c14'; g.lineWidth = 4;
+    for (const s of [-1, 1]) { g.beginPath(); g.moveTo(cx + s * w0 / 3, foot - 6); g.lineTo(cx + s * w1 / 3, top + 8); g.stroke(); }
+    // cross-bracing, lashed at each end
+    g.strokeStyle = '#6f5027'; g.lineWidth = 2.5;
+    for (const [a, b] of [[0.15, 0.55], [0.55, 0.15]]) { const y0 = foot - (foot - top) * a, y1 = foot - (foot - top) * b;
+      g.beginPath(); g.moveTo(cx - w0 / 2 + (w0 - w1) / 2 * a, y0); g.lineTo(cx + w0 / 2 - (w0 - w1) / 2 * b, y1); g.stroke(); }
+    g.strokeStyle = '#7d6a45'; g.lineWidth = 1.5;
+    for (const y of [foot - (foot - top) * 0.15, foot - (foot - top) * 0.55]) for (const s of [-1, 1]) { g.beginPath(); g.arc(cx + s * (w0 / 2 - 4), y, 2.5, 0, 7); g.stroke(); }
+    // the ladder up the front
+    g.strokeStyle = '#8a6a3a'; g.lineWidth = 2;
+    for (const s of [-1, 1]) { g.beginPath(); g.moveTo(cx + s * 6, foot); g.lineTo(cx + s * 5, top + 10); g.stroke(); }
+    for (let y = foot - 8; y > top + 12; y -= 9) { g.beginPath(); g.moveTo(cx - 6, y); g.lineTo(cx + 6, y); g.stroke(); }
+    // the platform
+    g.fillStyle = '#7a5a32'; g.fillRect(cx - w1 / 2 - 8, top, w1 + 16, 8);
+    g.strokeStyle = 'rgba(40,26,10,0.6)'; g.lineWidth = 1; g.strokeRect(cx - w1 / 2 - 8, top, w1 + 16, 8);
+    for (let x = cx - w1 / 2 - 2; x < cx + w1 / 2 + 8; x += 7) { g.beginPath(); g.moveTo(x, top); g.lineTo(x, top + 8); g.stroke(); }
+    // a goblin on watch, peeking over the rail (while the outpost holds any)
+    if (standing(place) > 0) {
+      const bob = Math.sin(time * 1.6 + tx) * 1.5, gx = cx + Math.sin(time * 0.5 + ty) * 6, gy = top - 8 + bob;
+      g.fillStyle = '#6d8f3a'; g.beginPath(); g.ellipse(gx, gy, 7, 6, 0, 0, 7); g.fill(); g.strokeStyle = 'rgba(20,30,10,0.6)'; g.lineWidth = 1; g.stroke();
+      g.beginPath(); g.moveTo(gx - 6, gy - 2); g.lineTo(gx - 13, gy - 6); g.lineTo(gx - 6, gy + 1); g.closePath(); g.fill();
+      g.beginPath(); g.moveTo(gx + 6, gy - 2); g.lineTo(gx + 13, gy - 6); g.lineTo(gx + 6, gy + 1); g.closePath(); g.fill();
+      g.fillStyle = '#ffe14a'; g.beginPath(); g.arc(gx - 2.5, gy - 1, 1.4, 0, 7); g.arc(gx + 2.5, gy - 1, 1.4, 0, 7); g.fill();
+    }
+    // the rail of sharpened stakes round the platform
+    for (let k = 0; k < 6; k++) { const x = cx - w1 / 2 - 6 + k * (w1 + 12) / 5, h = 12 + (k % 2) * 3;
+      g.fillStyle = '#4e3719'; g.beginPath(); g.moveTo(x - 2, top + 2); g.lineTo(x + 2, top + 2); g.lineTo(x + 0.5, top - h); g.lineTo(x - 0.5, top - h); g.closePath(); g.fill();
+      g.fillStyle = '#c8a874'; g.beginPath(); g.moveTo(x - 1.2, top - h + 4); g.lineTo(x + 1.2, top - h + 4); g.lineTo(x, top - h); g.closePath(); g.fill(); }
+    g.strokeStyle = '#7d6a45'; g.lineWidth = 1.6; g.beginPath(); g.moveTo(cx - w1 / 2 - 7, top - 4); g.lineTo(cx + w1 / 2 + 7, top - 4); g.stroke();
+    // a rag flag on a pole, flapping
+    const fx = cx + w1 / 2 + 6, fy = top - 30, fl = Math.sin(time * 4 + tx) * 2;
+    g.strokeStyle = '#3e2c14'; g.lineWidth = 2; g.beginPath(); g.moveTo(fx, top); g.lineTo(fx, fy); g.stroke();
+    g.fillStyle = '#8a2a1e'; g.beginPath(); g.moveTo(fx, fy); g.lineTo(fx + 14, fy + 3 + fl); g.lineTo(fx + 10, fy + 6); g.lineTo(fx + 15, fy + 10 + fl); g.lineTo(fx, fy + 11); g.closePath(); g.fill();
+    g.lineCap = 'butt';
+  }
+
+  // ---------- DECO: the scrap heap, the scout's hide, bits of junk ----------
+  // the heap: a mound of earth and rust, a dented pot, a cogwheel, a broken helmet and a plank sticking out
+  DECO.kind('scrap_heap', { use: c => heapUse(c),
+    draw(g, px, py, c, tx) {
+      const cx = px + TILE / 2, base = py + TILE - 6;
+      shadow(g, cx, base + 2, 22);
+      g.fillStyle = '#5a4630'; g.beginPath(); g.ellipse(cx, base - 4, 21, 11, 0, Math.PI, 0); g.fill();
+      g.strokeStyle = '#8a6a3a'; g.lineWidth = 3; g.beginPath(); g.moveTo(cx - 14, base - 6); g.lineTo(cx - 4, base - 26); g.stroke();
+      g.fillStyle = '#6e7178'; g.beginPath(); g.arc(cx + 7, base - 9, 7, 0, 7); g.fill(); g.strokeStyle = '#3e4046'; g.lineWidth = 1; g.stroke();
+      g.fillStyle = '#3e4046'; for (let k = 0; k < 8; k++) { const a = k / 8 * Math.PI * 2; g.fillRect(cx + 7 + Math.cos(a) * 7 - 1.5, base - 9 + Math.sin(a) * 7 - 1.5, 3, 3); }
+      g.fillStyle = '#8a8e96'; g.beginPath(); g.arc(cx + 7, base - 9, 2.4, 0, 7); g.fill();
+      g.fillStyle = '#7d6e62'; g.beginPath(); g.ellipse(cx - 7, base - 12, 7, 5, -0.3, 0, 7); g.fill(); g.fillStyle = '#5a4c40'; g.beginPath(); g.ellipse(cx - 7, base - 14, 5, 2.4, -0.3, 0, 7); g.fill();
+      g.fillStyle = '#9a7a3a'; g.beginPath(); g.arc(cx - 1, base - 18, 5, Math.PI, 0); g.fill(); g.fillRect(cx - 7, base - 18, 12, 2);
+      g.fillStyle = '#b8732e'; for (let k = 0; k < 5; k++) g.fillRect(cx - 14 + ((k * 11 + tx * 3) % 26), base - 4 - (k % 3) * 3, 3, 2);
+    } });
+  // the hide: cut branches leaned on a pole, with their leaves still on
+  DECO.kind('hide', { use: WORDS.hide,
+    draw(g, px, py) {
+      const cx = px + TILE / 2, base = py + TILE - 6;
+      shadow(g, cx, base + 2, 18);
+      g.strokeStyle = '#5a3c22'; g.lineWidth = 2.5; g.beginPath(); g.moveTo(cx - 18, base - 22); g.lineTo(cx + 18, base - 24); g.stroke();
+      for (let k = 0; k < 6; k++) { const x = cx + (k * 7 - 17); g.strokeStyle = '#6a4a2a'; g.lineWidth = 2; g.beginPath(); g.moveTo(x - 3, base); g.lineTo(x + 2, base - 26); g.stroke(); }
+      for (let k = 0; k < 9; k++) { const x = cx + ((k * 13) % 36 - 18), y = base - 8 - (k * 7) % 20; g.fillStyle = k % 2 ? '#4f7a32' : '#5f8a3c'; g.beginPath(); g.ellipse(x, y, 6, 4, k * 0.7, 0, 7); g.fill(); }
+    } });
+  DECO.kind('junk', { use: WORDS.junk,
+    draw(g, px, py, c, tx, ty) {
+      const cx = px + TILE / 2, cy = py + TILE / 2 + 6, r = (tx * 7 + ty * 3) % 4;
+      g.fillStyle = '#6e5a46'; g.beginPath(); g.ellipse(cx - 6, cy, 6, 4, 0.2, 0, 7); g.fill(); g.fillStyle = '#4a3c30'; g.beginPath(); g.ellipse(cx - 6, cy - 1.5, 4, 1.6, 0.2, 0, 7); g.fill();
+      g.strokeStyle = '#7d8087'; g.lineWidth = 1.5; for (let k = 0; k < 3; k++) { g.beginPath(); g.moveTo(cx + 2 + k * 4, cy + 4 - (k + r) % 3); g.lineTo(cx + 6 + k * 4, cy - 2 + (k + r) % 2); g.stroke(); }
+    } });
+
+  // ---------- the heap: dug through once a clear ----------
+  function heapUse(c) {
+    const id = placeOfCell(c);
+    if (!id) return WORDS.junk;
+    const q = Q(id);
+    if (!q.cleared || standing(id) > 0) return WORDS.heapGuarded;
+    if (q.searched) return WORDS.heapEmpty;
+    q.searched = 1; addItem('coins', 15); giveOrDrop('goblin_scrap', 2, player.x, player.y); sfx('open'); save();
+    return WORDS.heapFound;
+  }
+  const HEAPS = new Map();   // idx -> place id (the built pass)
+  const placeOfCell = c => { for (const [i, id] of HEAPS) if (DECO.CELLS.get(i) === c) return id; return null; };
+
+  // ---------- the signposts: their words and their arms ----------
+  const SIGNS = new Map();   // idx -> { words, arms }
+  const SIGN_WORDS = {
+    outpost_north: { words: '→ The goblin outpost, west, along the trail. Goblins live behind the spikes. Go in only when you are ready to fight.', arms: [[-42, 'OUTPOST', false, true]] },
+    outpost_south: { words: "→ The goblin outpost, east, at the end of the Drovers' Track.   → The Crossroads Inn, west.", arms: [[-42, 'OUTPOST', false, false], [-26, 'INN', false, true]] },
+  };
+  { const prev = A.signText; A.signText = (tx, ty) => { const s = !window.__instance && SIGNS.get(idx(tx, ty)); return s && tileAt(tx, ty) === T.SIGN ? s.words : prev(tx, ty); }; }
+  let armsWrapped = false;
+  const wrapArms = () => { if (armsWrapped || typeof window.SIGN_ARMS !== 'function') return; armsWrapped = true;
+    const prev = window.SIGN_ARMS; window.SIGN_ARMS = (tx, ty) => { const s = !window.__instance && SIGNS.get(idx(tx, ty)); return s && tileAt(tx, ty) === T.SIGN ? s.arms : prev(tx, ty); }; };
+
+  // ---------- the pass (HOOKS.built: the finished land) ----------
+  // the people out of NPCS BEFORE a world is made (the passes before HOOKS.built keep rings clear round people with dice)
+  const unBuild = () => {
+    THINGS.clear(); HEAPS.clear(); SIGNS.clear();
+    for (let i = NPCS.length - 1; i >= 0; i--) if (NPCS[i].outposts) NPCS.splice(i, 1);
+  };
+  { const _generateWorld = generateWorld; generateWorld = function () { unBuild(); return _generateWorld.apply(this, arguments); }; }
+  HOOKS.world.unshift(unBuild);
+  const STATS = {};
+  HOOKS.built.push((rnd0, api) => {
+    const set = api.setTile, at = api.tileAt, rnd = mulberry32(SEED);
+    const S = STATS; S.stakes = 0; S.palisade = 0; S.ring = 0; S.deco = 0; S.cleared = 0; S.paths = 0; S.kept = [];
+    wrapArms();
+    const PAL = window.PALISADE ? PALISADE.tile : Tn('PALISADE');
+    const NATURE = new Set([T.TREE, T.OAK, T.ROCK, T.FLOWERS, T.MUSHROOM, Tn('FERN'), Tn('DEADTREE'), Tn('DEAD_TREE'), T.STUMP].filter(v => v >= 0));
+    // what a plan never paints over: ore, berry bushes, signposts, chests and rock faces (the scarp holds the river)
+    const KEEP = new Set(['IRON', 'COAL', 'BLACKIRON', 'SUNSTONE', 'STORMSTONE', 'MITHRIL', 'BERRY_BUSH', 'SIGN', 'CHEST', 'CLIFF', 'WATER'].map(Tn).filter(v => v >= 0));
+    const SG = window.SPREAD_GROUND;
+    const inB = (b, x, y) => x >= b[0] && x <= b[2] && y >= b[1] && y <= b[3];
+
+    // 1. the stakes come up: each one's ground goes back
+    if (SG) for (const [i, p] of [...SG.PROPS]) if (IDS.includes(p.place)) { set(i % MAP_W, (i / MAP_W) | 0, p.under); SG.PROPS.delete(i); S.stakes++; }
+
+    // 2. the plans
+    // (an apron round every stake: the trees, flowers and loose rocks on the open ground beside one go, so the ring never
+    // shuts a pocket of ground, an ore or a rock a knight could reach before)
+    const clearRound = (F, rows, rx, ry) => { for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { if (!dx && !dy) continue;
+      const c = (rows[ry + dy] || '')[rx + dx]; if (c !== undefined && c !== '.' && c !== 'g') continue;
+      const [x, y] = F.p(rx + dx, ry + dy); if (!inMap(x, y)) continue; const t = at(x, y); if (NATURE.has(t) && !KEEP.has(t)) { set(x, y, T.GRASS); S.cleared++; } } };
+    const posts = {};
+    const thing = (x, y, kind, extra) => { const t = SOLID_T(); if (t < 0) return; THINGS.set(idx(x, y), Object.assign({ kind, under: at(x, y) === t ? T.GRASS : at(x, y) }, extra)); set(x, y, t); };
+    const open = (x, y) => { const t = at(x, y); if (NATURE.has(t) || t === T.DIRT || SOLID.has(t) && !KEEP.has(t)) set(x, y, T.GRASS); };
+    for (const id of IDS) {
+      const F = FR[id], rows = PLAN[id], box = A.box(id);
+      for (let ry = 0; ry < rows.length; ry++) for (let rx = 0; rx < rows[ry].length; rx++) {
+        const ch = rows[ry][rx], [x, y] = F.p(rx, ry), t = at(x, y);
+        if (!inMap(x, y)) continue;
+        if (KEEP.has(t)) { if (ch !== '.' && ch !== 'g') S.kept.push(ch + '@' + x + ',' + y + ':' + tileName(t)); continue; }
+        if (ch === '.') { if (inB(box, x, y) && t === T.DIRT && !A.onMainRoad(x, y)) set(x, y, T.GRASS); continue; }
+        if (ch === 'g') { if (NATURE.has(t)) { set(x, y, T.GRASS); S.cleared++; } else if (t === T.DIRT && inB(box, x, y) && !A.onMainRoad(x, y)) set(x, y, T.GRASS); continue; }
+        if (ch === 'p') { set(x, y, PAL); S.palisade++; clearRound(F, rows, rx, ry); continue; }
+        if (ch === ',') { set(x, y, T.DIRT); S.paths++; continue; }
+        if (ch === '@') { open(x, y); continue; }
+        if (ch === 'H') { set(x, y, T.HITCH); posts[id] = { x, y }; continue; }
+        if (ch === 'F') { set(x, y, T.FIRE); continue; }
+        if (ch === 'L') { set(x, y, T.DIRT); thing(x, y, 'lookout', { place: id }); continue; }
+        if (ch === 's') { set(x, y, T.DIRT); DECO.put(api, x, y, 'scrap_heap'); HEAPS.set(idx(x, y), id); S.deco++; continue; }
+        if (ch === 'h') { open(x, y); DECO.put(api, x, y, 'hide'); S.deco++; continue; }
+        if (ch === 'S') { open(x, y); set(x, y, T.SIGN); SIGNS.set(idx(x, y), SIGN_WORDS[id]); continue; }
+      }
+      // the ring, drawn by 65-palisade (its points lean out from the ring's middle)
+      if (window.PALISADE && PALISADE.addRing) { const [x0, y0] = F.p(0, 1), [x1, y1] = F.p(rows[1].length - 1, 8); PALISADE.addRing(Math.min(x0, x1), Math.min(y0, y1), Math.max(x0, x1), Math.max(y0, y1)); }
+    }
+    // the south signpost, where the Drovers' Track leaves the road
+    { const [x, y] = SOUTH_SIGN().map(Math.round); if (!KEEP.has(at(x, y))) { open(x, y); set(x, y, T.SIGN); SIGNS.set(idx(x, y), SIGN_WORDS.outpost_south); } }
+    Object.keys(POSTS).forEach(k => delete POSTS[k]); Object.assign(POSTS, posts);
+
+    // 3. the people
+    for (const n of PEOPLE) { if (!NPCS.includes(n)) NPCS.push(n); initNpc(n); if (SOLID.has(at(n.x, n.y))) set(n.x, n.y, T.GRASS); }
+
+    // 4. the goblins: each where its point says (the trampled earth round it is open), marked as its outpost's
+    for (const s of SPAWNS) {
+      const pts = spotsOf(s), n0 = MONSTER_SPAWNS.length;
+      for (const [x, y] of pts) for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (NATURE.has(at(x + dx, y + dy))) set(x + dx, y + dy, T.DIRT);
+      api.spawnList(s.type, pts);
+      for (let k = n0; k < MONSTER_SPAWNS.length; k++) { MONSTER_SPAWNS[k].by = '86-outposts:' + s.place; MONSTER_SPAWNS[k].outpost = s.place; }
+    }
+
+    // 5. the dressing ring: worn ground and a few bits of goblin junk outside each box, thinning out over RING tiles (its
+    // own dice), never on a road's lanes, a person, a spawn, a building or another place's box
+    const roadD = (x, y) => { let best = 99; for (const tid of A.ROAD_IDS) { const pl = A.track(tid); for (let k = 1; k < pl.length; k++) { const [ax, ay] = pl[k - 1], [bx, by] = pl[k];
+      if (x < Math.min(ax, bx) - 4 || x > Math.max(ax, bx) + 4 || y < Math.min(ay, by) - 4 || y > Math.max(ay, by) + 4) continue;
+      const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy || 1, u = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / l2)); best = Math.min(best, Math.hypot(x - ax - u * dx, y - ay - u * dy)); } } return best; };
+    const busy = new Set(), mark = (x, y, r) => { for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) busy.add(idx(x + dx, y + dy)); };
+    for (const n of NPCS) mark(n.x, n.y, 1);
+    for (const s of MONSTER_SPAWNS) mark(s.tx, s.ty, 1);
+    for (const pid in A.PORTS) { const p = A.port(pid); if (p) mark(Math.round(p[0]), Math.round(p[1]), 1); }
+    for (const b of BUILDINGS) for (let y = b.y - 1; y <= b.y + b.h; y++) for (let x = b.x - 1; x <= b.x + b.w; x++) busy.add(idx(x, y));
+    const others = Object.keys(A.ANCHORS).filter(id => !IDS.includes(id) && A.box(id)).map(id => A.box(id));
+    const free = (x, y) => inMap(x, y) && x > 0 && y > 0 && !busy.has(idx(x, y)) && !others.some(q => x >= q[0] - 3 && x <= q[2] + 3 && y >= q[1] - 3 && y <= q[3] + 3) && roadD(x, y) > 2.5;
+    for (const id of IDS) {
+      const b = A.box(id);
+      for (let y = b[1] - RING; y <= b[3] + RING; y++) for (let x = b[0] - RING; x <= b[2] + RING; x++) {
+        const d = Math.max(b[0] - x, x - b[2], b[1] - y, y - b[3]); if (d < 1) continue;
+        const r = rnd();
+        if (!free(x, y) || at(x, y) !== T.GRASS) continue;
+        // (worn most by the box, gone by four tiles out; now and then a bit of junk the goblins threw over the stakes)
+        if (r < 0.025 && d <= 3) { DECO.put(api, x, y, 'junk'); S.deco++; }
+        else if (r < 0.22 * (1 - (d - 1) / 4)) { set(x, y, T.DIRT); S.ring++; }
+      }
+    }
+  });
+
+  // ---------- the lookouts: what E says, and how each is drawn (the ground beneath first, then the lookout) ----------
+  HOOKS.use.push((t, tx, ty) => {
+    if (window.__instance || t !== SOLID_T()) return false;
+    const c = THINGS.get(idx(tx, ty)); if (!c || c.kind !== 'lookout') return false;
+    notify(standing(c.place) > 0 ? WORDS.lookout : WORDS.lookoutEmpty);
+    return true;
+  });
+  HOOKS.draw.push((g, items) => {
+    if (window.__instance || !THINGS.size) return;
+    for (const [i, c] of THINGS) {
+      const tx = i % MAP_W, ty = (i / MAP_W) | 0, px = tx * TILE, py = ty * TILE;
+      if (map[i] !== SOLID_T()) continue;
+      if (px + TILE + LOOKOUT_REACH < cam.x || px - LOOKOUT_REACH > cam.x + VW || py + TILE < cam.y || py - LOOKOUT_REACH > cam.y + VH) continue;
+      const v = variant[i] % 3;
+      items.push({ y: -1e9 + 1, draw: () => { const img = tex[TEX_NAME[c.under] + v]; if (img) g.drawImage(img, px, py, TILE, TILE); } });
+      items.push({ y: py + TILE - 3, draw: () => drawLookout(g, tx, ty, c.place) });
+    }
+  });
+
+  // ---------- clearing an outpost: the banner once a clear, and the heap and the thanks it opens ----------
+  HOOKS.monsterDeath.push(m => {
+    const id = outpostOf(m); if (!id) return;
+    const q = Q(id);
+    if (!q.cleared && gang(id).length && standing(id) === 0) {
+      q.cleared = 1; q.won = 1; q.searched = 0;
+      levelBanner = { text: WORDS.cleared[0], sub: WORDS.cleared[1], t: 4 }; sfx('levelup'); save();
+    }
+  });
+  // when one comes back, the outpost is filling again: the next full clear earns the banner (and the heap) again
+  let refillT = 0;
+  HOOKS.update.push(dt => {
+    if (window.__instance || (refillT -= dt) > 0) return; refillT = 1;
+    if (!quest.outposts) return;
+    for (const id of IDS) { const q = quest.outposts[id]; if (q && q.cleared && standing(id) > 0) q.cleared = 0; }
+  });
+
+  // ---------- talking: each watcher a line at a time; once the outpost has been cleared, thanks (once ever) ----------
+  const SAID = {};
+  // which story the watcher tells now (the review of bcb559f: after the win they still said the goblins were in there):
+  // 'before' it has ever been cleared; 'after' while it is cleared; 'back' while it fills again after a win
+  const mood = id => { const q = Q(id); return q.cleared ? 'after' : q.won ? 'back' : 'before'; };
+  const linesOf = (n, m) => (m === 'before' ? n.lines : (m === 'back' ? BACK : AFTER)[n.id] || n.lines);
+  const nextLine = n => { const m = mood(n.place), L = linesOf(n, m), key = n.id + ':' + m; const k = SAID[key] = ((SAID[key] === undefined ? -1 : SAID[key]) + 1) % L.length; return L[k]; };
+  HOOKS.talk.outpostwatch = n => {
+    const q = Q(n.place);
+    if (!q.met) { q.met = 1; if (!q.won) { quest.tracked = 'outposts'; notify(`New quest: The Goblin Outposts. ${touchMode() ? 'Tap QUESTS' : 'Press ' + keyName('J')} to read it.`); } save(); }
+    if (q.won && !q.thanked) { q.thanked = 1; addItem('coins', REWARD[n.id]); say(WORDS.thanks[n.id], n.name); burst(player.x, player.y, '#ffd166', 12, 60); save(); return; }
+    say(nextLine(n), n.name);
+  };
+
+  // ---------- the quest book (J) and the map: The Goblin Outposts, from the first word with Bramble or Brin to their
+  // thanks (the review of bcb559f) ----------
+  QUEST_DEFS.outposts = { name: 'The Goblin Outposts' };
+  const WHOSE = { outpost_north: 'Bramble', outpost_south: 'Brin' };
+  const open_ = () => IDS.filter(id => { const q = quest.outposts && quest.outposts[id]; return q && q.met && !q.thanked; });
+  HOOKS.questText.outposts = () => { const ids = open_(); if (!ids.length) return 'Done.';
+    return ids.map(id => Q(id).won ? `${WHOSE[id]}'s outpost is beaten! Go back and tell ${WHOSE[id]}.` : `${WHOSE[id]}'s outpost: beat every goblin in it. Go in through the gap in the spikes.`).join(' '); };
+  HOOKS.activeQuests.push(() => open_().length ? ['outposts'] : []);
+  if (HOOKS.mapTarget) HOOKS.mapTarget.push(() => { const id = open_()[0]; if (!id) return null;
+    if (Q(id).won) { const w = PEOPLE.find(p => p.place === id); return { x: w.x, y: w.y, label: w.name, id: 'outposts' }; }
+    const [x, y] = gapOf(id).map(Math.round); return { x, y, label: 'The goblin outpost', id: 'outposts' }; });
+
+  // ---------- the handle ----------
+  window.OUTPOSTS = { IDS, PLAN, PEOPLE, LINES, AFTER, BACK, mood, WORDS, REWARD, SPAWNS, spotsOf, GAP, gapOf, SOUTH_SIGN, LANE, POSTS, STATS, THINGS, HEAPS, SIGNS, FOOT, FR, Q, outpostOf, gang, standing };
+
+  // ---------- self-tests ----------
+  HOOKS.selfTest.push((check, Fh, h) => {
+    const P = 'outposts: ', tiles = window.PLAYTHROUGH ? PLAYTHROUGH.pristine : map;
+    const inB = (b, x, y) => x >= b[0] && x <= b[2] && y >= b[1] && y <= b[3];
+    const segD = (px, py, ax, ay, bx, by) => { const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy || 1, u = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / l2)); return Math.hypot(px - ax - u * dx, py - ay - u * dy); };
+    const roadD = (x, y, ids) => { let b = Infinity; for (const id of ids) { const pl = A.track(id); for (let k = 1; k < pl.length; k++) b = Math.min(b, segD(x, y, pl[k - 1][0], pl[k - 1][1], pl[k][0], pl[k][1])); } return b; };
+    const SG = window.SPREAD_GROUND, PAL = PALISADE.tile;
+    // a 4-connected walk from the cave mouth over the fresh map (closed: tiles shut for the walk)
+    const walk = closed => { const N = MAP_W * MAP_H, seen = new Uint8Array(N), q = new Int32Array(N); let n = 0;
+      const pass = t => !SOLID.has(t) || PUSH_THROUGH.has(t) || t === Tn('WARDEN_GATE') || t === Tn('LAIR_GATE');
+      const take = i => { if (!seen[i] && pass(tiles[i]) && !(closed && closed.has(i))) { seen[i] = 1; q[n++] = i; } };
+      const [mx, my] = A.port('cave.mouth'); take(idx(mx, my));
+      for (let k = 0; k < n; k++) { const c = q[k], x = c % MAP_W; if (x > 0) take(c - 1); if (x < MAP_W - 1) take(c + 1); if (c >= MAP_W) take(c - MAP_W); if (c + MAP_W < N) take(c + MAP_W); }
+      const at = (x, y) => inMap(x, y) && !!seen[idx(x, y)];
+      return Object.assign((x, y) => [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => at(x + dx, y + dy)), { at }); };
+    const reach = walk();
+    const mine = MONSTER_SPAWNS.filter(s => /^86-outposts/.test(s.by || ''));
+
+    // 1. built: no stake or plaque of theirs left, each region names the place, WORLD_REV 5 with the footprint; multi combat
+    { const left = SG ? [...SG.PROPS.values()].filter(p => IDS.includes(p.place)).length : -1;
+      const regs = IDS.map(id => REGIONS.find(r => r.atlas === id));
+      const subs = regs.every((r, k) => r && r.sub === A.BUILT.get(IDS[k]).sub && !/staked/.test(r.sub));
+      const R = A.REVS && A.REVS[5], foot = !!R && IDS.every(id => R.boxes.some(b => { const q = A.box(id); return b[0] <= q[0] - RING && b[1] <= q[1] - RING && b[2] >= q[2] + RING && b[3] >= q[3] + RING; }));
+      const combat = IDS.map(id => { const [x0, y0, x1, y1] = A.box(id); return [A.zoneAt('over', (x0 + x1) >> 1, (y0 + y1) >> 1), A.combatAt('over', (x0 + x1) >> 1, (y0 + y1) >> 1)]; });
+      check(P + 'the two goblin outposts are built: their builders\' stakes and plaques are gone, each region names the place, each is multi combat, and WORLD_REV 5 declares each box with its 6-tile ring (and the north trail) as its footprint',
+        left === 0 && STATS.stakes > 0 && subs && WORLD_REV >= 5 && foot && IDS.every(id => A.isBuilt(id)) && combat.every(([z, c], k) => z === IDS[k] && c === 'multi'), { left, stakes: STATS.stakes, subs: regs.map(r => r && r.sub), WORLD_REV, foot, combat }); }
+
+    // 2. the rings: sharpened stakes all round with one gap; inside is reached from the cave mouth, but only through the gap
+    // (shut it and nothing inside is reached); the river's rock face is untouched; nothing the plans meant to paint was ore
+    { const res = {};
+      for (const id of IDS) {
+        const F = FR[id], rows = PLAN[id], pal = [], inside = [], ore = [];
+        const W = rows[1].length;
+        for (let ry = 1; ry <= 8; ry++) for (let rx = 0; rx < Math.min(W, rows[ry].length); rx++) { const ch = rows[ry][rx], [x, y] = F.p(rx, ry);
+          if (ch === '.' && rx >= 1 && rx <= 9 && ry >= 2 && ry <= 7) ore.push(/IRON|COAL|STONE|MITHRIL/.test(tileName(tiles[idx(x, y)])));
+          if (ch === 'p') pal.push(tiles[idx(x, y)] === PAL); else if (rx >= 1 && rx <= 9 && ry >= 2 && ry <= 7 && ch !== '.' && !SOLID.has(tiles[idx(x, y)])) inside.push([x, y]); }
+        const [gx, gy] = gapOf(id), shut = walk(new Set([idx(gx, gy)]));
+        const rings = PALISADE.RINGS.filter(r => inB([r.x0, r.y0, r.x1, r.y1], gx, gy)).length;
+        res[id] = { stakes: pal.length, standing: pal.every(Boolean), ore: ore.length === 1 && ore.every(Boolean), gapOpen: !SOLID.has(tiles[idx(gx, gy)]) && reach(gx, gy), inside: inside.length,
+          reached: inside.every(([x, y]) => reach.at(x, y)), sealed: inside.every(([x, y]) => !shut.at(x, y)), rings };
+      }
+      const cliffs = OS.pts([[9, 1], [10, 1], [10, 2]]).map(([x, y]) => tiles[idx(x, y)] === Tn('CLIFF'));
+      // Brin's worn path: from the end of his track round below the ring to the gap, on worn earth all the way
+      const path = new Set(); PLAN.outpost_south.forEach((row, ry) => [...row].forEach((c, rx) => { if (c === ',' && (rx === 0 || ry >= 8)) path.add(idx(...OS.p(rx, ry))); }));
+      const [bx, by] = OS.p(0, 3), [sx, sy] = gapOf('outpost_south'), seen = new Set([idx(bx, by)]), todo = [[bx, by]];
+      for (let k = 0; k < todo.length; k++) { const [x, y] = todo[k]; for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const i = idx(x + dx, y + dy); if (!seen.has(i) && path.has(i) && tiles[i] === T.DIRT) { seen.add(i); todo.push([x + dx, y + dy]); } } }
+      res.path = seen.has(idx(sx, sy));
+      check(P + 'each outpost is a ring of sharpened stakes with one gap: every tile inside is reached from the cave mouth, and with the gap shut none is; each keeps the iron ore inside it; the river\'s rock face closes the south ring\'s corner; Brin\'s worn path goes round to the gap; 65-palisade draws both rings',
+        res.path && IDS.every(id => res[id].stakes >= 25 && res[id].standing && res[id].ore && res[id].gapOpen && res[id].inside >= 40 && res[id].reached && res[id].sealed && res[id].rings === 1) && cliffs.every(Boolean) && !STATS.kept.length,
+        { res, cliffs, kept: STATS.kept }); }
+
+    // 3. the goblins: north three goblins and a sapper, south three goblins and a brute, inside their rings (their Atlas
+    // zone, multi), on open ground, each a camp monster (the camp's respawn rule); the road passes 8+ tiles off each gap and
+    // no goblin there can see a knight on the road
+    { const bad = [], want = { outpost_north: { goblin: 3, sapper: 1 }, outpost_south: { goblin: 3, brute: 1 } }, got = {};
+      for (const s of mine) {
+        const id = s.outpost; (got[id] = got[id] || {})[s.type] = (got[id][s.type] || 0) + 1;
+        const b = A.box(id), sight = MONSTER_DEFS[s.type].sight / TILE, off = roadD(s.tx, s.ty, A.MAIN_ROADS);
+        if (!inB([b[0] + 1, b[1] + 1, b[2] - 1, b[3] - 1], s.tx, s.ty) || A.zoneAt('over', s.tx, s.ty) !== id) bad.push(s.type + '@' + s.tx + ',' + s.ty + ' zone ' + A.zoneAt('over', s.tx, s.ty));
+        if (SOLID.has(tiles[idx(s.tx, s.ty)]) || !reach(s.tx, s.ty)) bad.push(s.type + '@' + s.tx + ',' + s.ty + ' not on open ground reached');
+        if (off <= sight + 2.5) bad.push(s.type + '@' + s.tx + ',' + s.ty + ' sees the road (' + off.toFixed(1) + ')');
+        const m = monsters.find(q => Math.floor(q.home.x / TILE) === s.tx && Math.floor(q.home.y / TILE) === s.ty && q.type === s.type);
+        if (!m || !isCampMonster(m) || isGoblinCampMonster(m) || outpostOf(m) !== id) bad.push(s.type + '@' + s.tx + ',' + s.ty + ' not under the camp rule');
+      }
+      const gaps = IDS.map(id => roadD(...gapOf(id), A.MAIN_ROADS));
+      const others = MONSTER_SPAWNS.filter(s => !/^86-outposts/.test(s.by || '') && IDS.some(id => inB(A.box(id), s.tx, s.ty))).map(s => s.type + '@' + s.tx + ',' + s.ty);
+      check(P + 'the north outpost holds three goblins and a sapper, the south three goblins and a brute, each inside its ring and Atlas zone under the camp\'s respawn rule; no other creature wakes there; the road passes 8+ tiles off each gap and no outpost goblin sees the road',
+        !bad.length && JSON.stringify(got) === JSON.stringify(want) && gaps.every(d => d >= 8) && !others.length, { bad, got, gaps, others }); }
+
+    // 4. clearing one: the last goblin down shows the banner once (not the camp's), each stays down 30 minutes and only comes
+    // back while the knight is 40+ tiles off; then the heap gives its find once, the lookout is empty, and the watcher thanks
+    // the knight once; when one comes back the outpost is filling again
+    { const id = 'outpost_north', g = gang(id), snap = g.map(m => ({ m, dead: m.dead, hp: m.hp, respawnT: m.respawnT, deadT: m.deadT, state: m.state, x: m.x, y: m.y }));
+      const keep = { op: JSON.parse(JSON.stringify(quest.outposts || {})), inv: JSON.parse(JSON.stringify(player.inv)), camp: quest.campCleared, x: player.x, y: player.y, f: { ...player.facing } };
+      const res = {};
+      try {
+        quest.outposts = {}; quest.campCleared = false; player.inv = new Array(INV_SLOTS).fill(null);
+        Fh.tp(...ATLAS.frame('drill_field').p(60, 40)); levelBanner = null; dialog.queue.length = 0; advanceDialog();
+        const heap = [...HEAPS].find(([, p]) => p === id), hx = heap[0] % MAP_W, hy = (heap[0] / MAP_W) | 0;
+        res.guarded = heapUse(DECO.at(hx, hy));
+        const last = g.find(m => m.type === 'goblin');
+        for (const m of g) if (m !== last) { m.dead = true; m.deadT = 0; m.respawnT = 999; }
+        res.notYet = !Q(id).cleared;
+        last.dead = false; last.hp = 1; last.x = last.home.x; last.y = last.home.y; killMonster(last);
+        res.banner = !!levelBanner && levelBanner.text === WORDS.cleared[0] && levelBanner.sub === WORDS.cleared[1];
+        res.campBanner = quest.campCleared; res.slow = last.respawnT === CAMP_RESPAWN; res.cleared = Q(id).cleared === 1 && Q(id).won === 1;
+        const lk = [...THINGS].find(([, c]) => c.place === id); notice = null; for (const f of HOOKS.use) if (f(SOLID_T(), lk[0] % MAP_W, (lk[0] / MAP_W) | 0)) break; res.lookout = notice && notice.text;
+        const c0 = coins(); res.found = heapUse(DECO.at(hx, hy)); res.coins = coins() - c0; res.scrap = countItem('goblin_scrap'); res.again = heapUse(DECO.at(hx, hy));
+        const watcher = PEOPLE.find(p => p.place === id); const c1 = coins(); talkTo(watcher); res.thanks = coins() - c1; talkTo(watcher); res.thanks2 = coins() - c1; dialog.queue.length = 0; advanceDialog();
+        // too close (14 tiles off the gap) it waits; far off it comes back, and the outpost is filling again
+        levelBanner = null; last.respawnT = 0; const [gx, gy] = gapOf(id); Fh.tp(gx + 14, gy); h.peace(true); Fh.sim(5, []); res.waits = last.dead;
+        Fh.tp(...ATLAS.frame('drill_field').p(60, 40)); Fh.sim(80, []); h.peace(false); res.back = !last.dead && Q(id).cleared === 0;
+      } finally {
+        for (const s of snap) Object.assign(s.m, { dead: s.dead, hp: s.hp, respawnT: s.respawnT, deadT: s.deadT, state: s.state, x: s.x, y: s.y });
+        quest.outposts = keep.op; player.inv = keep.inv; quest.campCleared = keep.camp; player.x = keep.x; player.y = keep.y; player.facing = keep.f; levelBanner = null; notice = null;
+        dialog.queue.length = 0; advanceDialog(); drops = drops.filter(d => !g.some(m => dist(d.x, d.y, m.home.x, m.home.y) < LOOKOUT_REACH));
+      }
+      check(P + 'clearing the north outpost: the last goblin down shows "GOBLIN OUTPOST CLEARED" (not the camp\'s banner), each stays down 30 minutes and waits while the knight is near; the heap gives 15 coins and two scrap once, the lookout is empty, Bramble thanks the knight once (30 coins); far off they come back and the outpost fills again',
+        res.guarded === WORDS.heapGuarded && res.notYet && res.banner && !res.campBanner && res.slow && res.cleared && res.lookout === WORDS.lookoutEmpty && res.found === WORDS.heapFound && res.coins === 15 && res.scrap === 2
+        && res.again === WORDS.heapEmpty && res.thanks === REWARD.bramble_scout && res.thanks2 === REWARD.bramble_scout && res.waits && res.back, res); }
+
+    // 5. the people: on open ground in their own place (the Atlas zone), reached from the cave mouth, in the townsfolk look;
+    // the rails, the lookouts, the heaps and the fires are reached too
+    { const bad = [];
+      for (const p of PEOPLE) {
+        const zone = A.zoneAt('over', p.x, p.y);
+        if (!NPCS.includes(p)) bad.push(p.id + ' not in NPCS');
+        if (SOLID.has(tileAt(p.x, p.y))) bad.push(p.id + ' on ' + tileName(tileAt(p.x, p.y)));
+        if (!reach(p.x, p.y)) bad.push(p.id + ' not reached from the cave');
+        if (zone !== p.place) bad.push(p.id + ' zone ' + zone);
+        if (!TOWNSFOLK_ART.NEW_NPC[p.id]) bad.push(p.id + ' has no look');
+      }
+      for (const id of IDS) { const p = POSTS[id]; if (!p || tileAt(p.x, p.y) !== T.HITCH || !reach(p.x, p.y)) bad.push(id + ' rail'); }
+      for (const [i] of THINGS) if (!reach(i % MAP_W, (i / MAP_W) | 0)) bad.push('lookout not reached');
+      for (const [i] of HEAPS) if (!reach.at(i % MAP_W, (i / MAP_W) | 0)) bad.push('heap not reached');
+      for (const id of IDS) { const rows = PLAN[id]; rows.forEach((row, ry) => [...row].forEach((c, rx) => { if (c !== 'F') return; const [x, y] = FR[id].p(rx, ry); if (tileAt(x, y) !== T.FIRE || !reach(x, y)) bad.push(id + ' fire'); })); }
+      check(P + 'Bramble the scout by her hide and Brin the drover at the end of his track stand in their own outposts\' Atlas zones in the townsfolk look; a knight walks to each of them, to both rails, the lookouts, the heaps and the fires (cook on them) from the cave mouth',
+        !bad.length, { bad }); }
+
+    // 6. they talk: a line at a time; plain words, short, no compass word
+    // (and after the win: while the outpost is cleared their after lines, never the story before it; while it fills again
+    // after a win, that the goblins are back: the review of bcb559f)
+    { const said = {}, MOODS = { before: () => ({}), after: id => ({ [id]: { cleared: 1, won: 1, thanked: 1, searched: 1 } }), back: id => ({ [id]: { cleared: 0, won: 1, thanked: 1 } }) };
+      const want = (p, m) => m === 'before' ? p.lines : (m === 'after' ? AFTER : BACK)[p.id];
+      for (const p of PEOPLE) { const keep = { s: Object.assign({}, SAID), op: JSON.parse(JSON.stringify(quest.outposts || {})) }; said[p.id] = {};
+        for (const m of Object.keys(MOODS)) { quest.outposts = MOODS[m](p.place); said[p.id][m] = [];
+          for (let k = 0; k < want(p, m).length + 2; k++) { dialog.queue.length = 0; advanceDialog(); talkTo(p); const d = [dialog.cur, ...dialog.queue].find(q => q && q.who === p.name); said[p.id][m].push(d ? d.text : null); } }
+        Object.keys(SAID).forEach(k => delete SAID[k]); Object.assign(SAID, keep.s); quest.outposts = keep.op; dialog.queue.length = 0; advanceDialog(); }
+      const lines = Object.values(LINES).flat().concat(Object.values(AFTER).flat(), Object.values(BACK).flat(), Object.values(WORDS.thanks), [WORDS.lookout, WORDS.lookoutEmpty, WORDS.heapGuarded, WORDS.heapFound, WORDS.heapEmpty, WORDS.hide, WORDS.junk]);
+      const told = PEOPLE.every(p => Object.keys(MOODS).every(m => want(p, m).every(t => said[p.id][m].includes(t)) && said[p.id][m].every(t => want(p, m).includes(t))));
+      check(P + 'Bramble and Brin each tell their story a line at a time; once the outpost is cleared they say only their after-the-win lines (never that the goblins are still in there), and while it fills again after a win, that the goblins came back; every line (and every word the outposts say) is short and plain, with no compass word',
+        told && lines.every(t => t.length <= 140 && !/\b(north|south|east|west)\b|\bmiles?\b/i.test(t)), { said }); }
+
+    // 7. the rails and the signposts: a RAILS entry on a HITCH tile in each place; a signpost where the trail and the
+    // Drovers' Track leave the road, naming the outpost (arms drawn) and never "builders at work"; nothing built here stands
+    // on a main road; placing on their ground says whose it is
+    { const rails = IDS.map(id => { const r = RAILS.find(q => q.id === id), p = r && r.at(); return !!p && inB(A.box(id), p.x, p.y) && tileAt(p.x, p.y) === T.HITCH && RAILS.of(p.x, p.y) === r && !r.reserved; });
+      const signs = [...SIGNS.keys()].map(i => { const x = i % MAP_W, y = (i / MAP_W) | 0, w = A.signText(x, y), arms = window.SIGN_ARMS && SIGN_ARMS(x, y);
+        return { at: [x, y], sign: tileAt(x, y) === T.SIGN, outpost: /goblin outpost/.test(w || ''), arms: !!arms && arms.some(a => a[1] === 'OUTPOST'), road: roadD(x, y, A.MAIN_ROADS), reached: reach(x, y) }; });
+      const words = SG ? SG.signs.map(([x, y]) => A.signText(x, y)) : [];
+      const builders = words.filter(t => /goblin outpost \(builders at work\)/i.test(t));
+      const onRoad = []; for (const id of IDS) PLAN[id].forEach((row, ry) => [...row].forEach((c, rx) => { const [x, y] = FR[id].p(rx, ry); if (/[pLFHS]/.test(c) && A.onMainRoad(x, y)) onRoad.push(c + '@' + x + ',' + y); }));
+      h.give('goblin_trap', 2); h.peace(true);
+      const placed = {};
+      for (const [id, F, rx, ry] of [['outpost_north', ON, 5, 2], ['outpost_south', OS, 4, 4]]) {
+        const [x, y] = F.p(rx, ry), n0 = countItem('goblin_trap'); Fh.tp(x, y); player.facing = { x: 0, y: 1 }; notice = null; placeAction('goblin_trap');
+        placed[id] = { placed: countItem('goblin_trap') < n0, notice: notice && notice.text };
+      }
+      h.peace(false);
+      check(P + "each outpost has its hitching rail (a RAILS entry, on a HITCH tile in its box); a signpost by the road names the goblin outpost (its arm drawn), none says \"builders at work\"; nothing built stands on a main road; \"This is a goblin outpost's ground. Build somewhere else.\"",
+        rails.every(Boolean) && signs.length === 2 && signs.every(s => s.sign && s.outpost && s.arms && s.road <= 6 && s.reached) && !builders.length && !onRoad.length
+        && IDS.every(id => !placed[id].placed && placed[id].notice === "This is a goblin outpost's ground. Build somewhere else."), { rails, signs, builders, onRoad, placed }); }
   });
 }
 
@@ -65018,6 +66483,7 @@ const MOUNT_LOOK = (() => {
       'Climb a tower and look around. From the top you can see places you have never been, and your map will remember them.',
       'The path up goes back and forth. It is slow, but it is the only way. The rock is too steep to climb anywhere else.',
       'Mind the snakes in the rocks below. And the crows. A crow will steal anything shiny.',
+      'Climb all three towers and come back to me. A keeper always thanks a climber.',
     ],
     hilde: [
       'Pelts, skins and furs! I pay full price for every one.',
@@ -65036,13 +66502,13 @@ const MOUNT_LOOK = (() => {
   const WORDS = {
     trapGift: 'Want to learn traps? Take this one. Use it from your pack to set it down where goblins walk. When one steps on it, snap!',
     allThree: 'You climbed all three towers! Not many people do. Here, a keeper\'s thanks.',
-    pelts: 'Hilde only buys pelts and skins.',
+    pelts: 'Hilde only buys pelts, skins and feathers.',
     traps: 'Corvin buys nothing. He only sells.',
   };
   const PEOPLE = [
     BH.pt({ id: 'ansel', name: 'Ansel the beacon keeper', x: 20, y: 3, tunic: '#7a5a3a', hair: '#cfcac0', beard: true, role: 'beaconkeeper', lines: LINES.ansel }),
     HL.pt({ id: 'hilde_trapper', name: 'Hilde the trapper', x: 4, y: 2, tunic: '#6a4a2e', hair: '#b8742e', woman: true, role: 'shop', shop: 'lodge_pelts' }),
-    HL.pt({ id: 'corvin_hunter', name: 'Corvin the hunter', x: 9, y: 2, tunic: '#4a5a32', hair: '#3a2a1a', beard: true, role: 'shop', shop: 'lodge_traps' }),
+    HL.pt({ id: 'corvin_hunter', name: 'Corvin the hunter', x: 7, y: 3, tunic: '#4a5a32', hair: '#3a2a1a', beard: true, role: 'shop', shop: 'lodge_traps' }),
   ].map(n => Object.assign(n, { wildplaces: true }));
 
   // ---------- the bear ----------
@@ -65072,7 +66538,7 @@ const MOUNT_LOOK = (() => {
   if (A.REVS) A.REVS[4] = { stage: '5d', by: '86-wildplaces', why: "Beacon Hills and the Hunters' Lodge: each box with its dressing ring, and the bear's den", boxes: FOOT() };
 
   // ---------- the shops ----------
-  SHOPS.lodge_pelts = { name: "Hilde's Furs", stock: [['raw_beef', 6], ['cooked_beef', 12]], buys: ['wolf_pelt', 'bear_pelt', 'snakeskin', 'boar_tusk', 'wool'], rate: 1, buysWords: WORDS.pelts };
+  SHOPS.lodge_pelts = { name: "Hilde's Furs", stock: [['raw_beef', 6], ['cooked_beef', 12]], buys: ['wolf_pelt', 'bear_pelt', 'snakeskin', 'boar_tusk', 'wool', 'crow_feather'], rate: 1, buysWords: WORDS.pelts };   // (the crow's feather: she trims her hats with them)
   SHOPS.lodge_traps = { name: "Corvin's Traps", stock: [['goblin_trap', 50], ['shortbow', 50], ['stone_arrow', 1]], buys: [], rate: 1, buysWords: WORDS.traps };
 
   // ---------- the rails ----------
@@ -65377,9 +66843,19 @@ const MOUNT_LOOK = (() => {
   // Ansel: his story a line at a time; climb all three towers and he thanks the knight once
   HOOKS.talk.beaconkeeper = n => {
     const q = W();
+    if (!q.met) { q.met = 1; if (!TOWERS.every(tw => q.climbed[tw.id])) { quest.tracked = 'beacons'; notify(`New quest: The Three Beacons. ${touchMode() ? 'Tap QUESTS' : 'Press ' + keyName('J')} to read it.`); } save(); }
     if (TOWERS.every(tw => q.climbed[tw.id]) && !q.thanked) { q.thanked = 1; addItem('coins', 40); say(WORDS.allThree, n.name); burst(player.x, player.y, '#ffd166', 12, 60); save(); return; }
     say(nextLine(n), n.name);
   };
+  // the quest book (J) and the map: The Three Beacons, from the first word with Ansel to his thanks (the review of bcb559f)
+  QUEST_DEFS.beacons = { name: 'The Three Beacons' };
+  const climbedN = () => TOWERS.filter(tw => W().climbed[tw.id]).length;
+  HOOKS.questText.beacons = () => { const q = W(); return q.thanked ? 'Done.' : climbedN() === TOWERS.length ? 'All three towers climbed! Go back and tell Ansel.' : `Climb the three beacon towers on Beacon Hills (${climbedN()}/${TOWERS.length}). Press E at a tower's door. The path up goes back and forth.`; };
+  HOOKS.activeQuests.push(() => { const q = quest.wild; return q && q.met && !q.thanked ? ['beacons'] : []; });
+  if (HOOKS.mapTarget) HOOKS.mapTarget.push(() => { const q = quest.wild; if (!q || !q.met || q.thanked) return null;
+    const tw = TOWERS.find(t => !W().climbed[t.id]);
+    if (!tw) { const a = PEOPLE[0]; return { x: a.x, y: a.y, label: a.name, id: 'beacons' }; }
+    const [x, y] = stepOf(tw); return { x, y, label: tw.name.charAt(0).toUpperCase() + tw.name.slice(1), id: 'beacons' }; });
   // Hilde greets and opens her furs; Corvin gives the knight his first trap (once), then talks traps and opens his shop
   { const prev = HOOKS.talkBefore.shop;
     HOOKS.talkBefore.shop = n => {
@@ -65494,11 +66970,16 @@ const MOUNT_LOOK = (() => {
         talkTo(corvin); res.gift = countItem('goblin_trap'); res.corvinShop = panel === 'shop' && panelArg === 'lodge_traps'; closePanel(); dialog.queue.length = 0; advanceDialog();
         talkTo(corvin); res.gift2 = countItem('goblin_trap'); closePanel(); dialog.queue.length = 0; advanceDialog();
         res.stock = ['goblin_trap', 'shortbow', 'stone_arrow'].every(id => SHOPS.lodge_traps.stock.some(([k]) => k === id));
+        // (the review of bcb559f) Corvin buys nothing, and his panel says so: no "Tap your pack to sell", no empty "SELLS FOR
+        // FULL PRICE:"; the crow's feathers have a buyer (Hilde)
+        res.corvinHead = shopSellHead(SHOPS.lodge_traps); res.corvinSub = shopSubtitle(SHOPS.lodge_traps);
+        res.corvinPanel = res.corvinHead === WORDS.traps.toUpperCase() && !/tap your pack/i.test(res.corvinSub) && /tap your pack/i.test(shopSubtitle(sh));
+        res.feathers = sh.buys.includes('crow_feather');
         const c0 = coins(); for (const tw of TOWERS) W().climbed[tw.id] = 1;
         talkTo(ansel); res.thanks = coins() - c0; talkTo(ansel); res.thanks2 = coins() - c0; dialog.queue.length = 0; advanceDialog();
       } finally { player.inv = keep.inv; quest.wild = keep.wild; closePanel(); dialog.queue.length = 0; advanceDialog(); }
-      check(P + "the services: Hilde's furs open and she buys wolf and bear pelts and snakeskin at full price; Corvin gives one goblin trap the first time only, and sells traps, a bow and arrows; with all three towers climbed Ansel gives 40 coins, once",
-        res.hildeShop && res.buys && res.gift === 1 && res.gift2 === 1 && res.corvinShop && res.stock && res.thanks === 40 && res.thanks2 === 40, res); }
+      check(P + "the services: Hilde's furs open and she buys wolf and bear pelts, snakeskin and crow feathers at full price; Corvin gives one goblin trap the first time only, and sells traps, a bow and arrows (his panel says he buys nothing, and never asks for a tap on the pack); with all three towers climbed Ansel gives 40 coins, once",
+        res.hildeShop && res.buys && res.corvinPanel && res.feathers && res.gift === 1 && res.gift2 === 1 && res.corvinShop && res.stock && res.thanks === 40 && res.thanks2 === 40, res); }
 
     // 7. the range: an arrow shot from the worn line strikes a target (it trains Ranged and lands at the target's foot)
     { const keep = { inv: JSON.parse(JSON.stringify(player.inv)), eq: JSON.parse(JSON.stringify(player.equip)), x: player.x, y: player.y, f: { ...player.facing }, skills: JSON.parse(JSON.stringify(player.skills)) };
@@ -65967,7 +67448,7 @@ const MOUNT_LOOK = (() => {
       giant_rat: ['Giant rat', "A rat as big as a cat, up out of the cave and into the grass. It nibbles everything: bread, seeds, even coins. It only bites back if you hit it first."],
       snake: ['Snake', "A grass snake that lives in the reeds round Miller's Pond. Hit it and it bites. It sheds a fine skin that shops will buy."],
       adder: ['Adder', "An adder: grey-brown, with a black zigzag down its back and a red eye. Tougher than a grass snake, and its bite hurts more. It always leaves its skin behind."],
-      wild_dog: ['Wild dog', "Wild dogs hunt in packs of three, out in the fields away from the road. Come within four steps and the whole pack runs at you. Keep to the road, or come back when you are stronger."],
+      wild_dog: ['Wild dog', "Wild dogs hunt in packs of three, out in the fields away from the road. Come within four steps and the whole pack runs at you, but they never follow you onto the road. Keep to the road, or come back when you are stronger."],
       bear: ['Bear', "A big brown bear lives in a den in the wood, past the Hunters' Lodge. She stays near her den, but come close and she charges. Hilde the trapper pays well for a bear pelt."],
     };
     for (const id in BLURB) WIKI.add('monsters', { id, name: BLURB[id][0], blurb: BLURB[id][1] });
@@ -66163,6 +67644,15 @@ const MOUNT_LOOK = (() => {
           const S = DEFS.wild_dog.sight;
           reset(); player.x = dog.home.x + S * 1.25; player.y = dog.home.y; F.step([]); res.at5 = dog.state;
           reset(); player.x = dog.home.x + S * 0.875; player.y = dog.home.y; F.step([]); res.at35 = dog.state;
+          // the chase ends the moment he steps onto a main road, and a dog never starts one at a knight on it (the book's
+          // "keep to the road"; the review of bcb559f: a pack chased a new knight down the Cave Road)
+          { const hx = Math.floor(dog.home.x / TILE), hy = Math.floor(dog.home.y / TILE); let rc = null;
+            for (let r = 1; r < 20 && !rc; r++) for (let dy = -r; dy <= r && !rc; dy++) for (let dx = -r; dx <= r && !rc; dx++) if (Math.max(Math.abs(dx), Math.abs(dy)) === r && A.onMainRoad(hx + dx, hy + dy) && !SOLID.has(tileAt(hx + dx, hy + dy))) rc = [hx + dx, hy + dy];
+            res.road = rc;
+            // (the dog two tiles off him, well inside its chase: only the road ends it)
+            if (rc) { player.x = tc(rc[0]); player.y = tc(rc[1]); const ux = dog.home.x - player.x, uy = dog.home.y - player.y, ul = Math.hypot(ux, uy) || 1;
+              dog.x = player.x + ux / ul * 2 * TILE; dog.y = player.y + uy / ul * 2 * TILE; dog.state = 'chase'; F.step([]); res.onRoad = dog.state;
+              reset(); dog.x = player.x + S * 0.5; dog.y = player.y; F.step([]); res.onRoadNear = dog.state; } }
           // idle for 40 s with him 30 tiles off: never past 2 tiles (and the push of a packmate) from home
           reset(); player.x = dog.home.x + S * 7.5; player.y = dog.home.y; let far = 0;
           for (let i = 0; i < 2400; i++) { F.step([]); far = Math.max(far, dist(dog.x, dog.y, dog.home.x, dog.home.y)); }
@@ -66180,8 +67670,8 @@ const MOUNT_LOOK = (() => {
           player.x = px0; player.y = py0; player.hp = hp0; window.__peace = peace0;
         }
       }
-      check(P + 'a wild dog wakes at 3.5 tiles but not at 5, idles within 2 tiles of home (and a packmate\'s push), a crow lets a knight stand beside it, and the blows that fell it pay at least its 32 melee xp',
-        !!dog && !!crow && res.at5 !== 'chase' && res.at35 === 'chase' && res.far <= 2.6 && res.calm && res.killed && res.kills === 1 && res.xp >= DEFS.crow.hp * 4, res);
+      check(P + 'a wild dog wakes at 3.5 tiles but not at 5, gives up the chase when the knight steps onto a main road and never chases one standing on it, idles within 2 tiles of home (and a packmate\'s push), a crow lets a knight stand beside it, and the blows that fell it pay at least its 32 melee xp',
+        !!dog && !!crow && res.at5 !== 'chase' && res.at35 === 'chase' && !!res.road && res.onRoad !== 'chase' && res.onRoadNear !== 'chase' && res.far <= 2.6 && res.calm && res.killed && res.kills === 1 && res.xp >= DEFS.crow.hp * 4, res);
     }
   });
 }
@@ -77591,6 +79081,8 @@ const MOUNT_LOOK = (() => {
     ash_wastes: "Builders' stakes. The Ash Wastes are not open yet.",
     sylvaris_growth: "Builders' stakes. Sylvaris is growing.",
     blood_portal: "Builders' stakes. Something will open here one day.",
+    // the bandits' hideout in the Bandit Hills' rock (86-bandits stakes its mouth; an instance later)
+    bandit_hideout: "Builders' stakes. The Bandit Hideout is coming.",
   };
   // a name whose last word is plural takes "are" ("The Bandit Hills are coming."), the rest "is"
   const isAre = name => /[^s']s$/.test(name.split(' ').pop()) ? 'are' : 'is';
@@ -77825,8 +79317,8 @@ const MOUNT_LOOK = (() => {
         const { tx, ty } = frontTile(player, 40);
         const rid = inMap(tx, ty) ? A.builtAt(tx, ty) || A.reservedAt(tx, ty) : null;
         // (a built place keeps its ground: its people, paths and yards are not a knight's to build on)
-        // (a name ending in s takes a bare apostrophe: "Beacon Hills' ground")
-        if (rid && A.isBuilt(rid)) { const nm = NAMES[rid][1].replace(/^The /, 'the '); notify(`This is ${nm}${/s$/.test(nm) ? "'" : "'s"} ground. Build somewhere else.`); return; }
+        // (a name ending in s takes a bare apostrophe: "Beacon Hills' ground"; "A goblin outpost" reads "a goblin outpost's")
+        if (rid && A.isBuilt(rid)) { const nm = NAMES[rid][1].replace(/^(The|A) /, w => w.toLowerCase()); notify(`This is ${nm}${/s$/.test(nm) ? "'" : "'s"} ground. Build somewhere else.`); return; }
         if (inMap(tx, ty) && (rid || A.onMainRoad(tx, ty))) { notify('Builders have staked this ground.'); return; }
       }
       return _placeAction.apply(this, arguments);
@@ -77920,8 +79412,11 @@ const MOUNT_LOOK = (() => {
       check(P + "a signpost stands beside every road node (" + want + " besides the story's), and the Mill Lane fork's names Millbrook, Thistledown and the cave, and says the way to Thistledown goes past the old signpost (chapter 4's sign)",
         SP.signs.length === want && !bad.length && !!words && /Millbrook/.test(words) && /Thistledown, south-east, past the old signpost\./.test(words) && /cave/.test(words), { signs: SP.signs.length, want, bad, words, skipped: S.skipped }); }
     // the road network is laid whole: each main road's centre line is open ground (a bridge, a gate or a door counts) from
-    // end to end, bar the story signpost, the gates' own tiles and Hollowford's ruins
+    // end to end, bar the story signpost, the gates' own tiles and Hollowford's ruins. A machine, a wreck or the mare left
+    // on the road by the play before this check is not the world's (a knight walks round it, and the save migration parks
+    // them as SPREAD.MACHINES): the review of bcb559f saw the camp walker's wreck land on the Goblin Road once in three runs
     { const gaps = {}, OKT = new Set([T.SIGN, Tn('WARDEN_GATE'), Tn('LAIR_GATE'), T.GATE, T.DOOR].filter(v => v >= 0)), hf = A.box('hollowford');
+      for (const n of (window.SPREAD ? SPREAD.MACHINES : []).concat(['HORSE'])) if (Tn(n) >= 0) OKT.add(Tn(n));
       for (const id of A.MAIN_ROADS) { const pl = A.track(id);
         for (let k = 1; k < pl.length; k++) { const [ax, ay] = pl[k - 1], [bx, by] = pl[k], n = Math.max(1, Math.round(Math.max(Math.abs(bx - ax), Math.abs(by - ay))));
           for (let s = 0; s <= n; s++) { const x = Math.round(ax + (bx - ax) * s / n), y = Math.round(ay + (by - ay) * s / n), t = tileAt(x, y);
@@ -82614,6 +84109,12 @@ const MOUNT_LOOK = (() => {
     }
     for (const c of Array.isArray(d.crops) ? d.crops : []) { const x = c.i % W, y = Math.floor(c.i / W); if (inBox(x, y)) P.crops.push({ x, y, stage: c.stage | 0, crop: c.crop || null }); else keepCrops.push(c); }
     d.mapDiffs = keep; d.crops = keepCrops;
+    // regrowth and fires in the boxes go too (the world-1 move clears them all): a stump's regrow left behind would grow
+    // the old world's tree back on the new place's ground once its stump diff is swept (the review of bcb559f)
+    const outside = e => !(e && typeof e.i === 'number') || !inBox(e.i % W, Math.floor(e.i / W));
+    const rg = Array.isArray(d.regrow) ? d.regrow : [], fi = Array.isArray(d.fires) ? d.fires : [];
+    d.regrow = rg.filter(outside); d.fires = fi.filter(outside);
+    P.regrow = rg.length - d.regrow.length; P.fires = fi.length - d.fires.length;
     S.pending = P;
     SAVE_LOCK = true; saveLockSay = SAVE_KEPT;
   }
@@ -82884,6 +84385,15 @@ const MOUNT_LOOK = (() => {
     const R = newReport('rev'); R.from = { worldRev: P.from }; R.boxes = P.boxes;
     const remade = remakeAll(R, { wreckLies: false });
     const got = sortDiffs(R, P, remade, (x, y) => [x, y]);
+    R.dropped.regrow = P.regrow | 0; R.dropped.fires = P.fires | 0;
+    // a lodestone or a bed that came back takes his home and his bed's spirit with it (as finish() clears both)
+    const inBox = (x, y) => P.boxes.some(b => x >= b[0] && x <= b[2] && y >= b[1] && y <= b[3]);
+    const swept = n => P.diffs.filter(e => e.name === n);
+    if (player.bedSpawn) { const bx = Math.floor(player.bedSpawn.x / TILE), by = Math.floor(player.bedSpawn.y / TILE);
+      if ((inBox(bx, by) || swept('BED').some(e => e.x === bx && e.y === by)) && tileAt(bx, by) !== T.BED) { player.bedSpawn = null; R.homeCleared = (R.homeCleared || []).concat('bed'); } }
+    if (player.home) { const hx = Math.floor(player.home.x / TILE), hy = Math.floor(player.home.y / TILE), near = (x, y) => Math.max(Math.abs(x - hx), Math.abs(y - hy)) <= 3;
+      let stone = false; for (let dy = -3; dy <= 3 && !stone; dy++) for (let dx = -3; dx <= 3 && !stone; dx++) if (tileAt(hx + dx, hy + dy) === T.LODESTONE) stone = true;
+      if (!stone && (inBox(hx, hy) || swept('LODESTONE').some(e => near(e.x, e.y)))) { player.home = null; R.homeCleared = (R.homeCleared || []).concat('home'); } }
     const L = newLot();
     for (const n of got.machines) parkMachine(R, L, n);
     if (got.mare) tieMare(R, L);
@@ -82891,6 +84401,7 @@ const MOUNT_LOOK = (() => {
     const lines = refundLines(R);
     if (R.mare) lines.push(`${mareName()} is tied at Fennick's rail.`);
     const ml = machineLine(R.parked); if (ml) lines.push(ml);
+    if (R.homeCleared && R.homeCleared.includes('home')) lines.push('Your lodestone came back, so home is not set. Place it again to make a new home.');
     if (lines.length) { lines.unshift('Builders came while you slept.'); for (const l of lines) say(l, 'The Voice'); }
     R.lines = lines;
     const s = quest.spread && typeof quest.spread === 'object' ? quest.spread : (quest.spread = { told: true, owed: [] });
@@ -82907,6 +84418,8 @@ const MOUNT_LOOK = (() => {
     const P = { kind: 'rev', from: WORLD_REV, boxes, diffs: [], crops: [] };
     for (const [i, t] of [...mapDiffs]) { const x = i % MAP_W, y = Math.floor(i / MAP_W); if (!inBox(x, y)) continue; P.diffs.push({ x, y, name: tileName(t) }); mapDiffs.delete(i); setTile(x, y, ground(x, y)); }
     crops = crops.filter(c => { const x = c.i % MAP_W, y = Math.floor(c.i / MAP_W); if (!inBox(x, y)) return true; P.crops.push({ x, y, stage: c.stage | 0, crop: c.crop || null }); return false; });
+    const out = e => !inBox(e.i % MAP_W, Math.floor(e.i / MAP_W)), r0 = regrow.length, f0 = fires.length;
+    regrow = regrow.filter(out); fires = fires.filter(out); P.regrow = r0 - regrow.length; P.fires = f0 - fires.length;
     return P;
   };
 
@@ -83096,13 +84609,25 @@ const MOUNT_LOOK = (() => {
         const g0 = [o[0] - 1, o[1]], g1 = [o[0] + 1, o[1]], g2 = [o[0], o[1] + 1];
         const ok0 = [g0, g1, g2, out].every(([x, y]) => PLACEABLE_ON.has(tileAt(x, y)));
         const was = [g0, g1, g2, out].map(([x, y]) => tileAt(x, y));
+        // (the review of bcb559f: the stump's regrow and a fire in the box go with them, and a lodestone and a bed in the box
+        // come back with his home and his bed's spirit cleared)
+        const fc = [o[0], o[1] - 1], lc = [o[0] - 2, o[1] - 2], bc = [o[0] + 2, o[1] - 2];
+        const was2 = [fc, lc, bc].map(([x, y]) => tileAt(x, y)), home0 = player.home, bed0 = player.bedSpawn, rg0 = regrow.slice(), fi0 = fires.slice();
         changeTile(...g0, T.PLANK); changeTile(...g1, T.WRECK); changeTile(...g2, T.STUMP); changeTile(...out, T.PLANK);
-        const planks0 = count('plank'), under = new Map([g0, g1, g2].map(([x, y], k) => [idx(x, y), was[k]])), P = S.sweep([box], (x, y) => under.get(idx(x, y))); const R = sweepFinish(P);
+        regrow.push({ i: idx(...g2), t: T.TREE, timer: 0.01 }, { i: idx(...out), t: T.TREE, timer: 999 });
+        changeTile(...fc, T.FIRE); fires.push({ i: idx(...fc), timer: 0.01, under: T.TREE });
+        changeTile(...lc, T.LODESTONE); player.home = { x: tc(lc[0]), y: tc(lc[1] + 1) }; changeTile(...bc, T.BED); player.bedSpawn = { x: tc(bc[0]), y: tc(bc[1]) };
+        const planks0 = count('plank'), lode0 = count('lodestone'), beds0 = count('bed');
+        const under = new Map([g0, g1, g2, fc, lc, bc].map(([x, y], k) => [idx(x, y), k < 3 ? was[k] : was2[k - 3]])), P = S.sweep([box], (x, y) => under.get(idx(x, y))); const R = sweepFinish(P);
         const wreckAt = [...mapDiffs].filter(([, t]) => t === T.WRECK).map(([i]) => [i % MAP_W, Math.floor(i / MAP_W)]);
-        const res = { ok0, plank: count('plank') === planks0 + 1, wreck: wreckAt.length >= 1 && R.parked.WRECK === 1, stump: tileAt(...g2) === was[2] && R.dropped.STUMP === 1, kept: tileAt(...out) === T.PLANK && mapDiffs.get(idx(...out)) === T.PLANK };
+        const inBoxI = i => { const x = i % MAP_W, y = Math.floor(i / MAP_W); return x >= box[0] && x <= box[2] && y >= box[1] && y <= box[3]; };
+        const res = { ok0, plank: count('plank') === planks0 + 1, wreck: wreckAt.length >= 1 && R.parked.WRECK === 1, stump: tileAt(...g2) === was[2] && R.dropped.STUMP === 1, kept: tileAt(...out) === T.PLANK && mapDiffs.get(idx(...out)) === T.PLANK,
+          regrow: !regrow.some(r => inBoxI(r.i)) && regrow.some(r => r.i === idx(...out)) && R.dropped.regrow === 1, fire: !fires.some(f => inBoxI(f.i)) && R.dropped.fires === 1 && tileAt(...fc) === was2[0],
+          home: player.home === null && count('lodestone') === lode0 + 1, bed: player.bedSpawn === null && count('bed') === beds0 + 1 && respawnPoint() !== null };
         for (const [i, t] of [...mapDiffs]) if (t === T.WRECK) { mapDiffs.delete(i); setTile(i % MAP_W, Math.floor(i / MAP_W), T.DIRT); }
-        changeTile(...out, was[3]); mapDiffs.delete(idx(...out)); removeItem('plank', 1); dialog.queue.length = 0; dialog.cur = null;
-        check(P0 + 'a worldRev sweep in a footprint box: a plank placed inside comes back, a walker wreck inside is parked round the Bulldozer bay, a stump inside is cleared, and a plank outside the box is kept', Object.values(res).every(Boolean), res); }
+        changeTile(...out, was[3]); mapDiffs.delete(idx(...out)); for (const id of ['plank', 'lodestone', 'bed']) { const b = player.bank.find(q => q && q.id === id); if (b) { if (!--b.qty) player.bank.splice(player.bank.indexOf(b), 1); } else removeItem(id, 1); } dialog.queue.length = 0; dialog.cur = null;
+        regrow = rg0; fires = fi0; player.home = home0; player.bedSpawn = bed0;
+        check(P0 + 'a worldRev sweep in a footprint box: a plank placed inside comes back, a walker wreck inside is parked round the Bulldozer bay, a stump inside is cleared with its regrowth and a fire inside goes out for good (regrowth outside kept), a lodestone and a bed inside come back with his home and his bed cleared, and a plank outside the box is kept', Object.values(res).every(Boolean), res); }
     } finally {
       SAVE_LOCK = false; quest.spread = null;
       if (raw0 === null) localStorage.removeItem(K(slot0)); else localStorage.setItem(K(slot0), raw0);
@@ -83375,6 +84900,62 @@ const MOUNT_LOOK = (() => {
   // no place's box, no port, no building, no person and no fixed wall or cliff with x >= MAP_W - 8 or y >= MAP_H - 8, but
   // the east sea itself and the open grounds (the Ash Wastes are reserved Wilds; the Jungle and the Grub Fields run to the edge)
   const EDGE = 8;
+  // E at a new place's hitching rail, at the mare tied beside it, or at its signposts uses that thing: no person stands
+  // where npcInFront (06-systems: 118 px, in a cone ahead) would answer first (the review of bcb559f: E at Wilf's, Wat's and
+  // Brin's rails talked to them, so the mare never came or was never mounted). For every Stage 5 rail (Fennick's stands by
+  // his own on purpose: he sells her) the post and each open cell round it (where she is tied), and every signpost in a
+  // Stage 5 footprint box: the knight on each open cell beside it, facing it, with every person at home.
+  function peopleClearOfThings() {
+    const bad = [], targets = [], HORSE = Tn('HORSE');
+    for (const r of (window.RAILS || [])) { if (r.id === 'thistledown' || r.reserved) continue; const p = r.at(); if (!p) continue;
+      targets.push({ what: r.id + ' rail', x: p.x, y: p.y, t: tileAt(p.x, p.y) });
+      for (const [dx, dy] of N8) { const x = p.x + dx, y = p.y + dy; if (inMap(x, y) && PLACEABLE_ON.has(tileAt(x, y)) && !insideBuilding(x, y)) targets.push({ what: r.id + ' mare', x, y, t: HORSE }); } }
+    const signs = new Set();
+    for (let r = 2; r <= WORLD_REV; r++) for (const b of ((A.REVS || {})[r] || {}).boxes || []) for (let y = b[1]; y <= b[3]; y++) for (let x = b[0]; x <= b[2]; x++) if (inMap(x, y) && tileAt(x, y) === T.SIGN && !signs.has(idx(x, y))) { signs.add(idx(x, y)); targets.push({ what: 'signpost', x, y, t: T.SIGN }); }
+    const keep = { x: player.x, y: player.y, f: player.facing }, homes = NPCS.map(n => [n, n.px, n.py]);
+    try {
+      for (const n of NPCS) if (n.home) { n.px = n.home.x; n.py = n.home.y; }
+      for (const g of targets) for (const [dx, dy] of N8) {
+        const sx = g.x + dx, sy = g.y + dy; if (!inMap(sx, sy) || SOLID.has(tileAt(sx, sy)) || insideBuilding(sx, sy)) continue;
+        player.x = tc(sx); player.y = tc(sy); const l = Math.hypot(dx, dy); player.facing = { x: -dx / l, y: -dy / l };
+        const n = npcInFront();
+        if (n && !(n.wander && (SOLID.has(g.t) || PUSH_THROUGH.has(g.t)))) bad.push(g.what + ' ' + g.x + ',' + g.y + ' from ' + sx + ',' + sy + ': ' + n.id);
+      }
+    } finally { player.x = keep.x; player.y = keep.y; player.facing = keep.f; for (const [n, x, y] of homes) { n.px = x; n.py = y; } }
+    return { targets: targets.length, bad: [...new Set(bad.map(b => b.replace(/ from .*: /, ': ')))], first: bad.slice(0, 6) };
+  }
+
+  // the new stories in the quest book (the review of bcb559f: none was in the book or on the map)
+  function storiesInTheBook() {
+    const out = { n: 0, bad: [], seen: {} };
+    if (!window.BANDITS || !window.OUTPOSTS || !window.WILDPLACES) { out.bad.push('a place file is missing'); return out; }
+    const rows = [
+      { id: 'wat_cart', key: 'bandits', who: BANDITS.PEOPLE[0], won: q => { q.won = 1; q.cleared = 1; }, thank: q => { q.thanked = 1; }, get: () => quest.bandits },
+      { id: 'outposts', key: 'outposts', who: OUTPOSTS.PEOPLE[0], won: q => { q.outpost_north.won = 1; q.outpost_north.cleared = 1; }, thank: q => { q.outpost_north.thanked = 1; }, get: () => quest.outposts },
+      { id: 'beacons', key: 'wild', who: WILDPLACES.PEOPLE[0], won: q => { for (const tw of WILDPLACES.TOWERS) q.climbed[tw.id] = 1; }, thank: q => { q.thanked = 1; }, get: () => quest.wild },
+    ];
+    const keep = { tracked: quest.tracked, inv: JSON.parse(JSON.stringify(player.inv)), notice };
+    for (const r of rows) {
+      const k0 = JSON.stringify(quest[r.key] === undefined ? null : quest[r.key]);
+      try {
+        quest[r.key] = r.key === 'wild' ? { climbed: {} } : {};
+        const before = activeQuests().includes(r.id);
+        dialog.queue.length = 0; dialog.cur = null; closePanel(); talkTo(r.who); closePanel(); dialog.queue.length = 0; dialog.cur = null;
+        const t1 = questText(r.id), m1 = mapTargets().find(t => t.id === r.id), on = activeQuests().includes(r.id), tracked = quest.tracked === r.id;
+        r.won(r.get()); const t2 = questText(r.id), m2 = mapTargets().find(t => t.id === r.id);
+        r.thank(r.get()); const off = !activeQuests().includes(r.id) && !mapTargets().some(t => t.id === r.id);
+        out.seen[r.id] = { t1, t2, m1: m1 && m1.label, m2: m2 && m2.label };
+        const plain = t => typeof t === 'string' && t.length > 10 && t.length <= 160 && !/\b(north|south|east|west)\b|\bmiles?\b/i.test(t);
+        if (!QUEST_DEFS[r.id] || before || !on || !tracked || !plain(t1) || !plain(t2) || !m1 || !m2 || m2.x !== r.who.x || m2.y !== r.who.y || !/tell/i.test(t2) || !off)
+          out.bad.push(r.id + ' ' + JSON.stringify({ def: !!QUEST_DEFS[r.id], before, on, tracked, t1, t2, m1: !!m1, m2: m2 && [m2.x, m2.y], off }));
+        out.n++;
+      } catch (e) { out.bad.push(r.id + ' threw ' + e.message); }
+      finally { quest[r.key] = JSON.parse(k0); if (quest[r.key] === null) delete quest[r.key]; }
+    }
+    quest.tracked = keep.tracked; player.inv = keep.inv; notice = keep.notice; dialog.queue.length = 0; dialog.cur = null;
+    return out;
+  }
+
   function edgeRing() {
     const inRing = (x, y) => x >= MAP_W - EDGE || y >= MAP_H - EDGE, bad = [];
     const boxIn = b => b[2] >= MAP_W - EDGE || b[3] >= MAP_H - EDGE;
@@ -83390,10 +84971,12 @@ const MOUNT_LOOK = (() => {
     return { bad, dry, ring: EDGE };
   }
 
-  // ---------- the beat-gap report (§6; report-only in Stage 4) ----------
+  // ---------- the beat-gap report (§6; report-only in Stage 4, held on R1, R2 and R3 from Stage 5f) ----------
   // along each main road, the beats within 10 tiles of its centre line: a STOP is something to do (a person who talks, a
   // monster's spawn, a signpost, a built place's box, a shop or quest marker); a GLANCE is a landmark on screen (a stop,
   // a building, a reserved place's stakes, the river or the sea, a bridge, a wall). Reports the longest gap of each.
+  // the roads Stage 5 brings under the limits (§13 STAGE 5: "after 5f, the beat-gap limits hold on R1, R2 and R3")
+  const BEAT_HELD = ['r1_cave', 'r2_sea', 'r3_long'], BEAT_LIMIT = { stop: 73, glance: 36 };
   function beatGaps() {
     const segs = [], beats = [];
     const BRIDGE = Tn('BRIDGE'), WALLISH = new Set([T.TOWN_WALL, Tn('CLIFF'), Tn('PALISADE')].filter(v => v >= 0));
@@ -83423,7 +85006,7 @@ const MOUNT_LOOK = (() => {
   let SNAP = null;
   { const _generateWorld = generateWorld; generateWorld = function () { const r = _generateWorld.apply(this, arguments); SNAP = map.slice(); return r; }; }
 
-  window.SPREAD_CHECKS = { walkClock, TRIPS, WALK_HELD, SEAM_EXEMPT, spacing, ports, gateFloods, scarpSeal, transects, roadsClear, spawnsOffRoads, edgeRing, beatGaps, walkTiles, flood, EDGE };
+  window.SPREAD_CHECKS = { BEAT_HELD, BEAT_LIMIT, walkClock, TRIPS, WALK_HELD, SEAM_EXEMPT, spacing, ports, gateFloods, scarpSeal, transects, roadsClear, spawnsOffRoads, peopleClearOfThings, storiesInTheBook, edgeRing, beatGaps, walkTiles, flood, EDGE };
 
   // ---------- the self-tests ----------
   HOOKS.selfTest.push((check, F, h) => {
@@ -83452,10 +85035,18 @@ const MOUNT_LOOK = (() => {
         check(PF + "the main roads are clear surface: no solid tile and no builders' prop on either lane of the six main roads (gates, doors, the story signpost and Hollowford's ruins aside)", bad.length === 0, { bad: bad.slice(0, 10), more: Math.max(0, bad.length - 10) }); }
       { const r = spawnsOffRoads();
         check(PF + "every aggressive spawn stands 6+ tiles off a main road's centre line, but the fights the road leads to (the camp, the outposts, the bandit hills, the lair, the Ashfields' dragons on the Ash Road)", r.near.length === 0, r); }
+      { const r = peopleClearOfThings();
+        check(PF + "E at a Stage 5 place's hitching rail, at the mare tied beside it, or at its signposts uses it: from every open cell beside one, facing it, no person (at home) is close enough ahead to answer first (Fennick's own rail aside: he sells her)", r.bad.length === 0 && r.targets >= 9 * 4, r); }
+      { const r = storiesInTheBook();
+        check(PF + "the new places' stories are in the quest book (J) from the first word: Wat's Cart, The Goblin Outposts and The Three Beacons each go active and tracked, say what to do in plain words (no compass word) and put a ring on the map where to go; once won they send the knight back to the teller (the ring on him), and once he has thanked the knight they leave the book",
+          r.bad.length === 0 && r.n === 3, r); }
       { const r = edgeRing();
         check(PF + "ADDENDUM C: the map's outer 8-tile ring on the east and south holds no place, port, building, person, wall or cliff (the east sea aside, water end to end), so land can be added at an edge", r.bad.length === 0 && r.dry === 0, r); }
-      { const r = beatGaps();
-        check(PF + 'the beat-gap report runs (report-only in Stage 4: stakes are not stops; Stage 5 brings the Cave, Long and Sea Roads under 73 / 36 tiles)', r.length === A.MAIN_ROADS.length && r.every(q => q.length > 0), r); }
+      // (Stage 5 is built: the Cave, Sea and Long Roads hold the limits, a stop at most every 73 tiles and a glance at most every
+      // 36, each beat within 10 tiles of the road; the other main roads are reported, and Stage 6 holds them all)
+      { const r = beatGaps(), held = r.filter(q => BEAT_HELD.includes(q.road)), bad = held.filter(q => q.stopGap > BEAT_LIMIT.stop || q.glanceGap > BEAT_LIMIT.glance);
+        check(PF + 'the beat gaps (section 6): on the Cave Road, the Sea Road and the Long Road a stop comes at most every 73 tiles and a glance at most every 36, each within 10 tiles of the road (the other main roads are reported until Stage 6)',
+          r.length === A.MAIN_ROADS.length && r.every(q => q.length > 0) && held.length === BEAT_HELD.length && !bad.length, { r, bad }); }
       // regionAt asks the outlines directly (section 12): no bisect through REGIONS.find on the way
       { const nf = Object.getOwnPropertyDescriptor(REGIONS, 'find'); let calls = 0;
         Object.defineProperty(REGIONS, 'find', { value: function () { calls++; return nf.value.apply(this, arguments); }, writable: true, configurable: true, enumerable: false });

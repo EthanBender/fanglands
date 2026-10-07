@@ -62,6 +62,11 @@ Everything a feature needs is reachable through globals and the `HOOKS` registry
   the Crossroads Inn, Beacon Hills, the Hunters' Lodge, the goblin outposts, the Bandit Hills). Builders' stakes stand
   round each; `placeAction` refuses them and every main road (`ATLAS.onMainRoad`). A new place fills its reserved box (or
   is given a new anchor in `src/01-atlas.js`), declares its rail with `RAILS.add` (51-mounts), and moves nothing else.
+  **A place's people, as a kid meets them** (the review of bcb559f; 97-spreadchecks tests the first two): nobody stands
+  within npcInFront's reach (118 px, a cone ahead) of a cell from which a knight uses the rail, the mare tied beside it or
+  a signpost (put the person 4+ tiles off them); a story with a win keeps an after-the-win line set (and a word for when the
+  place fills again), never the story from before it; and a story is a `QUEST_DEFS` row from the first word (questText,
+  `HOOKS.activeQuests`, a `HOOKS.mapTarget` ring where to go, then on the teller once won; a QUEST_INFO row in 44-wiki).
   **Building a reserved place** (Stage 5; `src/85-riverside.js` is the worked example): at load, `ATLAS.markBuilt(id,
   { sub })` (before 93-spread names the REGIONS: the banner and the map say the place, not the builders; its signposts drop
   "(builders at work)"; `placeAction` says "This is Millbrook's ground."). The anchor stays reserved, so every world pass
@@ -88,6 +93,23 @@ Everything a feature needs is reachable through globals and the `HOOKS` registry
   A shop says what it buys with `buysWords` (10-hud; Fennick's words are the default). A rock face that makes a switchback
   leaves the network's track straight between its ports (01-atlas TRACKS lay the dirt at world start, and every earlier
   pass reads them): the path on the ground is the place's own, and its self-test walks it.
+  A ring of goblin stakes outside the camp (`src/86-outposts.js`) lays 65-palisade's PALISADE tile itself and calls
+  `PALISADE.addRing(x0, y0, x1, y1)` so 65 draws it (points leaning out from that ring's middle) and its self-test knows it.
+  A place that is a gang fight says so with `ATLAS.markBuilt(id, { combat: 'multi' })`. A spawn row carrying `outpost`
+  (the place's id) keeps the Goblin Camp's respawn rule (06-systems `isCampMonster`: 30 minutes, back only while the
+  knight is 40+ tiles off) without counting toward the camp's own CLEARED banner (`isGoblinCampMonster`). The core
+  clears ore, trees and rocks in the 3 x 3 round every spawn after the world passes: keep spawns a tile off any ore. A
+  signpost that is not at a road node (01-atlas SIGNPOSTS) has its own words: 86-outposts wraps `ATLAS.signText` and
+  `SIGN_ARMS` for its two posts.
+  Human enemies (`src/86-bandits.js`): a MONSTER_DEFS row with `human: true` walks like a person, is not caught by traps
+  and dies as 'person' in 79-deaths; `thrower: true` keeps back and throws the sapper's sticky bomb. Each new type needs a
+  drawing: `MONSTER_LOOK.addType(type, { draw, size, r, box, pic })`, and the draw may call the core's `drawHuman(g, v,
+  look)` with a plain look (tunic, hair, helm, weapon; a `who` look would be a townsperson's). Measure its box with
+  every facing, standing, walking and swinging (the s5f `measure.cjs`). A place whose fight is a whole gang and that clears
+  as one keeps the camp rule with `outpost: '<place id>'` on its spawn rows. A thing a later instance will open (the bandits'
+  hideout) is staked with 93-spread's PROP cells under a place id of its own and a line in its PLAQUE table, and its step
+  gets an Atlas port (`bandit_hills.hideout`). 84-crossroads' notice board takes a notice: push a string or a function to
+  `CROSSROADS.NOTICES`.
   **DECO** (`src/83-deco.js`, Stage 5's one tile): open ground drawn as a kind from a side table (`DECO.kind(name,
   { draw, use, ground, flat, bridge })`, `DECO.put(api, x, y, kind)` in a `HOOKS.built` pass, `DECO.at`, `DECO.cells`):
   the Old Bridge's stone deck (`bridge: true`, counted as a crossing by the scarp-seal and river checks), reeds, wheat,

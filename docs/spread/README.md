@@ -797,6 +797,172 @@ Corvin's Traps) and the bear's. Shots: `~/.fanglands/work/spread/s5d/shots/` (th
 night, the Far Beacon, the lodge, inside it, the range, the den; laptop 1280x800 and iPad 1024x768); full map
 `s5d/fullmap-5d.png`. The fingerprint baseline is this build's (c3b66a6060ec1272), for 5e's diff.
 
+## Stage 5e: THE GOBLIN OUTPOSTS (feat/spread5, 7 Oct 2026)
+
+`src/86-outposts.js`. Spec §4 "New places". Points in `ATLAS.planFrame('outpost_north')` (offsets from 212,66) and
+`ATLAS.planFrame('outpost_south')` (offsets from 232,98).
+
+| Place | What is there | Person | Creatures |
+| --- | --- | --- | --- |
+| North Goblin Outpost 212..222 x 66..74 | a ring of 65-palisade's sharpened stakes (212..222 x 67..74, 33 stakes) with one gap in its road side (222,71); inside, trampled earth, a lookout of lashed poles (213,68; solid), a fire (217,70; cook on it, lit at night) and a scrap heap (220,73; DECO); the iron ore at 215,73 stays inside; a worn trail from the gap to the Goblin Road (y 71) with a signpost where it leaves the road (233,70: OUTPOST); a rail (222,66) | Bramble the scout, by her hide (DECO) outside the ring (213,66) | goblins 215,69 219,69 217,72 (lv 2), a sapper 219,72 (lv 7) |
+| South Goblin Outpost 232..242 x 98..106 | a ring of stakes (233..242 x 99..106, 28 stakes) whose corner by the river is the scarp's own rock face (241,99 242,99 242,100, untouched); its gap on the far side from the road (239,106); inside, a lookout over the road (234,100), a fire (238,102), a scrap heap (241,105); the iron ore at 237,105 stays inside; the Drovers' Track ends at the west wall, where a worn path goes round below the ring to the gap (stepping round the iron rock at 237,107); a signpost where the track leaves the Goblin Road (230,103: OUTPOST, INN); a rail (232,99) | Brin the drover, on his path round the spikes (232,105; by the rail at 232,100 until the review of bcb559f) | goblins 236,101 240,101 235,104 (lv 2), a brute 239,104 (lv 9) |
+
+- **Fights he chooses.** Each gap is 12.97 (north) and 12.1 (south) tiles off the Goblin Road's centre line; no outpost
+  goblin can see a knight on the road (each stands farther off it than its sight plus 2.5; the nearest, 235,104, is 7.8
+  off with sight 4.5). The walls stop them; a goblin that sees the knight through the stakes runs into them.
+- **Multi combat.** `ATLAS.markBuilt(id, { combat: 'multi' })` (01-atlas build applies a built place's `combat`): both
+  outposts are multi in the Atlas (atlas.json too), as the camp is.
+- **The camp's respawn rule.** The spawn rows carry `outpost` (the place's id). 06-systems: `isCampMonster` (the 30-minute
+  respawn that waits until the knight is 40+ tiles off, everywhere it is read: 07-update, 75-coop, 79-worldkeeper) now
+  reads `s.camp || s.outpost`; the Goblin Camp's own CLEARED banner and its refill flag read `isGoblinCampMonster` (camp
+  rows only), so the outposts never count toward it (11-main's camp test reads that one too). atlas.json's spawn flag
+  is still `camp` only.
+- **Cleared.** When an outpost's last goblin dies (HOOKS.monsterDeath, so a kill online counts too): "GOBLIN OUTPOST
+  CLEARED / They will not be back for a while", once per clear (`quest.outposts[id]`: cleared, won, searched, thanked; no
+  positions). Then the heap gives 15 coins and two goblin scrap once a clear, the lookout is empty ("The lookout is empty.
+  The goblins are gone, for now."; while any goblin stands, one peeks over its rail), and the watcher thanks the knight
+  once ever (Bramble 30 coins, Brin 40). When one comes back the outpost is filling again (checked once a second).
+- **The stakes** are 65-palisade's PALISADE tile (solid, prick on a shove, the bulldozer smashes them and they are driven
+  in again after 180 s). `PALISADE.addRing(x0, y0, x1, y1)` (new; emptied each world by 65's own pass) draws each ring with
+  its points leaning out from its own middle; 65's "no stake outside the camp" check counts the added rings as theirs.
+  Every stake clears the trees and rocks on the open ground beside it (an apron, as 86-wildplaces').
+- **The signposts** are SIGN tiles with this file's words (`ATLAS.signText` and `SIGN_ARMS` ask 86-outposts first for its
+  two): "→ The goblin outpost, west, along the trail. ..." and "→ The goblin outpost, east, at the end of the Drovers'
+  Track. → The Crossroads Inn, west." The inn's four-way signpost now says "The goblin outpost" without "(builders at work)".
+- **The ground**: "This is a goblin outpost's ground. Build somewhere else." (93-spread lowers a leading "A " as it did "The ").
+- **The core clears ore round spawns.** 02-world, after the world passes, clears trees, rocks AND ore in the 3 x 3 round
+  every spawn: the first build stood a goblin by each outpost's iron rock and lost both; the spawns moved a tile.
+- **People's looks**: 83-townsart's 'outposts' family (bramble_scout with a new held spyglass, brin_drover with a drover's
+  goad); 83-townsfolk counts 92. Brin's sister is Marigold the drover at the inn.
+- **Other files**: 00-core (WORLD_REV 5), 01-atlas (built `combat`, the REVS comment), 06-systems and 07-update (the camp
+  rule), 11-main (the camp test), 65-palisade (`addRing`), 83-townsart, 83-townsfolk, 93-spread ("a goblin outpost's"),
+  converted.json, literals-allow (the lookout's cull reach).
+
+**The footprint: WORLD_REV 5.** `ATLAS.REVS[5]` is each box plus its 6-tile ring (206..228 x 60..80, 226..248 x 92..112)
+and the north trail's run to the road with its signpost (229..236 x 69..72). `node tools/spread-footprint.mjs
+<spread5-86-wildplaces index.html>`: 223 tiles changed (map and variants), 0 outside (and 0 outside the declared boxes
+themselves, without the tool's ring); 2 region lines changed (their sub), 2 people and 8 spawns added, all inside.
+
+**The migration with the sweep.** `--rev-base` (the 5d build, rev 4): fixture + matrix 27/27 (3 footprint planks back to
+the knight, the far one kept). The real saves (the 7 Oct pre-spread-live export, locally) 94/94 straight (world 1 to
+rev 5) and 94/94 through rev 4; 0 stage changes, 0 lost machines, items or coins.
+
+**Proved on this build:** `./build.sh` (literals 0 bare, changetile, compass, boot budget); headless ALL 1451; `--play`
+ALL 1452, the Fang dead (one run under the full gate load failed aerie2's Spire Run check once, "fell: false" in the
+Aerie's instance; the rerun alone passed with nothing changed); online 430; mmo-sim 43, `--room` 43, `--sim` 47; dom-keys 16; mmo-sim-admin 8; mmo-sim-party 18;
+mmo-sim-teacher 9; mmo-sim-world 16; sim-suite 28; build-sim `--strip --reads`; atlas-drift (hash 91af030298886343); the
+footprint; the migration as above. The beat gaps hold (R1 19, R2 23, R3 29, R5 14, R6 44) and the Goblin Road's stop gap
+falls from 25 to 13 with the outposts as stops. The wiki has both places' pages (their goblins and their watcher). Shots:
+`~/.fanglands/work/spread/s5e/shots/` (each outpost, the north trail and its signpost, the north one by night, Brin's
+path round to the south gap, the south signpost; laptop 1280x800 and iPad 1024x768); full map `s5e/fullmap-5e.png`. The
+fingerprint baseline is this build's (474d5a5390b6c70d), for 5f's diff.
+
+## Stage 5f: THE BANDIT HILLS (feat/spread5, 7 Oct 2026)
+
+`src/86-bandits.js` (the place, the bandits' rules, the self-tests) and `src/86-banditart.js` (their look and book pages;
+stripped from the server's copy like 87-critterart). Spec §4 "New places". Points in `ATLAS.planFrame('bandit_hills')`
+(offsets from 250,148).
+
+| Part | What is there | Person | Creatures |
+| --- | --- | --- | --- |
+| the approach, 250..274 x 148..157 | the Bandit Track (R8) down from Hollowford through rock-and-scrub hills: the jungle in the box cut to open ground with thorn scrub (DECO 'bandit_scrub'), dry patches and boulder clusters (ROCK); the track's own cells are worn path; a signpost by the track (258,149: BANDITS, HOLLOWFORD); a rail (255,152) | Wat the carter (261,153; beside the rail at 256,152 until the review of bcb559f) | none |
+| the ring and the toll gate | a rock face (CLIFF, 41 tiles): north wall y 158 (x 251..272) with the toll gate at the track's end (262,158 = bandit_hills.toll: DECO 'bandit_gate', its pole raised), west wall x 251, south wall y 169 (x 251..261); the river closes the east side (never painted); the toll booth (263,157, solid) | | |
+| the hollow, 252..(the river) x 159..168 | trampled paths from the gate, two tents (254,160 and 267,160), a fire (257,163: cook on it), the stolen sacks (253,163: DECO), Wat's cart (261,166); the hideout's mouth in the south wall (257,169, solid), two builders' stakes and a plaque on its step (256..258,168: 93-spread PROP, place 'bandit_hideout', "Builders' stakes. The Bandit Hideout is coming."; port `bandit_hills.hideout` 257,168) | | bandits 256,161 263,162 260,165 253,166 (lv 12); bandit archers 265,161 259,167 (lv 15, throwers); the bandit chief 255,165 (lv 20) |
+
+- **The bandits** (MONSTER_DEFS, `human: true`, aggro): bandit lv 12 (50 hp, sight 5), bandit archer lv 15 (48 hp, sight
+  6, `thrower`: keeps 2.5 to 5 tiles off and throws the sapper's sticky bomb), bandit chief lv 20 (120 hp, sight 5). The
+  spec's ranges (12-14, 15-17) take their low end, as 87-critters and 86-wildplaces did. As people they walk through doors,
+  traps do not catch them and 79-deaths fells them as 'person' (a falling one drops his weapon). Drops: coins always;
+  bread, daggers, arrows, a shortbow; the chief 40-80 coins, meat pies, steel. On 42-playthrough's curve (`HOOKS.xpSource`).
+- **The look** (86-banditart): each drawn with the core's `drawHuman` (plain looks: tunic, hood, weapon; a cloth mask over
+  the face, the archer's quiver, the chief's wide black hat with a red feather) through `MONSTER_LOOK.addType`; boxes
+  measured with `s5f/measure.cjs` (drawHuman holds the weapon out at rest, so rest and swing are the same box). Not a `who`
+  look: 83-townsfolk's own test keeps monsters out of the townsfolk.
+- **A fight he chooses.** The Bandit Track is a spur that ends at the gate; no main road comes within 40 tiles (the gate is 43.8 off the nearest, the nearest bandit 41). No bandit
+  can see Wat, his rail or the signpost (each is farther off than its sight plus 2.5). Multi combat (`markBuilt`'s
+  `combat`). The spawn rows carry `outpost: 'bandit_hills'`, so the camp's rule holds (down 30 minutes, back only while the
+  knight is 40+ tiles off) without counting toward the Goblin Camp's banner.
+- **Cleared.** The last bandit down: "BANDIT HILLS CLEARED / The track is safe, for now", once per clear
+  (`quest.bandits`: won (the chief beaten, ever), cleared, searched, thanked; no positions). Then the sacks give 25 coins
+  and a meat pie once a clear, the booth is empty, and Wat thanks the knight once ever (60 coins) after the chief has
+  fallen. When one comes back the hills fill again (checked once a second).
+- **The inn's notice board** (84-crossroads `NOTICES`): a WANTED notice for the bandits; after the chief falls, the news.
+  84's own test now reads the pinned notice. The Bandit Toll itself (paying at the gate) and the hideout instance are later
+  (spec §15).
+- **Wat the carter**: 83-townsart's 'bandits' family (a flat cap, a patched coat, a carter's whip whose sway comes round in
+  the 2 s standing loop); 83-townsfolk counts 93. His lines tell the story (the toll, the cart, the bombs, the chief) with
+  no compass word.
+- **Hollowford's square signpost** now says "The Bandit Hills, east." without "(builders at work)". "This is the Bandit
+  Hills' ground. Build somewhere else."
+- **The dressing ring**: outside the box the jungle thins to fern, grass and scrub over 6 tiles (own dice; never on a
+  road, the water, the Hollowford burn or within 3 of another place's box): 128 tiles.
+- **Other files**: 00-core (WORLD_REV 6), 01-atlas (the port, the REVS comment), 06-systems (comment), 83-townsart,
+  83-townsfolk (93), 84-crossroads (its board test), 93-spread (the PLAQUE line for 'bandit_hideout'), 97-spreadchecks
+  (the beat gaps held, below), tools/build-sim.mjs (86-banditart stripped), converted.json, literals-allow (the sights,
+  the things' cull reach).
+
+**The footprint: WORLD_REV 6.** `ATLAS.REVS[6]` is the box plus its 6-tile ring (244..280 x 142..176).
+`node tools/spread-footprint.mjs <spread5-86-outposts index.html>` (the 5e build 864e726 to the 5f build 7fd01ee): 463 tiles changed (map and variants), 0 outside the
+declared box; 1 region line changed (its sub), 1 person and 7 spawns added, all inside.
+
+**The beat gaps, after 5f (spec §13: "after 5f, the beat-gap limits hold on R1, R2 and R3").** 97-spreadchecks' report
+is now a check for the Cave, Sea and Long Roads (`BEAT_HELD`, `BEAT_LIMIT`: a stop at most every 73 tiles and a glance at
+most every 36, each beat within 10 tiles of the centre line); the other main roads are reported until Stage 6. On this
+build: R1 stop 19 / glance 19, R2 23 / 23, R3 29 / 29 (R4 13 / 12, R5 14 / 8, R6 44 / 41).
+
+**The migration with the sweep.** `--rev-base` (the 5e build, rev 5): fixture + matrix 27/27. The real saves (the 7 Oct
+pre-spread-live export, locally) 94/94 straight (world 1 to rev 6) and 94/94 through rev 5; 0 stage changes, 0 lost
+machines, items or coins.
+
+**Proved on this build:** `./build.sh` (literals 0 bare, changetile, compass, boot budget); headless ALL 1460; `--play`
+ALL 1461, the Fang dead; online 430; mmo-sim 43, `--room` 43, `--sim` 47; dom-keys 16; mmo-sim-admin 8; mmo-sim-party 18;
+mmo-sim-teacher 9; mmo-sim-world 16; sim-suite 28; build-sim `--strip --reads` (0 unlisted; the first try read
+MONSTER_LOOK and WIKI from the kept file, so the look moved to 86-banditart, stripped); atlas-drift; the footprint; the
+migration as above. One `--sim` run under the first full gate load failed its "Ann spawns 3 goblins" check once; alone,
+and in the full rerun, it passed with nothing changed. The wiki has the place's page (its seven bandits and Wat) and a page
+for each bandit kind. Shots: `~/.fanglands/work/spread/s5f/shots/` (the approach, the gate, the hollow, the hideout's
+mouth, a fight, the hollow by night; laptop 1280x800 and iPad 1024x768); full map `s5f/fullmap-5f.png`. The fingerprint
+baseline is this build's (ab4d229fca979712), for Stage 6's diff.
+
+## Stage 5: the review of bcb559f, fixed (feat/spread5, 7 Oct 2026)
+
+Every finding of the Stage 5 review (Cohen plays; the footprints and the saves) fixed, each with a check that fails on
+bcb559f. WORLD_REV stays 6: no tile of the world moved (`node tools/spread-footprint.mjs <bcb559f index.html> --from-rev
+0`: 0 tiles changed, regions, buildings and spawns unchanged, 4 people moved inside their places).
+
+| Finding | The fix | The check (fails on bcb559f) |
+| --- | --- | --- |
+| The sweep left a save's regrow and fires in the boxes: the old world's tree or rock grew back on the new place | 97-spread `prepareRev` (and the live `S.sweep`) drops regrow and fires entries in the boxes | `probe1.mjs` (bcb559f: 5 cells grow back ROCK/TREE; fixed: none); spread-migrate-check's `--rev-base` planks save now holds a stump with its regrowth in every box and a fire (bcb559f: 26 of 28 grew back; fixed: 0); 97-spread's sweep self-test |
+| A swept lodestone or bed kept `player.home` / `bedSpawn` | `sweepFinish` clears them as `finish()` does; the Voice says to place the lodestone again | the same probe and self-test |
+| Wat, Brin and Bramble went back to the story before the win | after-the-win lines (and "they came back" while the place fills again) | 86-bandits and 86-outposts talk tests in three moods |
+| People stood beside the rails (E talked instead of whistling or mounting) | Wilf 144,95, Wat 261,153, Brin 232,105, Corvin 107,107 (he answered before the Lodge's signpost) | 97-spreadchecks: from every open cell beside a Stage 5 rail, the mare's cells and every signpost in a Stage 5 box, facing it, nobody answers first (bcb559f: 22 cells) |
+| Marigold's song never came; she called the fence a camp | once the south outpost is beaten: her song and a meat pie, once (`quest.xroads.sang`), then her cows are back | 84-crossroads 4b |
+| The Cave Road's dogs chased a new knight down the road | a `def.roam` creature (dogs, snakes, the bear) leaves a knight on a main road be (07-update, 75-coop's keeper copy) | 87-critters 8: a dog two tiles off a knight who steps on the road gives up; none starts at a knight on it |
+| Corvin's panel asked for a tap on the pack over an empty "SELLS FOR FULL PRICE:" | 10-hud `shopSellHead` / `shopSubtitle`: a shop with `buys: []` says "CORVIN BUYS NOTHING. HE ONLY SELLS." | 86-wildplaces services test |
+| Mother Hobb took five coins at every word from a hurt knight | five coins once; after that she sends a hurt knight to his bed (which heals him) | 84-crossroads room test |
+| Three of Saltmere's four fishing rings had no foothold | all four on the water beside the jetty | 85-riverside 7b |
+| The Old Bridge's post missed the Lodge; G named Fennick's rail | `hunters_lodge` is a landmark an arm names on the way ("The graveyard, west, past the Hunters' Lodge."); "Whistle her at any hitching rail." | 85-riverside 9, 51-mounts rails test |
+| The new stories were in no quest book | `QUEST_DEFS` wat_cart ("Wat's Cart"), outposts ("The Goblin Outposts"), beacons ("The Three Beacons"): active and tracked from the first word, a ring on the map (the gate, the gap, the next tower, then the teller), wiki rows | 97-spreadchecks `storiesInTheBook` |
+| Crow feathers had no buyer; Odo sent the kid to Greta | Hilde buys crow feathers; "Tamsin sells the seed at the mill." | 86-wildplaces services test |
+| spread-migrate-check failed every real world-2 save | a world-2 save is swept, not moved: where he stood, home and bed kept unless swept, graves kept, every diff, regrowth and fire outside the boxes the same | the newest live export (20261007-131829): 94/94 (bcb559f's tool: 85/94) |
+| spread-footprint's ring 6 on top of REVS boxes that hold their ring | `--ring` defaults to 0; `--from-rev N` | a build with one tile 9 out of the Bandit Hills box: the old tool passes it, the new one fails it (`fix5/footprint-ring-proof.txt`) |
+| 5f's footprint written as 469 | 463 (5e build 864e726 to 5f build 7fd01ee) | |
+| `--play` failed once on a wreck on the Goblin Road | 93-spread's open-roads check passes machines, wrecks and the mare (play, not the world) | |
+
+The archers' sticky bombs wait for the real arrow work (the review's own note).
+
+**Proved on this build:** `./build.sh` (literals 0 bare, changetile 215 all classified, compass, boot budget: node 1,423
+ms, Chromium 4x 2,124 ms); headless ALL 1464; `--play` ALL 1465, the Fang dead; online 430; mmo-sim 43, `--room` 43,
+`--sim` 47; dom-keys 16; mmo-sim-admin 8; mmo-sim-party 18; mmo-sim-teacher 9; sim-suite 28; mmo-sim-world 16;
+build-sim `--strip --reads`; atlas-drift (hash 26ef731f3d848481); the footprint (against bcb559f as above, and the whole
+of Stage 5 against master 2e2c023 at ring 0: inside the boxes). The migration: fixture + matrix + the pre-spread-live
+export straight 120/120; through the master 2e2c023 build (rev 0, every Stage 5 box swept) 121/121 with the planks, the
+stumps' regrowth and the fire (0 grew back); through bcb559f (rev 6) 120/120; the newest live export (9 world-2 saves)
+94/94; 0 stage changes, 0 lost machines, items or coins. Shots: `~/.fanglands/work/spread/fix5/shots/` (the Old Bridge's
+rail with the mare mounted from every side, the Bandit Hills' rail, Brin, Corvin's panel, Marigold's song, the quest
+book, Saltmere's rings, the bridge's signpost; laptop 1280x800 and iPad 1024x768); full map `fix5/fullmap-fixed.png`. The
+fingerprint baseline is this build's (36c5648ca969975e), for Stage 6's diff.
+
 ## Proving "nothing visible changed" (spec §9.4)
 
 ```

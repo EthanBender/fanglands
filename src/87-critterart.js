@@ -409,7 +409,7 @@
       giant_rat: ['Giant rat', "A rat as big as a cat, up out of the cave and into the grass. It nibbles everything: bread, seeds, even coins. It only bites back if you hit it first."],
       snake: ['Snake', "A grass snake that lives in the reeds round Miller's Pond. Hit it and it bites. It sheds a fine skin that shops will buy."],
       adder: ['Adder', "An adder: grey-brown, with a black zigzag down its back and a red eye. Tougher than a grass snake, and its bite hurts more. It always leaves its skin behind."],
-      wild_dog: ['Wild dog', "Wild dogs hunt in packs of three, out in the fields away from the road. Come within four steps and the whole pack runs at you. Keep to the road, or come back when you are stronger."],
+      wild_dog: ['Wild dog', "Wild dogs hunt in packs of three, out in the fields away from the road. Come within four steps and the whole pack runs at you, but they never follow you onto the road. Keep to the road, or come back when you are stronger."],
       bear: ['Bear', "A big brown bear lives in a den in the wood, past the Hunters' Lodge. She stays near her den, but come close and she charges. Hilde the trapper pays well for a bear pelt."],
     };
     for (const id in BLURB) WIKI.add('monsters', { id, name: BLURB[id][0], blurb: BLURB[id][1] });

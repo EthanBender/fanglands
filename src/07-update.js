@@ -118,7 +118,7 @@ function update(dt) {
         const sp = safeSpot(m.home.x, m.home.y, m.r, 'beast'); // a wreck, a plank or a regrown tree on the home tile must not embed the monster
         if (!sp) { m.respawnT = 5; continue; }
         m.dead = false; m.hp = m.maxHp; m.x = sp.x; m.y = sp.y; m.angry = def.aggro; m.state = 'idle'; burst(m.x, m.y, 'rgba(255,255,255,0.6)', 10, 60);
-        if (camp && quest.campCleared) quest.campCleared = false; // the camp is filling again: the next full clear earns the banner again
+        if (camp && quest.campCleared && isGoblinCampMonster(m)) quest.campCleared = false; // the camp is filling again: the next full clear earns the banner again
       }
       continue;
     }
@@ -130,8 +130,11 @@ function update(dt) {
     const dHome = dist(m.x, m.y, m.home.x, m.home.y);
     const aggressive = def.aggro && cb <= def.level * 2 + 1 && !window.__peace; // high-level knights are left alone
     if (window.__peace && m.state === 'chase') m.state = 'return';
-    if (!def.harmless && m.state !== 'return' && (m.angry && !def.aggro || aggressive) && dp < def.sight && !player.dead) m.state = 'chase';
-    if (m.state === 'chase' && (dp > def.sight * 1.6 || dHome > 14 * TILE || player.dead)) m.state = 'return';
+    // a creature that keeps to its patch (def.roam: 87-critters' dogs and snakes, the bear) leaves a knight on a main road be:
+    // the book's "keep to the road" is true (the review of bcb559f: the Cave Road's dogs chased a new knight down it)
+    const roadSafe = def.roam && window.ATLAS && ATLAS.onMainRoad(Math.floor(player.x / TILE), Math.floor(player.y / TILE));
+    if (!def.harmless && m.state !== 'return' && (m.angry && !def.aggro || aggressive) && dp < def.sight && !player.dead && !roadSafe) m.state = 'chase';
+    if (m.state === 'chase' && (dp > def.sight * 1.6 || dHome > 14 * TILE || player.dead || roadSafe)) m.state = 'return';
     let vx = 0, vy = 0;
     if (m.state === 'chase') {
       const dx = player.x - m.x, dy = player.y - m.y, d = dp || 1;

@@ -41,6 +41,6 @@
     "93-spread.js": { "calls": 1, "remake": null, "what": "test: a trap on staked ground refused" },
     "94-mountgates.js": { "calls": 4, "remake": null, "what": "test: each machine boarded in a gateway" },
     "95-thistledown.js": { "calls": 9, "remake": null, "what": "migration: the capital's own old-save pass parks machines and the mare; test. The capital itself is made from quest state at world generation (quest.capital), so it needs no remake: the coverage test confirms it" },
-    "97-spread.js": { "calls": 7, "remake": null, "what": "migration: machines parked at the Dozer Bay and the mare at her rail; test: a sweep's tiles put back" }
+    "97-spread.js": { "calls": 10, "remake": null, "what": "migration: machines parked at the Dozer Bay and the mare at her rail; test: a sweep's tiles put back (a plank, a wreck, a stump, a fire, a lodestone and a bed)" }
   }
 }
