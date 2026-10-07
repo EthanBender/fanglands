@@ -387,6 +387,15 @@ of the Dozer Bay) and the mare (tied, within 8 of her rail), wake on a walkable 
    (within 1 of the rail), 13 saves get things back in the bank, nothing owed. The per-knight table:
    `node tools/spread-migrate-check.mjs --export ~/.fanglands/work/spread/saves-export.json` (281 s).
 
+**Gates on the 4c build** (logs in `~/.fanglands/work/spread/s4c/gates/`): `./build.sh` (literals gate 146 files, 0 bare;
+changetile gate 211 calls in 40 files); `node tools/headless.js` ALL 1369 PASS; `--play` ALL 1370 PASS (stage 16, nothing
+forced, the Fang dead); `node --test online/test/` 295 pass; atlas-drift (atlas.json unchanged, bd8d810602a3fcac);
+build-sim `--strip --reads` 0 not on the list (97-spread's read of `title.active` listed); mmo-sim ALL 43, `--room` ALL
+43, `--sim` ALL 47; dom-keys ALL 16; mmo-sim-admin ALL 8; mmo-sim-party ALL 18; mmo-sim-world ALL 16; sim-suite ALL 28;
+spread-migrate-check 25 of 25 and the real saves 94 of 94. Fingerprint: only the exports table changed (the new
+`window.SPREAD` and the NEW WORLD panel scene), the map's tables identical; the baseline is regenerated from this build
+(0219e531c2f1d5f6).
+
 ## Proving "nothing visible changed" (spec §9.4)
 
 ```
