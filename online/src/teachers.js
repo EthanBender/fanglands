@@ -15,8 +15,10 @@
 //                                        when no knight has the name and a teacher does (book.find), for a card that sent
 //                                        teacherOk: 1. Any other name is the knight's 404 unknown, with nothing counted.
 //   teacherCall(world, req, url, path)   /api/teacher/logout | ticket | ws (on every game address; no door)
-//   teacherAdminCall(world, req, url, call, method)   /api/admin/teachers* and /api/admin/teacher-acts (ADMIN_KEY, checked
-//                                        by world.admin before it gets here); null for any other call
+//   teacherAdminCall(world, req, url, call, method, by)   /api/admin/teachers* and /api/admin/teacher-acts (ADMIN_KEY, checked
+//                                        by world.admin before it gets here), and the same calls from an OWNER knight's game at
+//                                        /api/owner/teachers* (world.ownerTeachers checks the session, the role and OWNER_KNIGHTS
+//                                        first; `by` is then "<knight> (in game)" in mod_log); null for any other call
 //   dayStart(now, tz), dayEnd(now, tz)   the first and last millisecond of today in that zone (Intl.DateTimeFormat)
 // Pure JavaScript over sql.exec and crypto.subtle (both in the Worker and in Node 22+).
 // ============================================================================
@@ -385,9 +387,11 @@ export async function teacherLogin(world, { teacher, name, pass, addr, tab }) {
 }
 
 // ---------------------------------------------------------------------------
-// The owner's calls (world.admin has checked ADMIN_KEY). null: not a teacher call.
+// The owner's calls (world.admin has checked ADMIN_KEY; or world.ownerTeachers has checked an owner knight's session, role
+// and OWNER_KNIGHTS). by: who mod_log says did it ('parent page', or "MudGoll (in game)"). null: not a teacher call.
 // ---------------------------------------------------------------------------
-export async function teacherAdminCall(world, req, url, call, method) {
+export const ownerTag = name => String(name) + ' (in game)';
+export async function teacherAdminCall(world, req, url, call, method, by = PARENT) {
   if (call !== 'teachers' && !call.startsWith('teachers/') && call !== 'teacher-acts') return null;
   const book = world.teachers, now = world.now(), post = method === 'POST';
   // the refusals are shown on /admin as they are: plain words that say what to do (the owner is not a developer)
@@ -398,7 +402,7 @@ export async function teacherAdminCall(world, req, url, call, method) {
     return p;
   };
   const teacherOf = b => { const t = book.byId(b.id); if (!t) throw oops(404, 'no teacher with that id', 'nope'); return t; };
-  const log = (act, target, detail) => world.store.log({ at: now, by: PARENT, act, target, detail: detail || '' });
+  const log = (act, target, detail) => world.store.log({ at: now, by, act, target, detail: detail || '' });
   // one call for the whole Teachers section (the list, today's actions, the notice switch): /admin opens with +1 request
   if (call === 'teachers' && method === 'GET') {
     const acts = book.actsTodayBy(dayStart(now));
@@ -454,7 +458,7 @@ export async function teacherAdminCall(world, req, url, call, method) {
   }
   if (call === 'teachers/undo' && post) {
     const b = await readJson(req);
-    const r = world.watch.undo(Number.isInteger(b.act) ? b.act : parseInt(b.act, 10), null);
+    const r = world.watch.undo(Number.isInteger(b.act) ? b.act : parseInt(b.act, 10), null, undefined, by);
     if (!r.ok) throw r.code === 'unknown' ? oops(404, r.text, 'nope') : oops(409, r.text, r.code);
     return json({ ok: true });
   }

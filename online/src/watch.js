@@ -6,7 +6,7 @@
 //
 //   const watch = new Watch({ room, book, store, sql, now, atlas })   book: teachers.js's TeacherBook; store: the Room's store
 //   watch.open(sock, att) / restore(sock, att) / has(sock) / message(sock, str) / leave(sock)
-//   watch.closeTeacher(id, code) / closeSession(sh, code) / countFor(id) / setNotice(on) / undo(actId, teacher|null) / actsView(now)
+//   watch.closeTeacher(id, code) / closeSession(sh, code) / countFor(id) / setNotice(on) / undo(actId, teacher|null, how, ownerBy) / actsView(now)
 //   watch.hooks                       what the Room calls (room.js opts.hooks): welcomed(k, acc), presence(k, m), left(k),
 //                                     chatGate(k, acc, now), chat(line), event(e), sentOff(lc), changed(), mon(k, out)
 //   watch.settle()                    after a wake's restores: a screen that was watching a kid is tapped again, or told it ended
@@ -291,12 +291,13 @@ export class Watch {
   }
   pauseNow(now) { return this.pause && this.pause.until > now ? this.pause : null; }
 
-  // Undo one teacher action: by a teacher (me) or the owner (me null). Only when what it set is still what is there.
-  undo(actId, me, how) {
+  // Undo one teacher action: by a teacher (me) or the owner (me null; ownerBy: mod_log's "by" for him, the parent page unless
+  // it came from his knight's Admin panel, "MudGoll (in game)"). Only when what it set is still what is there.
+  undo(actId, me, how, ownerBy) {
     const now = this.now();
     const a = this.book.act(actId);
     if (!a) return { code: 'unknown', text: 'That is not on the list.' };
-    const who = me ? me.name : 'Ethan', by = me ? teacherTag(me.name) : 'parent page', undoneBy = me ? me.name : 'Ethan';
+    const who = me ? me.name : 'Ethan', by = me ? teacherTag(me.name) : (ownerBy || 'parent page'), undoneBy = me ? me.name : 'Ethan';
     const changed = { code: 'changed', text: 'Someone else changed that since, so it was left as it is.' };
     if (a.undone_at) return changed;
     if (a.act === 'mute' || a.act === 'sendoff') {

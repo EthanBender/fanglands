@@ -40,7 +40,8 @@ export const METER_SCHEMA = 'CREATE TABLE IF NOT EXISTS req_meter (day TEXT PRIM
 export const METER_ADMIN_SCHEMA = 'CREATE TABLE IF NOT EXISTS req_meter_admin (day TEXT PRIMARY KEY, http INTEGER NOT NULL DEFAULT 0)';
 export const METER_ALARM_SCHEMA = 'CREATE TABLE IF NOT EXISTS req_meter_alarm (day TEXT PRIMARY KEY, http INTEGER NOT NULL DEFAULT 0, since INTEGER NOT NULL DEFAULT 0)';
 export const METER_ROWS_SCHEMA = 'CREATE TABLE IF NOT EXISTS req_meter_rows (day TEXT PRIMARY KEY, rows INTEGER NOT NULL DEFAULT 0, since INTEGER NOT NULL DEFAULT 0)';
-export const isAdminPath = path => typeof path === 'string' && path.startsWith('/api/admin/');
+// (an owner knight's teacher calls from the game, /api/owner/*, are the admin's too)
+export const isAdminPath = path => typeof path === 'string' && (path.startsWith('/api/admin/') || path.startsWith('/api/owner/'));
 export const WS_PER_REQUEST = 20;        // incoming WebSocket messages billed as one request
 export const FREE_REQUESTS = 100000;     // Durable Object requests a day on the free plan
 export const FREE_ROWS = 100000;         // rows written a day on the free plan

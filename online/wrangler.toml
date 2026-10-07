@@ -12,6 +12,11 @@ compatibility_date = "2026-09-01"
 # there for a proof.
 [vars]
 HANDOVER = "off"
+# The owner's knights (docs/ONLINE.md, "The teacher view", "Teachers in the game"): an admin knight named here (comma-separated,
+# any case) gets the Teachers section in the game's Admin panel and may make, reset and turn off teacher sign-ins from it.
+# Being an admin is not enough; another admin gets no section and a 403 on every teacher call. Kept HERE so every deploy
+# carries it (deploy.sh refuses a tree without it); the test world's copy names its own owner account (deploy-test.sh).
+OWNER_KNIGHTS = "MudGoll"
 
 [assets]
 directory = "./public"

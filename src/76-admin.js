@@ -16,7 +16,8 @@
 //   D. Monsters: spawn any MONSTER_DEFS type near yourself; the map's keeper makes them (any client can be the keeper, so
 //      the keeper's half lives here too: NET.on('spawn') / ('spawn_clear') and the no-respawn rule for '!' monsters)
 //   E. Party: the button into 77-dropparty's panel
-//   F. tabs other files add with ADMIN.addTab (78-accounts: Accounts). Their drawing, state and tests live in their own
+//   F. tabs other files add with ADMIN.addTab (78-accounts: Accounts; 79-ownerteachers: Teachers, shown only to an owner's
+//      knight). Their drawing, state and tests live in their own
 //      file; this one only lays the tab buttons out (in two rows when the panel is too narrow for one) and hands over.
 // Wraps by reassignment, all with explicit arguments: hurtPlayer and die (Can't be hurt), pointerDown (where the last
 // tap was, for Teleport), drawPanels (the Teleport button over the world map, and the one search box), closePanel (the
@@ -35,16 +36,18 @@
   // the contract's caps (rate per second, burst): the client stays under them, so the world never drops the admin for speed
   const CAPS = { mute: [1, 3], unmute: [1, 3], kick: [1, 3], ban: [1, 3], unban: [1, 3], modlist: [1, 2], spawn: [1, 3], spawn_clear: [1, 2] };
   const TABS = [['knights', 'Knights'], ['powers', 'Powers'], ['monsters', 'Monsters'], ['party', 'Party']];
-  // F. tabs from other files: { id, name, after, subtitle, short, draw(g, x, y, w, h, T), open() }, placed after the tab `after`
+  // F. tabs from other files: { id, name, after, subtitle, short, draw(g, x, y, w, h, T), open(), show() }, placed after the tab
+  // `after`; a tab with show() is there only while it answers true (79-ownerteachers: Teachers, for the owner's knight only)
   const EXTRA = [];
-  const extraTab = id => EXTRA.find(t => t.id === id) || null;
+  const shown = t => typeof t.show !== 'function' || !!t.show();
+  const extraTab = id => EXTRA.find(t => t.id === id && shown(t)) || null;
   function allTabs() {
     const out = TABS.slice();
-    for (const t of EXTRA) { const i = out.findIndex(o => o[0] === t.after); out.splice(i >= 0 ? i + 1 : out.length, 0, [t.id, t.name]); }
+    for (const t of EXTRA) { if (!shown(t)) continue; const i = out.findIndex(o => o[0] === t.after); out.splice(i >= 0 ? i + 1 : out.length, 0, [t.id, t.name]); }
     return out;
   }
   function addTab(spec) {
-    if (!spec || typeof spec.id !== 'string' || typeof spec.draw !== 'function' || TABS.some(t => t[0] === spec.id) || extraTab(spec.id)) return false;
+    if (!spec || typeof spec.id !== 'string' || typeof spec.draw !== 'function' || TABS.some(t => t[0] === spec.id) || EXTRA.some(t => t.id === spec.id)) return false;
     EXTRA.push(spec); return true;
   }
   const SUBTITLE = {

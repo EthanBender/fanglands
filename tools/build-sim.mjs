@@ -280,7 +280,7 @@ export const STRIP_READS = {
     files: ['43-settings', '61-markers', '88-aerie', '91-cloudkingdom'],
     why: 'wrappers that keep the original to call it. What they add runs only when render() runs, which a copy never does: 43 syncs the sound flags into settings (save() does nothing), 61 records the dialog box for taps, 88 its sky, 91-cloudkingdom re-mounts its buildings, which INSTANCES.enter/leave, load() and respawnPoint() already do',
   },
-  drawPanels: { files: ['61-markers', '73-players', '76-admin', '78-accounts'], why: 'wrappers that keep the panel drawing to call it, then draw their own panel' },
+  drawPanels: { files: ['61-markers', '73-players', '76-admin', '78-accounts', '79-ownerteachers'], why: 'wrappers that keep the panel drawing to call it, then draw their own panel' },
   drawMinimap: { files: ['43-settings', '61-markers'], why: 'wrappers that keep the minimap drawing to call it' },
   drawCompass: { files: ['43-settings'], why: 'a wrapper that keeps the compass drawing to call it' },
   drawHud: { files: ['71-login', '79-boygirl'], why: 'wrappers that keep the HUD drawing to call it: the login card\'s title (71) and the "Boy or girl?" card on the title (79); a copy never draws' },
