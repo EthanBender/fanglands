@@ -218,9 +218,38 @@ async function main() {
     await owner.click('#tadd');
     await owner.waitForFunction(n => document.getElementById('tsaid').textContent.startsWith('Added ' + n), tName, { timeout: 20000 });
     const said = await owner.textContent('#tsaid');
-    line('the owner adds a teacher on /admin; the page says: "' + said + '"', said.includes('Tell ' + tName + ": go to fanglands.com, type " + tName + " in Knight's name and this password in Secret word, and press Play.") && said.includes(pass) && !/teacher\.fanglands|\/teacher/.test(said), { said });
+    // (the page tells the teacher THIS world's game address: here the local world's own, on fanglands.com/admin fanglands.com)
+    const site = new URL(BASE).host;
+    line('the owner adds a teacher on /admin; the page says: "' + said + '"', said.includes('Tell ' + tName + ": go to " + site + ", type " + tName + " in Knight's name and this password in Secret word, and press Play.") && said.includes(pass) && !/teacher\.fanglands|\/teacher/.test(said), { said });
     await owner.evaluate(() => document.getElementById('tsaid').scrollIntoView({ block: 'center' }));
     await shot(owner, '01-admin-teacher-added');
+    // the owner's own ways (2026-10-07, "i cant seem to create the log in and use it"): from the top of the page the link
+    // brings the section into view; a password he types himself that is too short is refused in bold red, in view, nothing
+    // made; Enter in the password box adds; an iPad's curly apostrophe is kept as the plain one, and the card takes it
+    {
+      await owner.evaluate(() => scrollTo(0, 0)); await owner.click('#tjump'); await wait(300);
+      const jumped = await owner.evaluate(() => { const r = document.getElementById('tname').getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight; });
+      const tName2 = 'Mr Bender ' + tName.slice(-3);
+      const before = ((await admin('GET', '/api/admin/teachers')).data.teachers || []).length;
+      await owner.fill('#tname', tName2); await owner.fill('#tpass', 'cohen 123'); await owner.press('#tpass', 'Enter'); await wait(400);
+      const short = await owner.evaluate(() => { const p = document.getElementById('tsaid'), r = p.getBoundingClientRect(); return { text: p.textContent, weight: p.style.fontWeight, red: p.style.color, inView: r.top >= 0 && r.bottom <= innerHeight }; });
+      const none = ((await admin('GET', '/api/admin/teachers')).data.teachers || []).length === before;
+      await shot(owner, '01b-admin-short-password');
+      await owner.fill('#tpass', 'school rocks 7'); await owner.press('#tpass', 'Enter');
+      await owner.waitForFunction(n => document.getElementById('tsaid').textContent.startsWith('Added ' + n), tName2, { timeout: 20000 });
+      const curlyName = "Mrs O\u2019Brien " + tName.slice(-3);
+      await owner.fill('#tname', curlyName); await owner.click('#tmake'); const curlyPass = await owner.inputValue('#tpass'); await owner.click('#tadd');
+      await owner.waitForFunction(() => /^(Added|Not added)/.test(document.getElementById('tsaid').textContent), null, { timeout: 20000 });
+      const curlySaid = await owner.textContent('#tsaid');
+      line('the owner\'s own ways on /admin: the top link brings the Teachers boxes into view; "cohen 123" + Enter is refused in bold red, in view, saying how ("' + short.text + '"), nothing made; "school rocks 7" + Enter adds; "Mrs O\u2019Brien" (an iPad\'s apostrophe) is added as the plain "Mrs O\'Brien"',
+        jumped && short.text === 'Not added. The password needs at least 10 letters (spaces count); this one has 9. Type a longer one, or press Make one up.' && short.weight === '600' && short.inView && none && curlySaid.startsWith("Added Mrs O'Brien " + tName.slice(-3) + '.'), { jumped, short, none, curlySaid });
+      // the card: the curly apostrophe typed again (an iPad) signs in; a 17-letter name with no space was never made
+      const cp = await (await browser.newContext({ viewport: { width: 1280, height: 800 } })).newPage();
+      const cToken = await signInCard(cp, curlyName, curlyPass);
+      const long = await admin('POST', '/api/admin/teachers', { name: 'Mrsthompsonsclass', pass: 'long-enough-pass' });
+      line('the card signs in "Mrs O\u2019Brien" typed with the curly apostrophe; the world never makes a teacher the card would refuse (17 letters, no space: "' + (long.data && long.data.error) + '")', !!cToken && long.status === 400 && /needs a space/.test(long.data.error), { cToken: !!cToken, long });
+      await cp.context().close();
+    }
 
     // ---- 2. kids: a crowd of bare sockets (nine on one tile, some by the place names, two inside places) and two real games ----
     const where = await spotsFromGame(browser), spots = where.crowd, TS = 48;

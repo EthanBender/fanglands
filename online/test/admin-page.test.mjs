@@ -16,6 +16,10 @@ function fakeEl() {
   // children: what appendChild put in (innerHTML = '' empties it), so a test can count a table row's cells
   const own = { classList: (() => { const s = new Set(); return { add: (...c) => c.forEach(x => s.add(x)), remove: (...c) => c.forEach(x => s.delete(x)), contains: c => s.has(c), toggle: (c, on) => (on ?? !s.has(c)) ? s.add(c) : s.delete(c) }; })(), style: {}, value: '', textContent: '', children: [], dataset: {} };
   own.appendChild = c => { own.children.push(c); return c; };
+  // listeners a script adds (keydown on a box) and click(), which runs onclick as a browser's would
+  own.listeners = {};
+  own.addEventListener = (type, f) => { (own.listeners[type] = own.listeners[type] || []).push(f); };
+  own.click = () => own.onclick && own.onclick();
   const f = function () { return p; };
   const p = new Proxy(f, {
     get: (t, k) => k in own ? own[k] : k === Symbol.toPrimitive ? (() => '') : k === Symbol.iterator ? function* () { } : k === 'then' ? undefined : k === 'length' ? 0 : p,
@@ -25,7 +29,7 @@ function fakeEl() {
   return p;
 }
 
-function page({ hidden = false, search = '', hist = [], sim = null, yes = false } = {}) {
+function page({ hidden = false, search = '', hist = [], sim = null, yes = false, host = '', answer = null } = {}) {
   const els = new Map(), calls = [], intervals = new Map(), listeners = {}, made = [];
   let seq = 0;
   const document = {
@@ -40,6 +44,9 @@ function page({ hidden = false, search = '', hist = [], sim = null, yes = false 
   const fetch = async (path, opt) => {
     calls.push(path.split('?')[0]);
     if (opt && opt.method === 'POST') posts.push({ path, body: JSON.parse(opt.body) });
+    // a POST the test answers itself ({status, body}): the world's refusals as the page gets them
+    const own = answer && opt && opt.method === 'POST' ? answer(path, JSON.parse(opt.body)) : null;
+    if (own) return { ok: own.status < 400, status: own.status, json: async () => own.body };
     const body = /\/sim$/.test(path) ? Object.assign({ meter }, sim ? (typeof sim === 'function' ? sim(posts) : sim) : {}) : /\/invite$/.test(path) ? { invite: 'TEST-1234' } : [];
     return { ok: true, status: 200, json: async () => body };
   };
@@ -49,7 +56,7 @@ function page({ hidden = false, search = '', hist = [], sim = null, yes = false 
     setInterval: (f, ms) => { const id = ++seq; intervals.set(id, { f, ms }); return id; },
     clearInterval: id => { intervals.delete(id); },
     setTimeout: (f) => { Promise.resolve().then(f); return 0; }, clearTimeout() { },
-    confirm: () => yes, alert() { }, location: { reload() { }, pathname: '/admin', search, hash: '' }, history: { state: null, replaceState: (st, t, u) => hist.push(u) }, navigator: {},
+    confirm: () => yes, alert() { }, location: { reload() { }, pathname: '/admin', search, hash: '', host }, history: { state: null, replaceState: (st, t, u) => hist.push(u) }, navigator: {},
     Date, Math, JSON, Promise, Number, String, Object, Array, Set, Map, Error, encodeURIComponent, URLSearchParams,
   };
   ctx.window = ctx;
@@ -255,4 +262,44 @@ test('the admin page: the Teachers section is one call on opening and on Refresh
   P.els.get('refresh').onclick();
   await P.settle();
   assert.deepEqual(teacherCalls(P.take()), [['/api/admin/teachers', 1]]);
+});
+
+// The owner (2026-10-07): "i cant seem to create the log in and use it". Adding a teacher: Enter in either box adds; a short
+// password is refused on the page with what to do and nothing is sent; the world's refusal is shown as "Not added." plus its
+// plain words; the address the teacher is told is THIS world's game (the test world's admin page never sends a teacher to
+// fanglands.com, where no such teacher exists).
+test('the admin page: adding a teacher, as the owner does it (Enter, a short password, a refusal, which world)', async () => {
+  const added = [];
+  const P = page({ host: 'test.fanglands.com', answer: (path, body) => path === '/api/admin/teachers' ? (body.name === 'Cohen' ? { status: 409, body: { error: 'A knight in the game is already called Cohen, so a teacher cannot be. Add a first name or a first letter, like Mrs J Smith.', code: 'taken' } } : (added.push(body), { status: 200, body: { ok: true, id: added.length, name: body.name } })) : null });
+  await P.settle();
+  const said = () => String(P.els.get('tsaid').textContent), red = () => P.els.get('tsaid').style.color === '#ff9a9a';
+  const teacherPosts = () => P.posts.filter(p => p.path === '/api/admin/teachers');
+  const enter = async id => { for (const f of P.els.get(id).listeners.keydown || []) f({ key: 'Enter', preventDefault() { } }); await P.settle(); };
+  // which world this page is: the test world's teachers sign in at test.fanglands.com, never at fanglands.com
+  assert.match(String(P.els.get('tworld').textContent), /TEST world's \(test\.fanglands\.com\).*never at fanglands\.com/);
+  assert.equal(String(P.els.get('tsite').textContent), 'test.fanglands.com');
+  // a short password: refused on the page, nothing sent
+  P.els.get('tname').value = 'Mr Bender'; P.els.get('tpass').value = 'cohen123';
+  await enter('tpass');
+  assert.equal(teacherPosts().length, 0);
+  assert.equal(said(), 'Not added. The password needs at least 10 letters (spaces count); this one has 8. Type a longer one, or press Make one up.'); assert.ok(red());
+  // Enter in the password box adds (before this, Enter did nothing and nothing said so)
+  P.els.get('tpass').value = 'school rocks';
+  await enter('tpass');
+  assert.deepEqual(teacherPosts().map(p => p.body), [{ name: 'Mr Bender', pass: 'school rocks' }]);
+  assert.equal(said(), "Added Mr Bender. The password is school rocks (it is not shown again). Tell Mr Bender: go to test.fanglands.com, type Mr Bender in Knight's name and this password in Secret word, and press Play."); assert.ok(!red());
+  // Enter in the name box adds too; the world's refusal is shown as it said it, after "Not added."
+  P.els.get('tname').value = 'Cohen'; P.els.get('tpass').value = 'maple-river-lantern-42';
+  await enter('tname');
+  assert.equal(teacherPosts().length, 2);
+  assert.equal(said(), 'Not added. A knight in the game is already called Cohen, so a teacher cannot be. Add a first name or a first letter, like Mrs J Smith.'); assert.ok(red());
+  // the main world's page tells the teacher fanglands.com (gorkscape.ca is the same world)
+  for (const host of ['fanglands.com', 'gorkscape.ca']) {
+    const M = page({ host, answer: (path, body) => path === '/api/admin/teachers' ? { status: 200, body: { ok: true, id: 1, name: body.name } } : null });
+    await M.settle();
+    M.els.get('tname').value = 'Mrs Smith'; M.els.get('tpass').value = 'maple-river-lantern-42';
+    M.els.get('tadd').click(); await M.settle();
+    assert.match(String(M.els.get('tsaid').textContent), /Tell Mrs Smith: go to fanglands\.com, type Mrs Smith/);
+    assert.match(String(M.els.get('tworld').textContent), /MAIN world's \(fanglands\.com\)/);
+  }
 });

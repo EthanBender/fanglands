@@ -369,6 +369,40 @@ test('12. the owner makes teachers: the name and password rules, and taken', asy
   assert.deepEqual(Object.keys(list[0]).sort(), ['actsToday', 'created', 'id', 'lastLogin', 'name', 'off', 'waiting', 'watching', 'wrongToday']);
 });
 
+// The owner's own inputs (2026-10-07: "i cant seem to create the log in and use it"): every refusal says in plain words what
+// to do; a name the game's card would refuse (over 16 letters with no space) is never made; an iPad's curly apostrophe is the
+// plain one, on the add and on the sign-in.
+test('12b. the owner\'s add: plain-word refusals, no teacher the card cannot sign in, and the iPad\'s curly apostrophe', async () => {
+  const W = await world();
+  const add = (name, pass = 'long-enough-pass') => parent(W.w, 'POST', '/api/admin/teachers', { name, pass });
+  // a name the card refuses ("A knight's name is 2 to 16 letters or numbers.") is refused here, saying how to type it
+  let r = await add('Mrsthompsonsclass');
+  assert.deepEqual([r.status, r.data.code], [400, 'name']);
+  assert.match(r.data.error, /^A name over 16 letters needs a space in it/);
+  assert.equal((await add('Mrs Thompsonsclass')).status, 200);
+  // the refusals, each a sentence that says what to type
+  const said = {};
+  for (const [n, p] of [['Teacher1', undefined], ['E', undefined], ['Mr Lee', 'cohen123'], ['Mrs Smith', undefined], ['Sam', undefined], ['x'.repeat(41), undefined], ['Mrs <b>', undefined]]) said[n.slice(0, 12)] = (await add(n, p)).data.error;
+  assert.deepEqual(said, {
+    Teacher1: "A teacher's name cannot have numbers in it. Use letters only, like Mrs Smith or Room Twelve.",
+    E: "Type the teacher's name, at least 2 letters, like Mrs Smith.",
+    'Mr Lee': 'The password needs at least 10 letters (spaces count). Type a longer one, or press Make one up.',
+    'Mrs Smith': "There is already a teacher called Mrs Smith. Pick another name, or press New password on Mrs Smith's row below to give them a new password.",
+    Sam: 'A knight in the game is already called Sam, so a teacher cannot be. Add a first name or a first letter, like Mrs J Smith.',
+    xxxxxxxxxxxx: 'That name is too long: 40 letters at most. Type a shorter one, like Mrs Smith.',
+    'Mrs <b>': "A teacher's name can only have letters, spaces, dots, hyphens and apostrophes, like Mrs. O'Brien.",
+  });
+  // the curly apostrophe an iPad types: kept as the plain one, and the teacher signs in typing either
+  r = await add('Mrs O\u2019Brien', 'quiet-harbour-oak-17');
+  assert.deepEqual([r.status, r.data.name], [200, "Mrs O'Brien"]);
+  for (const typed of ["Mrs O'Brien", 'mrs o\u2019brien', 'Mrs O\u2018Brien']) {
+    const lg = await tlogin(W, typed, 'quiet-harbour-oak-17', '10.9.9.' + typed.length);
+    assert.deepEqual([lg.status, lg.data.teacher, lg.data.name], [200, true, "Mrs O'Brien"], typed);
+  }
+  // and it is the same teacher as the plain one: not made twice
+  assert.deepEqual([(await add("Mrs O'Brien")).status, (await add("Mrs O'Brien")).data.code], [409, 'taken']);
+});
+
 test('13. New password closes that teacher\'s screens with 4013 and ends its sessions; Turn off closes with 4012; Turn on needs a password; each is in mod_log', async () => {
   const W = await world();
   const B = await K.addTeacher(W.w, 'Mr Lee', 'quiet-harbour-oak-17');
