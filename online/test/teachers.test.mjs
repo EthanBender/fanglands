@@ -7,14 +7,15 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { createHash } from 'node:crypto';
 import * as K from './teacher-kit.mjs';
-import { dayEnd, dayStart, TEACHER_LOCK_MS, TICKET_MS, SESSION_MAX_MS } from '../src/teachers.js';
+import { dayEnd, dayStart, TEACHER_LOCK_MS, TICKET_MS, SESSION_MAX_MS, NAME_FAILS, ADDRESS_WINDOW_MS } from '../src/teachers.js';
 
 const { clock, call, parent } = K;
 const T0 = Date.UTC(2026, 9, 6, 14, 0, 0);
 const src = f => fs.readFileSync(new URL('../src/' + f, import.meta.url), 'utf8');
 const DOC = fs.readFileSync(new URL('../../docs/ONLINE.md', import.meta.url), 'utf8');
 // a sign-in on the game's card: the teacher half answers only for a card that sent teacherOk: 1
-const tlogin = (W, name, pass, ip, ok = true) => call(W.w, 'POST', '/api/login', ok ? { name, pass, teacherOk: 1 } : { name, pass }, { ip });
+// (tab: the random id the card makes once per page; every test page here is its own tab unless it says otherwise)
+const tlogin = (W, name, pass, ip, ok = true, tab = 'a1b2c3d4e5f60718') => call(W.w, 'POST', '/api/login', ok ? { name, pass, teacherOk: 1, tab } : { name, pass }, { ip });
 
 async function world() {
   clock.t = T0;
@@ -183,31 +184,34 @@ test('5. a teacher socket sending every message the Room knows changes nothing a
   assert.equal(room.knights.size, 3); assert.equal(scr.closed, null);
 });
 
-test('6-8. sign-in: an unknown name and a wrong password answer the same; 5 wrong from one place make THAT place wait 15 minutes on THAT name; 20 from one place make it wait on the names it got wrong; off is said only to the right password', async () => {
+test('6-8. sign-in: a wrong password is nomatch; 5 wrong from one tab make THAT tab at that place wait 15 minutes on that name, while the teacher\'s own tab at the same school address goes straight in; 30 wrong from one address in an hour make that address wait on that name; off is said only to the right password', async () => {
   const W = await world();
-  const login = (name, pass, ip) => tlogin(W, name, pass, ip);
-  const a = await login('Nobody Here', 'whatever-it-is', '10.0.0.1');
-  const b = await login(W.T.name, 'not-the-password', '10.0.0.1');
-  assert.deepEqual([a.status, a.data], [b.status, b.data]);
-  assert.deepEqual([a.status, a.data.code], [401, 'nomatch']);
-  // five wrong in a row from one place: the fifth is the wait, and that place waits on that name
-  for (let i = 0; i < 4; i++) assert.equal((await login(W.T.name, 'nope-nope-nope', '10.0.0.2')).status, 401);
-  const lock = await login(W.T.name, 'nope-nope-nope', '10.0.0.2');
+  const login = (name, pass, ip, tab) => tlogin(W, name, pass, ip, true, tab);
+  const kid = 'aaaa1111bbbb2222', her = 'cccc3333dddd4444';
+  const b = await login(W.T.name, 'not-the-password', '10.0.0.1', kid);
+  assert.deepEqual([b.status, b.data.code], [401, 'nomatch']);
+  // NEGATIVE (the finding): a kid at the school types the teacher's name with 5 wrong passwords; the fifth is the wait, on HIS tab
+  for (let i = 0; i < 4; i++) assert.equal((await login(W.T.name, 'nope-nope-nope', '203.0.113.7', kid)).status, 401);
+  const lock = await login(W.T.name, 'nope-nope-nope', '203.0.113.7', kid);
   assert.deepEqual([lock.status, lock.data.code, lock.data.wait], [429, 'wait', 900]);
-  let r = await login(W.T.name, W.T.pass, '10.0.0.2');
+  let r = await login(W.T.name, W.T.pass, '203.0.113.7', kid);
   assert.deepEqual([r.status, r.data.code], [429, 'wait']);
-  // ... but the right password from anywhere else goes straight in (a kid at home cannot keep the teacher out at school)
-  r = await login(W.T.name, W.T.pass, '10.0.0.3');
+  // ... the teacher at the next desk, the same school address, her own page: the right password goes straight in
+  r = await login(W.T.name, W.T.pass, '203.0.113.7', her);
   assert.equal(r.status, 200);
+  // ... and from anywhere else too
+  assert.equal((await login(W.T.name, W.T.pass, '10.0.0.3', kid)).status, 200);
   clock.t += TEACHER_LOCK_MS + 1;
-  r = await login(W.T.name, W.T.pass, '10.0.0.2');
-  assert.equal(r.status, 200);
-  // twenty failures from one place in an hour (a school): it waits on the names it got wrong, never on a teacher's own
-  for (let i = 0; i < 20; i++) await login('Guess ' + 'abcdefghijklmnopqrst'[i], 'x'.repeat(12), '2001:db8:1:' + i + '::7');
-  r = await login('Guess a', 'x'.repeat(12), '2001:db8:1:ff::9');
+  assert.equal((await login(W.T.name, W.T.pass, '203.0.113.7', kid)).status, 200);
+  // the ceiling: a guesser making new tabs gets 30 wrong in an hour on one name from one address, then that address waits on
+  // that name (the right password too) until the hour is up; another address is untouched
+  for (let i = 0; i < NAME_FAILS - 1; i++) assert.notEqual((await login(W.T.name, 'guess-' + i, '198.51.100.20', (1e15 + i).toString(16))).status, 200);
+  const ceil = await login(W.T.name, 'guess-last', '198.51.100.20', 'ffff0000ffff0000');
+  assert.deepEqual([ceil.status, ceil.data.code], [429, 'wait']);
+  assert.ok(ceil.data.wait > 0 && ceil.data.wait <= ADDRESS_WINDOW_MS / 1000, String(ceil.data.wait));
+  r = await login(W.T.name, W.T.pass, '198.51.100.20', 'eeee0000eeee0000');
   assert.deepEqual([r.status, r.data.code], [429, 'wait']);
-  r = await login(W.T.name, W.T.pass, '2001:db8:1:ff::9');
-  assert.equal(r.status, 200);
+  assert.equal((await login(W.T.name, W.T.pass, '198.51.100.21', kid)).status, 200);
   // turned off: the right password hears "off", a wrong one still hears nomatch
   await parent(W.w, 'POST', '/api/admin/teachers/off', { id: W.T.id });
   r = await login(W.T.name, W.T.pass, '10.1.1.1');
@@ -216,13 +220,45 @@ test('6-8. sign-in: an unknown name and a wrong password answer the same; 5 wron
   assert.deepEqual([r.status, r.data.code], [401, 'nomatch']);
 });
 
-test('6b. the 1st to 7th wrong try answer exactly the same for a real teacher and a name nobody has (no list of names to learn)', async () => {
+test('6b. NEGATIVE: a name no teacher has is the knight\'s 404 unknown on the new card too (the kid hears "No knight by that name yet. Tap New knight."), costs no password hash and counts no wait: 20 mistyped knight names from a school plus one teacher typo still let the right password in', async () => {
   const W = await world();
-  const login = (name, pass, ip) => tlogin(W, name, pass, ip);
-  const known = [], unknown = [];
-  for (let i = 0; i < 7; i++) { known.push(await login(W.T.name, 'wrong-guess-' + i, '198.51.100.7')); unknown.push(await login('Mrs Nobody', 'wrong-guess-' + i, '198.51.100.8')); }
-  assert.deepEqual(known.map(r => [r.status, r.data]), unknown.map(r => [r.status, r.data]));
-  assert.deepEqual(known.map(r => r.status), [401, 401, 401, 401, 429, 429, 429]);
+  const login = (name, pass, ip, tab) => tlogin(W, name, pass, ip, true, tab);
+  const book = W.w.teachers;
+  // a kid's typo and a new kid who forgot New knight: the knight's answer, never the teacher's
+  for (const n of ['Leoo', 'Newkid', 'Cohenn']) {
+    for (let i = 0; i < 6; i++) { const r = await login(n, 'dragon1', '203.0.113.9', 'abcdabcdabcdabcd'); assert.deepEqual([r.status, r.data.code], [404, 'unknown'], n + ' try ' + i); }
+  }
+  // the same answer an older card (no teacherOk) gets
+  assert.deepEqual((await tlogin(W, 'Leoo', 'dragon1', '203.0.113.9', false)).data, (await login('Leoo', 'dragon1', '203.0.113.9')).data);
+  assert.equal(book.tries.size + book.fails.size, 0);
+  // the judge's case: 20 mistyped knight names from one address, then one teacher typo, then the right password: in
+  for (let i = 0; i < 20; i++) await login('Kidtypo' + i, 'pass' + i, '203.0.113.7', (0x10000000 + i).toString(16));
+  assert.equal(book.tries.size + book.fails.size, 0);
+  assert.deepEqual((await login(W.T.name, 'oops-a-typo', '203.0.113.7', 'cccc3333dddd4444')).data.code, 'nomatch');
+  const r = await login(W.T.name, W.T.pass, '203.0.113.7', 'cccc3333dddd4444');
+  assert.equal(r.status, 200, JSON.stringify(r.data)); assert.equal(r.data.teacher, true);
+  // a teacher name typed the way it reads ("mrs smith" for "Mrs Smith", "Mr Lee" for "Mr. Lee") is still that teacher
+  await K.addTeacher(W.w, 'Mr. Lee', 'quiet-harbour-oak-17');
+  for (const n of ['mrs smith', 'MRS SMITH']) assert.equal((await login(n, W.T.pass, '10.4.4.4')).data.name, 'Mrs Smith', n);
+  assert.equal((await login('Mr Lee', 'quiet-harbour-oak-17', '10.4.4.4')).data.name, 'Mr. Lee');
+});
+
+test('6b2. Lift the wait on /admin: every wait on that teacher\'s name ends at once, with the same password; logged as the parent page\'s', async () => {
+  const W = await world();
+  const login = (name, pass, ip, tab) => tlogin(W, name, pass, ip, true, tab);
+  for (let i = 0; i < NAME_FAILS; i++) await login(W.T.name, 'guess-' + i, '203.0.113.50', (0x20000000 + i).toString(16));
+  assert.equal((await login(W.T.name, W.T.pass, '203.0.113.50', 'aaaa0000aaaa0000')).status, 429);
+  let list = (await parent(W.w, 'GET', '/api/admin/teachers')).data.teachers;
+  assert.ok(list.find(t => t.name === W.T.name).waiting >= 1);
+  const lift = await parent(W.w, 'POST', '/api/admin/teachers/lift', { id: W.T.id });
+  assert.equal(lift.status, 200);
+  assert.equal((await login(W.T.name, W.T.pass, '203.0.113.50', 'aaaa0000aaaa0000')).status, 200);
+  list = (await parent(W.w, 'GET', '/api/admin/teachers')).data.teachers;
+  assert.equal(list.find(t => t.name === W.T.name).waiting, 0);
+  const row = W.db.prepare("SELECT by, target FROM mod_log WHERE act = 'teacher_lift'").get();
+  assert.deepEqual([row.by, row.target], ['parent page', 'Mrs Smith (teacher)']);
+  // a teacher token cannot lift anything
+  assert.equal((await call(W.w, 'POST', '/api/admin/teachers/lift', { id: W.T.id }, { token: W.token })).status, 401);
 });
 
 test('6c. a kid hammering a teacher\'s name: the owner sees the wrong tries today, and a new password lifts the wait at once', async () => {
@@ -330,7 +366,7 @@ test('12. the owner makes teachers: the name and password rules, and taken', asy
   assert.equal(all.notice, true); assert.deepEqual(all.acts, []);
   const list = all.teachers;
   assert.deepEqual(list.map(t => t.name), ['Mrs Smith', "Ms O'Neil-Brown"]);
-  assert.deepEqual(Object.keys(list[0]).sort(), ['actsToday', 'created', 'id', 'lastLogin', 'name', 'off', 'watching', 'wrongToday']);
+  assert.deepEqual(Object.keys(list[0]).sort(), ['actsToday', 'created', 'id', 'lastLogin', 'name', 'off', 'waiting', 'watching', 'wrongToday']);
 });
 
 test('13. New password closes that teacher\'s screens with 4013 and ends its sessions; Turn off closes with 4012; Turn on needs a password; each is in mod_log', async () => {

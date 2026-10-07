@@ -102,7 +102,7 @@
     <div id="modlog"></div>
 
     <h2>Teachers</h2>
-    <p class="note">Each teacher gets their own name and password for the teacher view. They sign in on the game's own card at fanglands.com: their name in Knight's name, their password in Secret word, then Play; the teacher view opens instead of the game. A teacher sees who is on, where each knight is, what they are doing and the chat, can watch one kid's screen at a time (only watching: nothing they do reaches the kid's game), and can mute a kid's chat, pause chat for everyone, and send a kid off until midnight. Nothing else: no accounts, no secret words, no saves, no invite code. Everything a teacher does is in "What admins did" with their name, and you can undo it here. A big number under Wrong tries today means someone is guessing that teacher's password: New password stops it. Loaded when this page opens and when you press Refresh.</p>
+    <p class="note">Each teacher gets their own name and password for the teacher view. They sign in on the game's own card at fanglands.com: their name in Knight's name, their password in Secret word, then Play; the teacher view opens instead of the game. A teacher sees who is on, where each knight is, what they are doing and the chat, can watch one kid's screen at a time (only watching: nothing they do reaches the kid's game), and can mute a kid's chat, pause chat for everyone, and send a kid off until midnight. Nothing else: no accounts, no secret words, no saves, no invite code. Everything a teacher does is in "What admins did" with their name, and you can undo it here. A big number under Wrong tries today means someone is guessing that teacher's password: New password stops it. When wrong tries make the sign-in wait (a kid typing the teacher's name at school), Lift the wait lets the teacher in again with the same password. Loaded when this page opens and when you press Refresh.</p>
     <div class="row">
       <input id="tname" placeholder="Name, like Mrs Smith" size="22" maxlength="40" autocomplete="off">
       <input id="tpass" placeholder="Password (10 or more letters)" size="28" maxlength="200" autocomplete="off">
@@ -312,6 +312,7 @@
       case 'teacher_pass': return r.by + ' gave ' + r.n + ' a new password';
       case 'teacher_off': return r.by + ' turned off ' + r.n;
       case 'teacher_on': return r.by + ' turned on ' + r.n;
+      case 'teacher_lift': return r.by + ' lifted the sign-in wait for ' + r.n;
       case 'teacher_notice': return r.by + ' turned ' + (r.detail === 'on' ? 'on' : 'off') + ' "A teacher is watching" for players';
       case 'role': return r.by + ' made ' + r.n + (r.detail === 'admin' ? ' an admin' : ' a player');
       case 'mute': return r.by + ' muted ' + r.n + ' ' + (SPANS[r.detail] || r.detail);
@@ -375,8 +376,13 @@
       cell(tr, t.watching ? t.watching + (t.watching === 1 ? ' screen' : ' screens') : 'no');
       cell(tr, String(t.actsToday || 0));
       // wrong passwords typed for this name today, from anywhere: a big number means someone is guessing (New password stops it)
-      cell(tr, String(t.wrongToday || 0));
+      cell(tr, String(t.wrongToday || 0) + (t.waiting ? ' (sign-in waiting)' : ''));
       const td = document.createElement('td');
+      // someone (a kid at the same school) typed this name with wrong passwords until the sign-in made that place wait:
+      // Lift the wait lets the teacher straight in again, with the same password
+      if (t.waiting) td.appendChild(button('Lift the wait', async () => {
+        try { await api('POST', '/api/admin/teachers/lift', { id: t.id }); tsay(t.name + ' can sign in again now, with the same password.'); await loadTeachers(); await loadModlog(); } catch (e) { tsay(e.message, true); }
+      }, 'gold'));
       td.appendChild(button('New password', async () => {
         const pass = makePassword();
         if (!confirm('Give ' + t.name + ' a new password? Their screens close now, and the old password stops working.')) return;

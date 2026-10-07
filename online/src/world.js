@@ -320,10 +320,15 @@ export class World {
     let a = lc && this.row('SELECT * FROM accounts WHERE name_lc = ?', lc);
     // a knight an admin renamed may still type the old name: it logs in as the new one (the answer carries the new name)
     if (!a && lc) { const moved = this.store.renamedFrom(lc); if (moved) { lc = norm(moved); a = this.row('SELECT * FROM accounts WHERE name_lc = ?', lc); } }
-    // no knight by that name (and none had it before a rename): a teacher's sign-in, but only for a card that can take a
-    // teacher's answer (teacherOk: 1). An older cached card never sends it, so it is never handed a teacher token to keep.
+    // no knight by that name (and none had it before a rename): a teacher's sign-in, but only when a TEACHER has the name
+    // (teachers.find) and only for a card that can take a teacher's answer (teacherOk: 1). An older cached card never sends
+    // it, so it is never handed a teacher token to keep. Any other name is the knight's 404 below: a kid's typo or a new kid
+    // who forgot New knight hears "No knight by that name yet. Tap New knight.", with no PBKDF2 and no teacher wait counted.
     // Knight and teacher names never clash (nameClash / knightClash), so this order cannot be fooled.
-    if (!a && b && b.teacherOk === 1) return json(await teacherLogin(this, { name: b.name, pass: b.pass, addr: addressOf(req.headers.get('cf-connecting-ip')) }));
+    if (!a && b && b.teacherOk === 1) {
+      const t = this.teachers.find(typeof b.name === 'string' ? b.name.slice(0, 80) : '');
+      if (t) return json(await teacherLogin(this, { teacher: t, pass: b.pass, addr: addressOf(req.headers.get('cf-connecting-ip')), tab: b.tab }));
+    }
     if (!a) throw oops(404, 'no knight by that name', 'unknown');
     if (a.banned) throw oops(403, 'this knight is banned', 'banned');
     const now = this.now();

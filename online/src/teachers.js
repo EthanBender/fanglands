@@ -11,7 +11,9 @@
 //
 //   migrateTeachers(sql)                 the three tables and the two accounts columns, only when missing (every wake)
 //   new TeacherBook(sql, now)            every read and write the teacher view makes, plus the tickets and the address window
-//   teacherLogin(world, {name, pass, addr})   the teacher half of POST /api/login (world.login falls through to it)
+//   teacherLogin(world, {teacher, name, pass, addr, tab})   the teacher half of POST /api/login: world.login calls it only
+//                                        when no knight has the name and a teacher does (book.find), for a card that sent
+//                                        teacherOk: 1. Any other name is the knight's 404 unknown, with nothing counted.
 //   teacherCall(world, req, url, path)   /api/teacher/logout | ticket | ws (on every game address; no door)
 //   teacherAdminCall(world, req, url, call, method)   /api/admin/teachers* and /api/admin/teacher-acts (ADMIN_KEY, checked
 //                                        by world.admin before it gets here); null for any other call
@@ -20,15 +22,19 @@
 // ============================================================================
 
 import { json, oops, readJson, bearer } from './http.js';
-import { makeHash, checkPassword, hashPassword, randomHex } from './auth.js';
+import { makeHash, checkPassword, randomHex } from './auth.js';
 
 export const TEACHER_PASS_MIN = 10, TEACHER_PASS_MAX = 200;
-// The sign-in locks are kept per ADDRESS AND NAME, in World memory (a nap forgets them, which only lets more through), so a
-// guess from one place never refuses the right password from another (a kid at home cannot lock a teacher out at school),
-// and an unknown name is counted exactly like a real one (the answers never tell which names exist).
-export const TEACHER_TRIES = 5;                  // wrong passwords in a row from one address on one name before the wait
-export const TEACHER_LOCK_MS = 900000;           // the wait: 15 minutes (that address, that name)
-export const ADDRESS_FAILS = 20;                 // failed sign-ins from one address in an hour: then it waits, on the names it failed
+// The sign-in waits are kept in World memory (a nap forgets them, which only lets more through) and only ever for a TEACHER'S
+// name: a name no teacher has never reaches this file (world.login answers it as the knight's 404 unknown), so a classroom
+// of kids mistyping their knights' names counts for nothing here. A whole school sits behind one address, so the 5-try wait
+// is per address, name AND TAB (a random id the card makes once per page, sent with teacherOk): a kid typing the teacher's
+// name with wrong passwords makes HIS page wait, never the teacher's page at the next desk. A looser ceiling per address and
+// name is the limit on guessing (a guesser can make new tabs): 30 wrong in an hour, then that address waits on that name
+// until the hour is up. The owner's Lift the wait on /admin (and a new password) ends every wait on that name at once.
+export const TEACHER_TRIES = 5;                  // wrong passwords in a row from one address, name and tab before the wait
+export const TEACHER_LOCK_MS = 900000;           // the wait: 15 minutes (that address, that name, that tab)
+export const NAME_FAILS = 30;                    // wrong passwords on one name from one address in an hour: then that address waits on it
 export const ADDRESS_WINDOW_MS = 3600000;
 export const SESSION_MAX_MS = 36000000;          // 10 hours, or midnight Toronto time if that comes first (D5)
 export const SESSIONS_PER_TEACHER = 3;
@@ -44,8 +50,6 @@ export const SCREENS_MAX = 6, SCREENS_PER_TEACHER = 2;
 export const ACTS_KEPT = 2000;
 export const NAME_RE = /^[A-Za-z][A-Za-z .'-]{1,39}$/;
 const PARENT = 'parent page';
-// an unknown name still costs one PBKDF2, against this salt, so a wrong name and a wrong password take the same time
-const DUMMY_SALT = '5f1e0c7d2b9a4e6f8a3c1d0b7e2f9a46';
 
 export const TEACHER_SCHEMA = `
 CREATE TABLE IF NOT EXISTS teachers (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, name_lc TEXT NOT NULL UNIQUE, salt TEXT NOT NULL, hash TEXT NOT NULL, created INTEGER NOT NULL, off INTEGER NOT NULL DEFAULT 0, tries INTEGER NOT NULL DEFAULT 0, locked_until INTEGER NOT NULL DEFAULT 0, last_login INTEGER NOT NULL DEFAULT 0, tried_at INTEGER NOT NULL DEFAULT 0);
@@ -134,17 +138,24 @@ export class TeacherBook {
   constructor(sql, now = () => Date.now()) {
     this.sql = sql; this.now = now;
     this.tickets = new Map();   // ticket -> {sh, exp}: World memory only (a nap forgets them; a page asks again)
-    this.fails = new Map();     // address -> {start, n}: failed sign-ins this hour (a nap forgets it, which only lets more through)
-    this.tries = new Map();     // address + name -> {n, until, last}: wrong passwords in a row there, and the wait
+    this.fails = new Map();     // address + name -> {start, n}: wrong passwords on that name from that address this hour (the ceiling)
+    this.tries = new Map();     // address + name + tab -> {n, until, last}: wrong passwords in a row there, and the 15-minute wait
     this.actWrites = 0;
   }
   rows(q, ...a) { return this.sql.exec(q, ...a).toArray(); }
   row(q, ...a) { return this.rows(q, ...a)[0] || null; }
 
   // ---------- teachers ----------
-  list() { return this.rows('SELECT id, name, created, off, last_login, tries, tried_at FROM teachers ORDER BY name_lc'); }
+  list() { return this.rows('SELECT id, name, name_lc, created, off, last_login, tries, tried_at FROM teachers ORDER BY name_lc'); }
   byId(id) { return Number.isInteger(id) ? this.row('SELECT * FROM teachers WHERE id = ?', id) : null; }
   byName(name) { const lc = nameLc(name); return lc ? this.row('SELECT * FROM teachers WHERE name_lc = ?', lc) : null; }
+  // the teacher a name on the card means: exactly, else the one whose name reads the same without case, spaces, dots,
+  // apostrophes and hyphens ("mrs smith" for "Mrs. Smith"; nameClash keeps that unique). null: no teacher (a knight's typo)
+  find(name) {
+    const t = this.byName(name); if (t) return t;
+    const sq = squash(name);
+    return sq ? this.row("SELECT * FROM teachers WHERE replace(replace(replace(replace(name_lc, ' ', ''), '.', ''), '''', ''), '-', '') = ? LIMIT 1", sq) : null;
+  }
   add(name, salt, hash, at) { return this.row('INSERT INTO teachers (name, name_lc, salt, hash, created) VALUES (?, ?, ?, ?, ?) RETURNING id', name, nameLc(name), salt, hash, at).id; }
   // a new password also lifts every sign-in wait on that name (the remedy the owner has for a teacher a kid kept out)
   setSecret(id, salt, hash) {
@@ -241,33 +252,46 @@ export class TeacherBook {
   }
   setNotice(on) { this.sql.exec("INSERT INTO settings (key, value) VALUES ('teacher_notice', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", on ? 'on' : 'off'); }
 
-  // ---------- the sign-in waits: per address AND name, the same for a name that exists and one that does not ----------
-  // The seconds this address must wait before trying this name again, or 0. A wait on one address never touches another,
-  // and a busy address (a school full of guessing kids) waits only on the names it got wrong, never on a teacher's own.
-  signinWait(where, lc, at) {
-    const t = this.tries.get(where + '\n' + lc);
+  // ---------- the sign-in waits: only ever on a teacher's name; per address, name and tab, with a ceiling per address and name ----------
+  // The seconds this tab at this address must wait before trying this teacher's name again, or 0. A wait on one tab never
+  // touches another tab at the same address (the teacher at the next desk), and one address's never touches another's.
+  signinWait(where, lc, tab, at) {
+    const t = this.tries.get(where + '\n' + lc + '\n' + tab);
     if (t && t.until > at) return Math.ceil((t.until - at) / 1000);
-    const r = this.fails.get(where);
-    if (t && r && at - r.start < ADDRESS_WINDOW_MS && r.n >= ADDRESS_FAILS && at - t.last < ADDRESS_WINDOW_MS) return Math.ceil((r.start + ADDRESS_WINDOW_MS - at) / 1000);
+    const r = this.fails.get(where + '\n' + lc);
+    if (r && at - r.start < ADDRESS_WINDOW_MS && r.n >= NAME_FAILS) return Math.ceil((r.start + ADDRESS_WINDOW_MS - at) / 1000);
     return 0;
   }
-  // a wrong password from this address on this name: answers the wait it starts (seconds), or 0
-  signinFailed(where, lc, at) {
+  // a wrong password from this tab at this address on this teacher's name: answers the wait it starts (seconds), or 0
+  signinFailed(where, lc, tab, at) {
     if (this.fails.size > 5000) for (const [k, v] of this.fails) if (at - v.start >= ADDRESS_WINDOW_MS) this.fails.delete(k);
     if (this.tries.size > 5000) for (const [k, v] of this.tries) if (at - v.last >= ADDRESS_WINDOW_MS && v.until <= at) this.tries.delete(k);
-    let r = this.fails.get(where);
-    if (!r || at - r.start >= ADDRESS_WINDOW_MS) { r = { start: at, n: 0 }; this.fails.set(where, r); }
+    const nk = where + '\n' + lc;
+    let r = this.fails.get(nk);
+    if (!r || at - r.start >= ADDRESS_WINDOW_MS) { r = { start: at, n: 0 }; this.fails.set(nk, r); }
     r.n++;
-    const key = where + '\n' + lc;
+    if (r.n >= NAME_FAILS) return Math.ceil((r.start + ADDRESS_WINDOW_MS - at) / 1000);
+    const key = nk + '\n' + tab;
     let t = this.tries.get(key);
     if (!t || (t.until && t.until <= at)) { t = { n: 0, until: 0, last: at }; this.tries.set(key, t); }
     t.n++; t.last = at;
     if (t.n >= TEACHER_TRIES) { t.n = 0; t.until = at + TEACHER_LOCK_MS; return TEACHER_LOCK_MS / 1000; }
     return 0;
   }
-  // the right password from this address: its count on that name starts again
-  signinRight(where, lc) { this.tries.delete(where + '\n' + lc); }
-  forgetTries(lc) { for (const k of Array.from(this.tries.keys())) if (k.endsWith('\n' + lc)) this.tries.delete(k); }
+  // the right password from this tab: its count on that name starts again (the address's hour of wrong tries stays)
+  signinRight(where, lc, tab) { this.tries.delete(where + '\n' + lc + '\n' + tab); }
+  // every wait on this name, everywhere (Lift the wait on /admin, a new password)
+  forgetTries(lc) {
+    for (const k of Array.from(this.tries.keys())) if (k.split('\n')[1] === lc) this.tries.delete(k);
+    for (const k of Array.from(this.fails.keys())) if (k.split('\n')[1] === lc) this.fails.delete(k);
+  }
+  // how many places (address and tab, or a whole address at the ceiling) wait on this name right now (for /admin)
+  waitingOn(lc, at) {
+    let n = 0;
+    for (const [k, v] of this.tries) if (v.until > at && k.split('\n')[1] === lc) n++;
+    for (const [k, v] of this.fails) if (v.n >= NAME_FAILS && at - v.start < ADDRESS_WINDOW_MS && k.split('\n')[1] === lc) n++;
+    return n;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -308,30 +332,30 @@ export async function teacherCall(world, req, url, path, method) {
 }
 
 // The teacher half of POST /api/login. world.login calls it only when no knight has the name (and none had it before a
-// rename) and the card sent teacherOk: 1, with the body it already read. Round 1's rules, unchanged: the same answer for an
-// unknown name and a wrong password (one PBKDF2 either way), the waits per address and name in memory, off checked only after
-// the right password, the wrong tries counted for the owner, last_login, one mod_log row, at most 3 sessions, and only the
-// SHA-256 of the token kept. Answers {teacher: true, token, name, expires}.
-export async function teacherLogin(world, { name, pass, addr }) {
+// rename), a teacher does (book.find), and the card sent teacherOk: 1, with the body it already read. A name no teacher has
+// never gets here: it is the knight's 404 unknown ("No knight by that name yet. Tap New knight."), with no PBKDF2 and nothing
+// counted (teacher names can be found out this way: an accepted risk, docs/ONLINE.md; the password and the waits protect
+// them). The rules: the waits (per address, name and tab, and the ceiling per address and name) in memory, off checked only
+// after the right password, the wrong tries counted for the owner, last_login, one mod_log row, at most 3 sessions, and only
+// the SHA-256 of the token kept. Answers {teacher: true, token, name, expires}.
+export const TAB_RE = /^[0-9a-f]{8,64}$/;
+export async function teacherLogin(world, { teacher, name, pass, addr, tab }) {
   const book = world.teachers, now = world.now();
-  const where = addr || 'unknown';
-  name = typeof name === 'string' ? name.slice(0, 80) : '';
-  const lc = nameLc(name);
+  const t = teacher || book.find(typeof name === 'string' ? name.slice(0, 80) : '');
+  if (!t) throw oops(404, 'no knight by that name', 'unknown');
+  const where = addr || 'unknown', lc = t.name_lc, tb = typeof tab === 'string' && TAB_RE.test(tab) ? tab : '-';
   pass = typeof pass === 'string' ? pass.slice(0, TEACHER_PASS_MAX + 1) : '';
-  // the wait is this address's on this name, never the teacher's: a guess from anywhere else cannot refuse the right password
-  const wait = book.signinWait(where, lc, now);
+  // the wait is this tab's (or, past the ceiling, this address's) on this name: the right password from another tab or
+  // another place still goes in
+  const wait = book.signinWait(where, lc, tb, now);
   if (wait) throw oops(429, 'too many tries: wait and try again', 'wait', { wait });
-  const t = book.byName(name);
-  let ok = false;
-  if (t) ok = await checkPassword(pass, t.salt, t.hash);
-  else await hashPassword(pass, DUMMY_SALT);
-  if (!ok) {
-    const w = book.signinFailed(where, lc, now);   // an unknown name is counted the same way, so the answers match
-    if (t) book.wrongTry(t.id, now);
+  if (!(await checkPassword(pass, t.salt, t.hash))) {
+    const w = book.signinFailed(where, lc, tb, now);
+    book.wrongTry(t.id, now);
     if (w) throw oops(429, 'too many tries: wait and try again', 'wait', { wait: w });
     throw oops(401, "that name and password don't match", 'nomatch');
   }
-  book.signinRight(where, lc);
+  book.signinRight(where, lc, tb);
   // only after the password is right, so a wrong guess learns nothing
   if (t.off) throw oops(403, 'this sign-in was turned off', 'off');
   const token = randomHex(32), sh = await sha256(token);
@@ -354,7 +378,7 @@ export async function teacherAdminCall(world, req, url, call, method) {
   // one call for the whole Teachers section (the list, today's actions, the notice switch): /admin opens with +1 request
   if (call === 'teachers' && method === 'GET') {
     const acts = book.actsTodayBy(dayStart(now));
-    const teachers = book.list().map(t => ({ id: t.id, name: t.name, created: t.created, lastLogin: t.last_login || null, off: !!t.off, watching: world.watch.countFor(t.id), actsToday: acts[t.id] || 0, wrongToday: book.wrongToday(t, now) }));
+    const teachers = book.list().map(t => ({ id: t.id, name: t.name, created: t.created, lastLogin: t.last_login || null, off: !!t.off, watching: world.watch.countFor(t.id), actsToday: acts[t.id] || 0, wrongToday: book.wrongToday(t, now), waiting: book.waitingOn(t.name_lc, now) }));
     return json({ teachers, acts: world.watch.actsView(now), notice: world.watch.notice });
   }
   if (call === 'teachers' && post) {
@@ -378,6 +402,13 @@ export async function teacherAdminCall(world, req, url, call, method) {
     book.setSecret(t.id, salt, hash);
     world.watch.closeTeacher(t.id, 4013);
     log('teacher_pass', teacherTag(t.name));
+    return json({ ok: true });
+  }
+  // Lift the wait: every sign-in wait on this teacher's name ends now (a kid kept her out at school); the password stays
+  if (call === 'teachers/lift' && post) {
+    const b = await readJson(req); const t = teacherOf(b);
+    book.forgetTries(t.name_lc);
+    log('teacher_lift', teacherTag(t.name));
     return json({ ok: true });
   }
   if (call === 'teachers/off' && post) {
