@@ -4,11 +4,17 @@
 // previous build stays inside its boxes plus a 6-tile ring, and nothing else moved")
 // Boots the previous build and this one headless (tools/fingerprint.mjs), and compares the new game's world tile by tile
 // (the map and its variants), then the regions, buildings, people and monster spawns. Every changed tile must lie inside
-// a footprint box this build declares for the revs it adds (ATLAS.REVS[n] for the old WORLD_REV < n <= the new one) or
-// within RING (6) tiles of one; every changed person, building, region and spawn likewise. It prints what changed and
-// where, and exits 1 on anything outside.
+// a footprint box this build declares for the revs it adds (ATLAS.REVS[n] for the old WORLD_REV < n <= the new one);
+// every changed person, building, region and spawn likewise. It prints what changed and where, and exits 1 on anything
+// outside. Each place's REVS box already holds its 6-tile dressing ring, and only what lies inside a REVS box is swept from
+// an older save, so the gate is the boxes themselves (--ring 0, the default since the review of bcb559f: the old default
+// of 6 more on top let a change 12 tiles out pass, which no sweep would clean). The changes within 6 tiles of a box are
+// counted for information.
+//   --from-rev N   the boxes of every rev after N (default: the previous build's WORLD_REV). A fix that keeps WORLD_REV
+//                  (no new boxes) is held to the places' own boxes with --from-rev of the stage's start; a tile changed
+//                  there is still not swept from a save of the same rev, so such a fix should change people, not tiles.
 //
-//   node tools/spread-footprint.mjs <previous index.html> [this index.html] [--ring 6] [--json FILE]
+//   node tools/spread-footprint.mjs <previous index.html> [this index.html] [--ring 0] [--from-rev N] [--json FILE]
 //
 // The previous build is any built index.html (e.g. `git show <ref>:index.html > /tmp/prev.html`).
 // ============================================================================
@@ -23,17 +29,19 @@ const argv = process.argv.slice(2);
 const val = (k, d) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : d; };
 const files = argv.filter((a, i) => a.endsWith('.html') && (i === 0 || !argv[i - 1].startsWith('--')));
 if (!files.length) { console.error('usage: spread-footprint.mjs <previous index.html> [this index.html] [--ring 6] [--json FILE]'); process.exit(2); }
-const prevFile = files[0], nowFile = files[1] || path.join(ROOT, 'index.html'), RING = +val('--ring', 6);
+const prevFile = files[0], nowFile = files[1] || path.join(ROOT, 'index.html'), RING = +val('--ring', 0), INFO = 6;
 
 // the revs and their boxes, read from each build
 const revsOf = f => JSON.parse(vm.runInContext('JSON.stringify({ rev: WORLD_REV, W: MAP_W, REVS: ATLAS.REVS || {} })', boot(f)));
 const P = revsOf(prevFile), N = revsOf(nowFile);
 const boxes = [];
-for (let r = P.rev + 1; r <= N.rev; r++) { const R = N.REVS[r]; if (R && Array.isArray(R.boxes)) boxes.push(...R.boxes); }
-const near = (x, y) => boxes.some(b => x >= b[0] - RING && x <= b[2] + RING && y >= b[1] - RING && y <= b[3] + RING);
+const FROM = val('--from-rev', null) === null ? P.rev : +val('--from-rev', null);
+for (let r = FROM + 1; r <= N.rev; r++) { const R = N.REVS[r]; if (R && Array.isArray(R.boxes)) boxes.push(...R.boxes); }
+const nearBy = d => (x, y) => boxes.some(b => x >= b[0] - d && x <= b[2] + d && y >= b[1] - d && y <= b[3] + d);
+const near = nearBy(RING), nearInfo = nearBy(INFO);
 
 const A = fingerprint(prevFile).tables, B = fingerprint(nowFile).tables, W = N.W;
-const out = { prevRev: P.rev, rev: N.rev, boxes: boxes.length, ring: RING, tiles: [], outside: [], rows: {} };
+const out = { prevRev: P.rev, rev: N.rev, fromRev: FROM, boxes: boxes.length, ring: RING, tiles: [], outside: [], rows: {} };
 // the world, tile by tile
 for (const k of ['map', 'variant']) {
   const a = A[k], b = B[k];
@@ -55,8 +63,8 @@ for (const k of ['regions', 'buildings', 'npcs', 'spawns']) {
   }
   out.rows[k].sample = [...gone.slice(0, 3).map(r => ['gone', r]), ...added.slice(0, 20).map(r => ['added', r])];
 }
-console.log(`footprint: WORLD_REV ${P.rev} -> ${N.rev}, ${boxes.length} footprint boxes (+${RING} ring)`);
-console.log(`  world: ${out.tiles.length} tiles changed (map and variants), ${out.tiles.filter(e => !near(e[1], e[2])).length} outside the footprint`);
+console.log(`footprint: WORLD_REV ${P.rev} -> ${N.rev}, ${boxes.length} footprint boxes (the revs after ${FROM}${RING ? `, +${RING} ring` : ''})`);
+console.log(`  world: ${out.tiles.length} tiles changed (map and variants), ${out.tiles.filter(e => !near(e[1], e[2])).length} outside the footprint${RING ? '' : ` (${out.tiles.filter(e => !near(e[1], e[2]) && nearInfo(e[1], e[2])).length} of them within ${INFO} of a box)`}`);
 for (const k of Object.keys(out.rows)) console.log(`  ${k}: ${out.rows[k].added} added, ${out.rows[k].gone} gone`);
 for (const k of Object.keys(out.rows)) for (const [how, r] of out.rows[k].sample) console.log(`    ${k} ${how} ${JSON.stringify(r)}`);
 if (out.outside.length) { console.log(`FOOTPRINT: ${out.outside.length} changes outside the footprint:`); for (const e of out.outside.slice(0, 40)) console.log('  ' + JSON.stringify(e)); }

@@ -902,7 +902,7 @@ stripped from the server's copy like 87-critterart). Spec §4 "New places". Poin
   the things' cull reach).
 
 **The footprint: WORLD_REV 6.** `ATLAS.REVS[6]` is the box plus its 6-tile ring (244..280 x 142..176).
-`node tools/spread-footprint.mjs <spread5-86-outposts index.html>`: 469 tiles changed (map and variants), 0 outside the
+`node tools/spread-footprint.mjs <spread5-86-outposts index.html>` (the 5e build 864e726 to the 5f build 7fd01ee): 463 tiles changed (map and variants), 0 outside the
 declared box; 1 region line changed (its sub), 1 person and 7 spawns added, all inside.
 
 **The beat gaps, after 5f (spec §13: "after 5f, the beat-gap limits hold on R1, R2 and R3").** 97-spreadchecks' report
