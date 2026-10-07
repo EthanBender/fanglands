@@ -639,6 +639,48 @@ online 430; mmo-sim 43, `--room` 43, `--sim` 47; dom-keys 16; mmo-sim-admin 8; m
 mmo-sim-world 16; sim-suite 28; build-sim `--strip --reads`; atlas-drift; the footprint; the migration as above. The fingerprint
 baseline is this build's (7e1ddf8b81203ce0: the 16 spawns, their drawings and the new exports), for 5b's diff.
 
+## Stage 5b: THE RIVERSIDE (feat/spread5, 7 Oct 2026)
+
+`src/85-riverside.js` (the three places) and `src/83-deco.js` (DECO, Stage 5's one tile). Spec §4 "New places".
+
+| Place | What is there (place frame: `ATLAS.planFrame(id)`, offsets from the box's top-left) | People | Creatures |
+| --- | --- | --- | --- |
+| The Old Bridge 128..146 x 86..102 | the crossing in stone, three wide (DECO 'stone_bridge' with parapets, over Stage 4's planks); reeds on both banks; a rail; the watchtower ruin, its chest and the south signpost are Stage 4's | Wilf the stonemason (his story a line at a time) | snakes 128,91 and 146,91, an adder 143,90 (lv 4, 6; 6+ off R3 and R5) |
+| Millbrook 78..96 x 78..94 | farmhouse with an oven, a red barn, the watermill (its wheel turns in a pit off a dead-end leat from the river, drawn in HOOKS.draw), Odo's wheat (21 DECO 'wheat' cells on SOIL), a sheep paddock, 8 tiles of soil any knight may plant, a hedge; a rail | Tamsin the miller (two sheaves of wheat make a sack of flour, all at once; her shop: flour 10, wheat seed 2, bread 8), Odo the farmer | crows 79,92 82,91 83,93 (lv 2), giant rats 89,90 96,90 (lv 3), sheep in the paddock |
+| Saltmere 250..268 x 64..80 | five stilt huts (BUILDINGS over the water, posts drawn beneath), a boardwalk and a jetty two wide (DOCK) with four lobster grounds off its end, four drying racks, fishing rings on the water, a marsh band of pools, sand bars and reeds on its land side (x 242..249); a rail | Nan Gully (her stall sells rods, lobster pots, shrimp and trout; buys every fish at full price) | giant rats on the jetty 256,74 257,76 (lv 3) |
+
+- **Built, not reserved.** `ATLAS.markBuilt(id, { sub })` at 85's load: the REGIONS line names the place (93-spread),
+  signposts drop "(builders at work)", `placeAction` says "This is Millbrook's ground. Build somewhere else.", the beat
+  report counts the box a stop. The anchor stays `kind: 'reserved'`, so every pass before `HOOKS.built` sees the same ground.
+- **On the finished land.** Everything is laid in a `HOOKS.built` pass: the stakes come up (each tile back to its
+  `under`), the plans, the leat, the buildings and people (taken out of BUILDINGS and NPCS by a `HOOKS.world.unshift`
+  pass at the start of every world: the earlier passes keep rings clear round people and buildings with dice), the
+  spawns (each marked `s.by`), the marsh and a light ring of worn ground (its own `mulberry32` stream).
+- **DECO** is made by the first cell put, after PROP, so no older tile id moves (the self-test checks PROP < DECO <= 255).
+  Kinds: stone_bridge (`bridge: true`), reeds, wheat, hedge, rack. The scarp seal, the river channel, roads-clear and
+  92's bridge count read `DECO.isBridge`.
+- **People's looks**: 83-townsart's 'riverside' family (wilf, tamsin_miller, odo, nan_gully; 83-townsfolk counts 84).
+  "Tamsin the miller" shares a first name with Tamsin the baker (the spec's name); her id is `tamsin_miller`.
+- **Other files**: 61-markers (made again after `HOOKS.built` by 93-spread's runner; one dock marker per built place:
+  Saltmere's, so 5 docks); 51-mounts (Fennick's unsold mare stands only at his own rail, not at every HITCH); 11-main
+  (the animals count adds Millbrook's sheep); 87-critters (its own spawns and its test crow and dog are its own); 44-wiki
+  (the two shops' places). The Ferry Piles wreck under the arches (§4) is not built (not in 5b's list).
+
+**The footprint: WORLD_REV 2.** `ATLAS.REVS[2]` is each box plus its 6-tile ring, the leat and the marsh band.
+`node tools/spread-footprint.mjs <spread5-87-critters index.html>`: 498 tiles changed (map and variants), 0 outside;
+3 regions changed (their sub line), 8 buildings, 4 people and 12 spawns added, all inside.
+
+**The migration with the sweep.** `--rev-base` (the 5a build, rev 1): fixture + matrix 27/27 (6 footprint planks back
+to the knight, the far one kept). The real saves (the 7 Oct pre-spread-live export, locally) 94/94 straight (world 1 to
+rev 2) and 94/94 through rev 1; 0 stage changes, 0 lost machines, items or coins.
+
+**Proved on this build:** `./build.sh` (literals 0 bare, changetile, compass, boot budget); headless ALL 1426; `--play`
+ALL 1427, the Fang dead; online 430; mmo-sim 43, `--room` 43, `--sim` 47; dom-keys 16; mmo-sim-admin 8; mmo-sim-party 18;
+mmo-sim-teacher 9; mmo-sim-world 16; sim-suite 28; build-sim `--strip --reads`; atlas-drift (hash 0d05465b015316dd);
+the footprint; the migration as above. The beat gaps are unchanged and under the limits (R1 19, R2 23, R3 29). Shots:
+`~/.fanglands/work/spread/s5b/shots/` (laptop 1280x800 and iPad 1024x768); full map `s5b/fullmap-5b.png`. The
+fingerprint baseline is this build's (a061a1ba1ff94e2e), for 5c's diff.
+
 ## Proving "nothing visible changed" (spec §9.4)
 
 ```
