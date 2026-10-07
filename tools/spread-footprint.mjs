@@ -68,6 +68,6 @@ console.log(`  world: ${out.tiles.length} tiles changed (map and variants), ${ou
 for (const k of Object.keys(out.rows)) console.log(`  ${k}: ${out.rows[k].added} added, ${out.rows[k].gone} gone`);
 for (const k of Object.keys(out.rows)) for (const [how, r] of out.rows[k].sample) console.log(`    ${k} ${how} ${JSON.stringify(r)}`);
 if (out.outside.length) { console.log(`FOOTPRINT: ${out.outside.length} changes outside the footprint:`); for (const e of out.outside.slice(0, 40)) console.log('  ' + JSON.stringify(e)); }
-else console.log('FOOTPRINT: every change lies inside the footprint boxes and their ring');
+else console.log(`FOOTPRINT: every change lies inside the footprint boxes${RING ? ' and their ring' : ''}`);
 if (val('--json', null)) fs.writeFileSync(val('--json', null), JSON.stringify(out, null, 1));
 process.exit(out.outside.length ? 1 : 0);

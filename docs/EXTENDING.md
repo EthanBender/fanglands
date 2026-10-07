@@ -62,6 +62,11 @@ Everything a feature needs is reachable through globals and the `HOOKS` registry
   the Crossroads Inn, Beacon Hills, the Hunters' Lodge, the goblin outposts, the Bandit Hills). Builders' stakes stand
   round each; `placeAction` refuses them and every main road (`ATLAS.onMainRoad`). A new place fills its reserved box (or
   is given a new anchor in `src/01-atlas.js`), declares its rail with `RAILS.add` (51-mounts), and moves nothing else.
+  **A place's people, as a kid meets them** (the review of bcb559f; 97-spreadchecks tests the first two): nobody stands
+  within npcInFront's reach (118 px, a cone ahead) of a cell from which a knight uses the rail, the mare tied beside it or
+  a signpost (put the person 4+ tiles off them); a story with a win keeps an after-the-win line set (and a word for when the
+  place fills again), never the story from before it; and a story is a `QUEST_DEFS` row from the first word (questText,
+  `HOOKS.activeQuests`, a `HOOKS.mapTarget` ring where to go, then on the teller once won; a QUEST_INFO row in 44-wiki).
   **Building a reserved place** (Stage 5; `src/85-riverside.js` is the worked example): at load, `ATLAS.markBuilt(id,
   { sub })` (before 93-spread names the REGIONS: the banner and the map say the place, not the builders; its signposts drop
   "(builders at work)"; `placeAction` says "This is Millbrook's ground."). The anchor stays reserved, so every world pass

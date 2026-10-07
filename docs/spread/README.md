@@ -805,7 +805,7 @@ night, the Far Beacon, the lodge, inside it, the range, the den; laptop 1280x800
 | Place | What is there | Person | Creatures |
 | --- | --- | --- | --- |
 | North Goblin Outpost 212..222 x 66..74 | a ring of 65-palisade's sharpened stakes (212..222 x 67..74, 33 stakes) with one gap in its road side (222,71); inside, trampled earth, a lookout of lashed poles (213,68; solid), a fire (217,70; cook on it, lit at night) and a scrap heap (220,73; DECO); the iron ore at 215,73 stays inside; a worn trail from the gap to the Goblin Road (y 71) with a signpost where it leaves the road (233,70: OUTPOST); a rail (222,66) | Bramble the scout, by her hide (DECO) outside the ring (213,66) | goblins 215,69 219,69 217,72 (lv 2), a sapper 219,72 (lv 7) |
-| South Goblin Outpost 232..242 x 98..106 | a ring of stakes (233..242 x 99..106, 28 stakes) whose corner by the river is the scarp's own rock face (241,99 242,99 242,100, untouched); its gap on the far side from the road (239,106); inside, a lookout over the road (234,100), a fire (238,102), a scrap heap (241,105); the iron ore at 237,105 stays inside; the Drovers' Track ends at the west wall, where a worn path goes round below the ring to the gap (stepping round the iron rock at 237,107); a signpost where the track leaves the Goblin Road (230,103: OUTPOST, INN); a rail (232,99) | Brin the drover, at the end of his track (232,100) | goblins 236,101 240,101 235,104 (lv 2), a brute 239,104 (lv 9) |
+| South Goblin Outpost 232..242 x 98..106 | a ring of stakes (233..242 x 99..106, 28 stakes) whose corner by the river is the scarp's own rock face (241,99 242,99 242,100, untouched); its gap on the far side from the road (239,106); inside, a lookout over the road (234,100), a fire (238,102), a scrap heap (241,105); the iron ore at 237,105 stays inside; the Drovers' Track ends at the west wall, where a worn path goes round below the ring to the gap (stepping round the iron rock at 237,107); a signpost where the track leaves the Goblin Road (230,103: OUTPOST, INN); a rail (232,99) | Brin the drover, on his path round the spikes (232,105; by the rail at 232,100 until the review of bcb559f) | goblins 236,101 240,101 235,104 (lv 2), a brute 239,104 (lv 9) |
 
 - **Fights he chooses.** Each gap is 12.97 (north) and 12.1 (south) tiles off the Goblin Road's centre line; no outpost
   goblin can see a knight on the road (each stands farther off it than its sight plus 2.5; the nearest, 235,104, is 7.8
@@ -865,7 +865,7 @@ stripped from the server's copy like 87-critterart). Spec §4 "New places". Poin
 
 | Part | What is there | Person | Creatures |
 | --- | --- | --- | --- |
-| the approach, 250..274 x 148..157 | the Bandit Track (R8) down from Hollowford through rock-and-scrub hills: the jungle in the box cut to open ground with thorn scrub (DECO 'bandit_scrub'), dry patches and boulder clusters (ROCK); the track's own cells are worn path; a signpost by the track (258,149: BANDITS, HOLLOWFORD); a rail (255,152) | Wat the carter (256,152) | none |
+| the approach, 250..274 x 148..157 | the Bandit Track (R8) down from Hollowford through rock-and-scrub hills: the jungle in the box cut to open ground with thorn scrub (DECO 'bandit_scrub'), dry patches and boulder clusters (ROCK); the track's own cells are worn path; a signpost by the track (258,149: BANDITS, HOLLOWFORD); a rail (255,152) | Wat the carter (261,153; beside the rail at 256,152 until the review of bcb559f) | none |
 | the ring and the toll gate | a rock face (CLIFF, 41 tiles): north wall y 158 (x 251..272) with the toll gate at the track's end (262,158 = bandit_hills.toll: DECO 'bandit_gate', its pole raised), west wall x 251, south wall y 169 (x 251..261); the river closes the east side (never painted); the toll booth (263,157, solid) | | |
 | the hollow, 252..(the river) x 159..168 | trampled paths from the gate, two tents (254,160 and 267,160), a fire (257,163: cook on it), the stolen sacks (253,163: DECO), Wat's cart (261,166); the hideout's mouth in the south wall (257,169, solid), two builders' stakes and a plaque on its step (256..258,168: 93-spread PROP, place 'bandit_hideout', "Builders' stakes. The Bandit Hideout is coming."; port `bandit_hills.hideout` 257,168) | | bandits 256,161 263,162 260,165 253,166 (lv 12); bandit archers 265,161 259,167 (lv 15, throwers); the bandit chief 255,165 (lv 20) |
 
@@ -923,6 +923,45 @@ and in the full rerun, it passed with nothing changed. The wiki has the place's 
 for each bandit kind. Shots: `~/.fanglands/work/spread/s5f/shots/` (the approach, the gate, the hollow, the hideout's
 mouth, a fight, the hollow by night; laptop 1280x800 and iPad 1024x768); full map `s5f/fullmap-5f.png`. The fingerprint
 baseline is this build's (ab4d229fca979712), for Stage 6's diff.
+
+## Stage 5: the review of bcb559f, fixed (feat/spread5, 7 Oct 2026)
+
+Every finding of the Stage 5 review (Cohen plays; the footprints and the saves) fixed, each with a check that fails on
+bcb559f. WORLD_REV stays 6: no tile of the world moved (`node tools/spread-footprint.mjs <bcb559f index.html> --from-rev
+0`: 0 tiles changed, regions, buildings and spawns unchanged, 4 people moved inside their places).
+
+| Finding | The fix | The check (fails on bcb559f) |
+| --- | --- | --- |
+| The sweep left a save's regrow and fires in the boxes: the old world's tree or rock grew back on the new place | 97-spread `prepareRev` (and the live `S.sweep`) drops regrow and fires entries in the boxes | `probe1.mjs` (bcb559f: 5 cells grow back ROCK/TREE; fixed: none); spread-migrate-check's `--rev-base` planks save now holds a stump with its regrowth in every box and a fire (bcb559f: 26 of 28 grew back; fixed: 0); 97-spread's sweep self-test |
+| A swept lodestone or bed kept `player.home` / `bedSpawn` | `sweepFinish` clears them as `finish()` does; the Voice says to place the lodestone again | the same probe and self-test |
+| Wat, Brin and Bramble went back to the story before the win | after-the-win lines (and "they came back" while the place fills again) | 86-bandits and 86-outposts talk tests in three moods |
+| People stood beside the rails (E talked instead of whistling or mounting) | Wilf 144,95, Wat 261,153, Brin 232,105, Corvin 107,107 (he answered before the Lodge's signpost) | 97-spreadchecks: from every open cell beside a Stage 5 rail, the mare's cells and every signpost in a Stage 5 box, facing it, nobody answers first (bcb559f: 22 cells) |
+| Marigold's song never came; she called the fence a camp | once the south outpost is beaten: her song and a meat pie, once (`quest.xroads.sang`), then her cows are back | 84-crossroads 4b |
+| The Cave Road's dogs chased a new knight down the road | a `def.roam` creature (dogs, snakes, the bear) leaves a knight on a main road be (07-update, 75-coop's keeper copy) | 87-critters 8: a dog two tiles off a knight who steps on the road gives up; none starts at a knight on it |
+| Corvin's panel asked for a tap on the pack over an empty "SELLS FOR FULL PRICE:" | 10-hud `shopSellHead` / `shopSubtitle`: a shop with `buys: []` says "CORVIN BUYS NOTHING. HE ONLY SELLS." | 86-wildplaces services test |
+| Mother Hobb took five coins at every word from a hurt knight | five coins once; after that she sends a hurt knight to his bed (which heals him) | 84-crossroads room test |
+| Three of Saltmere's four fishing rings had no foothold | all four on the water beside the jetty | 85-riverside 7b |
+| The Old Bridge's post missed the Lodge; G named Fennick's rail | `hunters_lodge` is a landmark an arm names on the way ("The graveyard, west, past the Hunters' Lodge."); "Whistle her at any hitching rail." | 85-riverside 9, 51-mounts rails test |
+| The new stories were in no quest book | `QUEST_DEFS` wat_cart ("Wat's Cart"), outposts ("The Goblin Outposts"), beacons ("The Three Beacons"): active and tracked from the first word, a ring on the map (the gate, the gap, the next tower, then the teller), wiki rows | 97-spreadchecks `storiesInTheBook` |
+| Crow feathers had no buyer; Odo sent the kid to Greta | Hilde buys crow feathers; "Tamsin sells the seed at the mill." | 86-wildplaces services test |
+| spread-migrate-check failed every real world-2 save | a world-2 save is swept, not moved: where he stood, home and bed kept unless swept, graves kept, every diff, regrowth and fire outside the boxes the same | the newest live export (20261007-131829): 94/94 (bcb559f's tool: 85/94) |
+| spread-footprint's ring 6 on top of REVS boxes that hold their ring | `--ring` defaults to 0; `--from-rev N` | a build with one tile 9 out of the Bandit Hills box: the old tool passes it, the new one fails it (`fix5/footprint-ring-proof.txt`) |
+| 5f's footprint written as 469 | 463 (5e build 864e726 to 5f build 7fd01ee) | |
+| `--play` failed once on a wreck on the Goblin Road | 93-spread's open-roads check passes machines, wrecks and the mare (play, not the world) | |
+
+The archers' sticky bombs wait for the real arrow work (the review's own note).
+
+**Proved on this build:** `./build.sh` (literals 0 bare, changetile 215 all classified, compass, boot budget: node 1,423
+ms, Chromium 4x 2,124 ms); headless ALL 1464; `--play` ALL 1465, the Fang dead; online 430; mmo-sim 43, `--room` 43,
+`--sim` 47; dom-keys 16; mmo-sim-admin 8; mmo-sim-party 18; mmo-sim-teacher 9; sim-suite 28; mmo-sim-world 16;
+build-sim `--strip --reads`; atlas-drift (hash 26ef731f3d848481); the footprint (against bcb559f as above, and the whole
+of Stage 5 against master 2e2c023 at ring 0: inside the boxes). The migration: fixture + matrix + the pre-spread-live
+export straight 120/120; through the master 2e2c023 build (rev 0, every Stage 5 box swept) 121/121 with the planks, the
+stumps' regrowth and the fire (0 grew back); through bcb559f (rev 6) 120/120; the newest live export (9 world-2 saves)
+94/94; 0 stage changes, 0 lost machines, items or coins. Shots: `~/.fanglands/work/spread/fix5/shots/` (the Old Bridge's
+rail with the mare mounted from every side, the Bandit Hills' rail, Brin, Corvin's panel, Marigold's song, the quest
+book, Saltmere's rings, the bridge's signpost; laptop 1280x800 and iPad 1024x768); full map `fix5/fullmap-fixed.png`. The
+fingerprint baseline is this build's (36c5648ca969975e), for Stage 6's diff.
 
 ## Proving "nothing visible changed" (spec §9.4)
 

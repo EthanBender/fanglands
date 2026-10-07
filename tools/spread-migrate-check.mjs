@@ -247,7 +247,9 @@ ev(`localStorage.removeItem(title.slotKey(1)); title.startSlot(1); title.active 
 // the planks on the footprint (--rev-base): one on the middle of every box this build adds, and one far from all of them
 if (revInfo) {
   const fx = saves.find(s => s.src === 'fixture');
-  if (fx) {
+  // (a base of this very WORLD_REV adds no boxes: no planks, the saves just load)
+  const nBoxes = +ev(`(() => { let n = 0; for (let r = ${revInfo.baseRev} + 1; r <= WORLD_REV; r++) { const R = ATLAS.REVS[r]; if (R && R.boxes) n += R.boxes.length; } return n; })()`);
+  if (fx && nBoxes) {
     const plan = JSON.parse(ev(`(() => { const boxes = []; for (let r = ${revInfo.baseRev} + 1; r <= WORLD_REV; r++) { const R = ATLAS.REVS[r]; if (R && R.boxes) boxes.push(...R.boxes); }
       const mid = boxes.map(b => [Math.round((b[0] + b[2]) / 2), Math.round((b[1] + b[3]) / 2)]);
       const inB = (x, y) => boxes.some(b => x >= b[0] - 1 && x <= b[2] + 1 && y >= b[1] - 1 && y <= b[3] + 1);
