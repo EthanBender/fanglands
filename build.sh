@@ -19,6 +19,9 @@ node tools/literals.mjs --gate || { echo "build.sh: a file of src/ or tools/ has
 # The Atlas (docs/ONLINE.md, "The shared world", Stage 1): online/src/atlas.json, made from this index.html, committed with it.
 # online/test/atlas-drift.mjs fails a deploy whose atlas.json does not match the game it ships with.
 node tools/atlas.mjs --quiet || { echo "build.sh: the Atlas could not be made from index.html (tools/atlas.mjs)" >&2; exit 1; }
+# The Great Spread's compass test (Stage 4b, docs/spread/compass.json): every line the game says with a direction or a
+# distance word is a row, and every row on the map points the way the Atlas says. No acorn (online/ not installed): skipped.
+node tools/compass.mjs --quiet || { echo "build.sh: a line says a direction the map does not hold, or has no row in docs/spread/compass.json (tools/compass.mjs)" >&2; exit 1; }
 # The server's copy of the game (docs/ONLINE.md, "The shared world"): online/src/sim/game.mjs, git-ignored, rebuilt on
 # every build so the deploy gates always test this index.html. acorn and eslint-scope are online/'s devDependencies.
 if [ ! -d online/node_modules/acorn ] || [ ! -d online/node_modules/eslint-scope ]; then

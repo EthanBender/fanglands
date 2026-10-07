@@ -1142,9 +1142,10 @@
     'A table of red rock in the far south-east, with a canyon cut right round inside it. Four heights: the table on top, the ledges, the cliff faces, and the canyon floor in the shade at the bottom.',
     '',
     'GETTING THERE. Harl\'s ferry to the Far Shore (combat level 10, 40 coins), then south past the stormstone diggings until the ground goes red and stands up in front of you.',
-    'THE MOUTH, x 215 y 103, is a walk straight in at floor level. Follow the canyon either way round and you come out of THE SLOT, x 246 y 101, back on the same scrub thirty paces east — the short way between the diggings and the east side.',
-    'THE RISE, x 206 y 139, is a ramp of cut steps through the west escarpment onto the table.',
-    'THE STAIR, x 220 y 117, climbs out of the canyon onto the mesa the ring encircles. There is no other way onto it.',
+    // (the places' numbers are read through the Redcut's frame: on the spread's map the mouth is not at 215,103)
+    `THE MOUTH, x ${R.x(215)} y ${R.y(103)}, is a walk straight in at floor level. Follow the canyon either way round and you come out of THE SLOT, x ${R.x(246)} y ${R.y(101)}, back on the same scrub thirty paces east — the short way between the diggings and the east side.`,
+    `THE RISE, x ${R.x(206)} y ${R.y(139)}, is a ramp of cut steps through the west escarpment onto the table.`,
+    `THE STAIR, x ${R.x(220)} y ${R.y(117)}, climbs out of the canyon onto the mesa the ring encircles. There is no other way onto it.`,
     'THE SWITCHBACK, three ledges at x 223–227 y 147–151, drops from Marlow\'s camp into the spur.',
     'THE FALL, y 143–144, is a slab of cliff that came down and filled the spur. Walk over it from the table, or up and over it from the floor.',
     '',

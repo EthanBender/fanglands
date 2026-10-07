@@ -231,9 +231,12 @@
       check('beast: climb up → player.mech.kind === "beast" (300 hp, r 26, speed 100)', piloting, { mech: player.mech, r: player.r, speed: player.speed, tile: tileAt(wt.x, wt.y) });
       // 6. ram: a goblin in front is shoved 60 px along the spikes (on top of the core's knockback) and left reeling
       const gob = monsters.find(m => m.type === 'goblin'); const gs = { x: gob.x, y: gob.y, dead: gob.dead, hp: gob.hp, state: gob.state };
-      gob.dead = false; gob.hp = 999; gob.x = player.x + 44; gob.y = player.y; gob.stunT = 0; player.facing = { x: 1, y: 0 }; player.attackCd = 0; const gx0 = gob.x, r0 = rams;
-      F.press('Space'); const shove = gob.x - gx0, reeling = gob.stunT > 0.3;
-      check('beast: Space rams — a goblin in front is shoved 60 px (plus the stomp knockback) and reels', rams >= r0 + 1 && shove >= 60 && reeling && Math.abs(gob.y - player.y) < 2, { shove: +shove.toFixed(1), rams, reeling });
+      // (rammed along open ground: the side whose next three tiles are clear, east first; on the spread's map a tree can
+      // stand two tiles east of the wreck, and a goblin shoved into it stops there)
+      const rtx = Math.floor(player.x / TILE), rty = Math.floor(player.y / TILE), way = [[1, 0], [0, 1], [-1, 0], [0, -1]].find(([dx, dy]) => [1, 2, 3].every(k => !SOLID.has(tileAt(rtx + dx * k, rty + dy * k)))) || [1, 0];
+      gob.dead = false; gob.hp = 999; gob.x = player.x + way[0] * 44; gob.y = player.y + way[1] * 44; gob.stunT = 0; player.facing = { x: way[0], y: way[1] }; player.attackCd = 0; const gx0 = gob.x, gy0 = gob.y, r0 = rams;
+      F.press('Space'); const shove = (gob.x - gx0) * way[0] + (gob.y - gy0) * way[1], reeling = gob.stunT > 0.3, aside = way[0] ? gob.y - player.y : gob.x - player.x;
+      check('beast: Space rams — a goblin in front is shoved 60 px (plus the stomp knockback) and reels', rams >= r0 + 1 && shove >= 60 && reeling && Math.abs(aside) < 2, { shove: +shove.toFixed(1), rams, reeling, way });
       gob.x = gs.x; gob.y = gs.y; gob.dead = gs.dead; gob.hp = gs.hp; gob.state = gs.state; gob.stunT = 0; gob.angry = MONSTER_DEFS.goblin.aggro;
       // 7. bomb lob: B lobs one bomb projectile (owner player, speed 300, life 0.7); a second press inside 4 s does nothing
       projectiles = []; const bl0 = bombsLobbed; F.press('KeyB'); const b1 = projectiles.filter(p => p.kind === 'bomb' && p.owner === 'player'); const cd1 = bombCd;

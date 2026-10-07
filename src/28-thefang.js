@@ -373,7 +373,7 @@
     return false;
   };
   // ---------- main quest, stages 14–16 ----------
-  if (!HOOKS.mainQuest[14]) HOOKS.mainQuest[14] = { text: () => "Find The Fang's lair: a sealed gate at the far south of dragon country." };
+  if (!HOOKS.mainQuest[14]) HOOKS.mainQuest[14] = { text: () => "Find The Fang's lair: a sealed gate in the far west of dragon country." };   // (west: docs/spread/compass.json)
   HOOKS.mainQuest[15] = { text: () => 'The Fang is slain. The Dragon Killers ride home: return to Duke Ferrin.', onEnter: () => {
     say('It is done. The dragon of legend is dead by your hand. Go home, knight. Thistledown should hear it from you.', 'The Voice');
   } };

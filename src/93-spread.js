@@ -115,6 +115,35 @@
       if (best) { S.moved.push([s.type, s.tx, s.ty, best.x, best.y]); s.movedFrom = s.movedFrom || [s.tx, s.ty]; s.tx = best.x; s.ty = best.y; }
     }
 
+    // ---- 1b. every aggressive spawn 6+ tiles off a main road (§4, Stage 4b) ----
+    const RING8 = [[-1, -1], [0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0]];
+    // The open land stretched, the roads were laid anew: a wolf or a goblin whose old spot now lies by the Cave Road or the
+    // Wolfwood Road would wake on every passing knight. Each moves to the nearest open ground of its own region 6.5+ tiles
+    // from every main road's centre line (no dice: nearest first, ties by row then column). Not the fights a road leads
+    // to (the camp, the outposts, the bandit hills, the lair, Hollowford's occupiers) nor the Ashfields' dragons on the Ash
+    // Road, which the road goes through to its end (97-spreadchecks lists them).
+    { const mainD = new Float32Array(MAP_W * MAP_H).fill(99);
+      for (const id of A.MAIN_ROADS) { const pl = A.track(id);
+        for (let k = 1; k < pl.length; k++) { const [ax, ay] = pl[k - 1], [bx, by] = pl[k];
+          for (let y = Math.max(0, Math.floor(Math.min(ay, by) - 8)); y <= Math.min(MAP_H - 1, Math.ceil(Math.max(ay, by) + 8)); y++)
+            for (let x = Math.max(0, Math.floor(Math.min(ax, bx) - 8)); x <= Math.min(MAP_W - 1, Math.ceil(Math.max(ax, bx) + 8)); x++) { const d = segD(x, y, ax, ay, bx, by), i = y * MAP_W + x; if (d < mainD[i]) mainD[i] = d; } } }
+      const KEEP_AT = ['camp', 'outpost_north', 'outpost_south', 'bandit_hills', 'fang_lair', 'hollowford'].map(id => A.box(id));
+      const kept = (x, y) => KEEP_AT.some(b => b && x >= b[0] - 6 && x <= b[2] + 6 && y >= b[1] - 6 && y <= b[3] + 6) || /^The Ashfields$|^The Fang's Lair$/.test(regionAt(x, y).name);
+      S.offRoad = [];
+      for (const s of MONSTER_SPAWNS) {
+        const d = MONSTER_DEFS[s.type]; if (!d || !d.aggro || s.camp || mainD[s.ty * MAP_W + s.tx] >= 6 || kept(s.tx, s.ty)) continue;
+        const home = regionAt(s.tx, s.ty).name; let best = null;
+        for (let r = 1; r <= 16 && !best; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+          if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue; const x = s.tx + dx, y = s.ty + dy;
+          if (!inMap(x, y) || x < 1 || y < 1 || x > MAP_W - 2 || y > MAP_H - 2 || mainD[y * MAP_W + x] < 6.5 || !OPEN(at(x, y)) || buildingAt(x, y) || near[y * MAP_W + x] || A.reservedAt(x, y) || regionAt(x, y).name !== home) continue;
+          // (open all round: a new game clears the ground about a spawn, and that clearing must not cut a way through a wall)
+          if (!RING8.every(([ex, ey]) => OPEN(at(x + ex, y + ey)) && !buildingAt(x + ex, y + ey))) continue;
+          const dd = Math.hypot(dx, dy); if (!best || dd < best.d) best = { x, y, d: dd };
+        }
+        if (best) { S.offRoad.push([s.type, s.tx, s.ty, best.x, best.y]); s.movedFrom = s.movedFrom || [s.tx, s.ty]; s.tx = best.x; s.ty = best.y; }
+        else S.skipped.push('no ground 6 tiles off the road for the ' + s.type + ' at ' + s.tx + ',' + s.ty);
+      } }
+
     // ---- 2. Castle Brightwater: a cliff ring one tile inside its box, no gap; sand between it and the east sea ----
     if (CLIFF >= 0) { const b = A.box('brightwater'), r = [b[0] + 1, b[1] + 1, b[2] - 1, b[3] - 1];
       for (let y = r[1]; y <= r[3]; y++) for (let x = r[0]; x <= r[2]; x++) {
@@ -194,7 +223,6 @@
     // ---- 4. a signpost beside every road node (§5): the old SIGN tile, two to six tiles off the node, off the road ----
     // (a post never cuts a way: the open ground round it, walked round the eight tiles about it, is one piece, so every
     // open side of it still reaches every other without it)
-    const RING8 = [[-1, -1], [0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0]];
     const simple = (x, y) => { const o = RING8.map(([dx, dy]) => OPEN(at(x + dx, y + dy)));
       let runs = 0; for (let k = 0; k < 8; k++) if (o[k] && !o[(k + 7) % 8]) runs++;
       return runs === 1 || (runs === 0 && o.every(Boolean)); };

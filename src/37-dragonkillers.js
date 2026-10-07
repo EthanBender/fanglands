@@ -82,7 +82,13 @@
     // (and the jungle's western edge, x 100, closes the way round from the east)
     const open = t => !SOLID.has(t) && !PUSH_THROUGH.has(t);
     for (let x = DK_W.tx(1); x <= rimX1(); x++) { if (x >= ROAD_X0 && x <= ROAD_X1) continue; const y = rimRow(x); if (open(api.tileAt(x, y))) api.setTile(x, y, T.TREE); }
-    for (let y = DK_W.ty(96); y <= DK_W.ty(138); y++) { const x = wallX(y); if (open(api.tileAt(x, y))) api.setTile(x, y, T.TREE); }
+    // (on its pin near the warden's east wall the line steps a column sideways every row or two: each row takes every tile
+    // from the last row's column to its own, and the wall's top is carried up to the rim's east end, so it is one unbroken
+    // line, never trees that touch only at their corners; the spread's map found the corner open, sealed by luck of scatter)
+    { let px = null; const top = DK_W.ty(96);
+      for (let y = Math.min(top, rimRow(rimX1())); y <= DK_W.ty(138); y++) { const x = wallX(Math.max(y, top)), a = px === null ? x : Math.min(px, x), b = px === null ? x : Math.max(px, x);
+        for (let xx = a; xx <= b; xx++) if (open(api.tileAt(xx, y))) api.setTile(xx, y, T.TREE);
+        px = x; } }
     for (let x = ROAD_X0; x <= ROAD_X1; x++) { const y = DK_WD.y(95); if (open(api.tileAt(x, y))) api.setTile(x, y, T.DIRT); }
     for (const [x, y] of GATE_T) api.setTile(x, y, WARDEN_GATE);
   });

@@ -397,23 +397,44 @@
       'Sylvaris': (x, y, t) => TREES.has(t) ? (JUNGLE >= 0 ? JUNGLE : null) : (t === T.GRASS && FERN >= 0 && rnd() < 0.45) ? FERN : null,
     };
     // the ground is dressed on every tile the outlines moved from one region to another, and on every tile
-    // within five of a border, so the wood starts where the wood's name starts instead of a dozen tiles later
-    const BAND = 5;
+    // within eight of a border, so the wood starts where the wood's name starts instead of a dozen tiles later.
+    // BAND was 5; the spread spec (section 6, Stage 4b) has every land seam blend over 8 tiles or more (Int8 holds it).
+    const BAND = 8;
     const own = new Array(MAP_W * MAP_H);
     for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) { const r = resolve(x, y); own[y * MAP_W + x] = r ? r.name : ''; }
-    const dist = new Int8Array(MAP_W * MAP_H).fill(-1); const q = [];
+    // (the Ash Wastes are the Wilds' ground, reserved: their edge with the Wilds is no border of grounds, so the Jungle's
+    // edge along them is one seam, the Wilds' and the Jungle's, however the boxes split that strip)
+    const gname = n => (n === 'The Ash Wastes' ? 'The Wilds' : n);
+    const dist = new Int8Array(MAP_W * MAP_H).fill(-1), other = new Array(MAP_W * MAP_H); const q = [];
     for (let y = 1; y < MAP_H - 1; y++) for (let x = 1; x < MAP_W - 1; x++) {
-      const i = y * MAP_W + x;
-      if (!N4.some(([dx, dy]) => own[(y + dy) * MAP_W + x + dx] !== own[i])) continue;
-      dist[i] = 0; q.push(i);
+      const i = y * MAP_W + x, nb = N4.find(([dx, dy]) => gname(own[(y + dy) * MAP_W + x + dx]) !== gname(own[i]));
+      if (!nb) continue;
+      dist[i] = 0; other[i] = gname(own[(y + nb[1]) * MAP_W + x + nb[0]]); q.push(i);
     }
     for (let qi = 0; qi < q.length; qi++) { const c = q[qi], x = c % MAP_W, y = (c / MAP_W) | 0;
       if (dist[c] >= BAND) continue;
-      for (const [dx, dy] of N4) { const nx = x + dx, ny = y + dy; if (!inMap(nx, ny)) continue; const n = ny * MAP_W + nx; if (dist[n] >= 0) continue; dist[n] = dist[c] + 1; q.push(n); } }
+      for (const [dx, dy] of N4) { const nx = x + dx, ny = y + dy; if (!inMap(nx, ny)) continue; const n = ny * MAP_W + nx; if (dist[n] >= 0) continue; dist[n] = dist[c] + 1; other[n] = other[c]; q.push(n); } }
+    // SOFT seams: two grounds of living land that reach into each other (the spread spec, section 6: no seam on a ruled
+    // line). Within the band a tile wears its NEIGHBOUR's ground by a chance that falls from 0.7 on the border to a
+    // seventh of that at the band's edge, read from a noise of its own (in old coordinates, so its clumps stretch with the land):
+    // the oaks reach into the jungle in tongues and the giants into the wood. Cliffs, water and the Ashfields' rim keep
+    // their hard edges (93-ashedge fades the ash itself).
+    const SOFT_SEAM = new Set(['Wolfwood|The Jungle', 'The Jungle|Wolfwood', 'Wolfwood|Hollowford', 'Hollowford|Wolfwood', 'The Jungle|Hollowford', 'Hollowford|The Jungle',
+      'The Jungle|The Wilds', 'The Wilds|The Jungle']);   // (the Wilds: the Jungle's west edge south of the Ashfields, along the Ash Wastes)
+    const soft = makeNoise(SEED + 31, 3);
+    // what a tile wears when it takes its neighbour's ground across a soft seam: that ground's own dressing, and on open
+    // ground that ground's mark half the time (an oak for the wood and the Wilds, a giant for the jungle, scorch for the
+    // burn), so each ground's reach into the other is seen, not only its grass
+    const reachOf = { 'Wolfwood': () => tree(), 'The Wilds': () => tree(), 'The Jungle': () => (JUNGLE >= 0 ? JUNGLE : null), 'Hollowford': () => (SCORCH >= 0 ? SCORCH : null) };
+    const softGround = name => (x, y, t) => { const r = reachOf[name]; if (r && SOFT.has(t) && rnd() < 0.5 && (name === 'Hollowford' || addOk(x, y))) return r(); const g = GROUND[name]; return g ? g(x, y, t) : null; };
+    S.soft = 0;
     for (let y = 1; y < MAP_H - 1; y++) for (let x = 1; x < MAP_W - 1; x++) {
-      const i = y * MAP_W + x, name = own[i], was = boxRegion(x, y);
+      const i = y * MAP_W + x, was = boxRegion(x, y);
+      let name = own[i];
       if (dist[i] < 0 && (!was || was.name === name)) continue;
-      const g = GROUND[name]; if (!g || !plain(x, y)) continue;
+      let g = GROUND[name];
+      if (dist[i] >= 0 && SOFT_SEAM.has(gname(name) + '|' + other[i]) && soft(W.ix(x), W.iy(y)) < 0.7 * (1 - dist[i] / (BAND + 2))) { name = other[i]; g = softGround(name); S.soft++; }
+      if (!g || !plain(x, y)) continue;
       const t = at(x, y), to = g(x, y, t);
       if (to === null || to === undefined || to === t) continue;
       put(x, y, to); S.ground[name] = (S.ground[name] || 0) + 1;
@@ -526,6 +547,12 @@
       const openBefore = (x, y) => N4.some(([dx, dy]) => inMap(x + dx, y + dy) && !SOLID.has(before[(y + dy) * MAP_W + x + dx]));
       S.freed = 0;
       let seen = reachSet();
+      // digging only ever opens ground, so what the knight reaches only grows: flood on from each opened tile that touches
+      // reached ground, instead of flooding the whole map again after every dig (the spread spec, section 12: the boot budget)
+      const grow = (sn, opened) => { const ok = t => !SOLID.has(t) || PUSH_THROUGH.has(t) || t === WARDEN_GATE, q = [];
+        for (const [ox, oy] of opened) { const i = oy * MAP_W + ox; if (!sn[i] && ok(at(ox, oy)) && N4.some(([dx, dy]) => inMap(ox + dx, oy + dy) && sn[(oy + dy) * MAP_W + ox + dx])) { sn[i] = 1; q.push(i); } }
+        for (let qi = 0; qi < q.length; qi++) { const c = q[qi], x = c % MAP_W, y = (c / MAP_W) | 0;
+          for (const [dx, dy] of N4) { const nx = x + dx, ny = y + dy; if (!inMap(nx, ny)) continue; const n = ny * MAP_W + nx; if (sn[n] || !ok(at(nx, ny))) continue; sn[n] = 1; q.push(n); } } };
       const served = (x, y) => N4.some(([dx, dy]) => inMap(x + dx, y + dy) && seen[(y + dy) * MAP_W + x + dx]);
       // which side of the Wolfwood line a tile sits on: the digging may open this file's rock, but it may
       // never open a way through the step itself, so it never crosses from one side to the other
@@ -563,7 +590,7 @@
         if (undo.some(([ox, oy]) => Math.abs(oy - sGW(ox)) < 12) && leaking(north()).length) {
           for (const [ox, oy, ot] of undo) set(ox, oy, ot);
           S.kept++;
-        } else { S.freed += undo.length; seen = reachSet(); }
+        } else { S.freed += undo.length; grow(seen, undo); }
       }
       S.stranded = stranded.length; }
     S.leaks = leaking(north());

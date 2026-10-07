@@ -272,44 +272,50 @@
     // (rows and the noise in OLD world coordinates, on the giants pin: the Wolfwood / Jungle wall)
     for (let x = W.tx(101); x <= W.tx(161); x++) {
       const ox = W.ix(x);
-      for (const [y, oy] of rowsOf('giants', 92, 95, x)) {
-        swap(x, y, TREES, JUNGLE, dn(ox, oy) > 0.45 + (95 - oy) * 0.15, 'jungle'); swap(x, y, GRASSY, FERN, dn(ox + 7, oy) > 0.6 + (95 - oy) * 0.12, 'jungle');
-        if (ok(x, y) && GRASSY.has(at(x, y)) && addOk(x, y) && dn(ox + 13, oy) > 0.7 + (95 - oy) * 0.07) { set(x, y, JUNGLE); S.dither.jungle++; } // the jungle thickens northward
+      // (six old rows each side, about nine new ones at the spread's stretch: the spread spec, section 6, has every land
+      // seam blend over 8 tiles or more; the chances fade over the wider band as they did over the four rows before)
+      for (const [y, oy] of rowsOf('giants', 90, 95, x)) {
+        swap(x, y, TREES, JUNGLE, dn(ox, oy) > 0.45 + (95 - oy) * 0.1, 'jungle'); swap(x, y, GRASSY, FERN, dn(ox + 7, oy) > 0.6 + (95 - oy) * 0.08, 'jungle');
+        if (ok(x, y) && GRASSY.has(at(x, y)) && addOk(x, y) && dn(ox + 13, oy) > 0.7 + (95 - oy) * 0.05) { set(x, y, JUNGLE); S.dither.jungle++; } // the jungle thickens northward
       }
-      for (const [y, oy] of rowsOf('giants', 96, 99, x)) {
-        if (ok(x, y) && at(x, y) === JUNGLE && dn(ox, oy) < 0.55 - (oy - 96) * 0.12) { set(x, y, tree()); S.dither.jungle++; }
-        swap(x, y, JUNGLES, T.GRASS, dn(ox + 29, oy) < 0.32 - (oy - 96) * 0.07, 'jungle'); // and thins southward into Wolfwood's density
+      for (const [y, oy] of rowsOf('giants', 96, 101, x)) {
+        if (ok(x, y) && at(x, y) === JUNGLE && dn(ox, oy) < 0.55 - (oy - 96) * 0.09) { set(x, y, tree()); S.dither.jungle++; }
+        swap(x, y, JUNGLES, T.GRASS, dn(ox + 29, oy) < 0.32 - (oy - 96) * 0.05, 'jungle'); // and thins southward into Wolfwood's density
       }
     }
     // Wolfwood's north edge (y 62): the wood reaches north in tongues, clearings reach south
     // (rows and the noise in OLD world coordinates, on the gw_steps pin: the Goblin Fields / Wolfwood scarp)
     for (let x = W.tx(1); x <= W.tx(159); x++) {
       const ox = W.ix(x);
-      for (const [y, oy] of rowsOf('gw_steps', 58, 61, x)) if (ok(x, y) && GRASSY.has(at(x, y)) && addOk(x, y) && dn(ox, oy) > 0.5 + (61 - oy) * 0.12) { set(x, y, tree()); S.dither.wolfwood++; }
-      for (const [y, oy] of rowsOf('gw_steps', 62, 66, x)) swap(x, y, TREES, T.GRASS, dn(ox, oy) < 0.45 - (oy - 62) * 0.1, 'wolfwood');
+      // (six old rows each side, about nine new ones: section 6's 8+)
+      for (const [y, oy] of rowsOf('gw_steps', 56, 61, x)) if (ok(x, y) && GRASSY.has(at(x, y)) && addOk(x, y) && dn(ox, oy) > 0.5 + (61 - oy) * 0.09) { set(x, y, tree()); S.dither.wolfwood++; }
+      for (const [y, oy] of rowsOf('gw_steps', 62, 67, x)) swap(x, y, TREES, T.GRASS, dn(ox, oy) < 0.45 - (oy - 62) * 0.08, 'wolfwood');
     }
     // the Goblin Camp's ring of bare grass: the thicket creeps in, trodden ground creeps out
-    for (let y = CAMP.y(15); y <= CAMP.y(45); y++) for (let x = CAMP.x(136); x <= CAMP.x(164); x++) {
-      const d = rectDist(PAL, x, y); if (d < 1 || d > 6 || !ok(x, y) || !GRASSY.has(at(x, y))) continue;
+    // (eight tiles out, was six: section 6's 8+; the window holds the camp ground plus eight)
+    for (let y = CAMP.y(12); y <= CAMP.y(48); y++) for (let x = CAMP.x(134); x <= CAMP.x(166); x++) {
+      const d = rectDist(PAL, x, y); if (d < 1 || d > 8 || !ok(x, y) || !GRASSY.has(at(x, y))) continue;
       const n = dn(CAMP.ix(x) + 50, CAMP.iy(y));
-      if (n > 0.42 + (6 - d) * 0.05 && addOk(x, y)) { set(x, y, tree()); S.dither.camp++; }
-      else if (n < 0.14 + (6 - d) * 0.05) { set(x, y, T.DIRT); S.dither.camp++; }
+      if (n > 0.42 + (8 - d) * 0.04 && addOk(x, y)) { set(x, y, tree()); S.dither.camp++; }
+      else if (n < 0.14 + (8 - d) * 0.04) { set(x, y, T.DIRT); S.dither.camp++; }
     }
     // Grey Quarry: rock spills past the rectangle, grass eats into its edge
-    for (let y = QF.y(5); y <= QF.y(18); y++) for (let x = QF.x(42); x <= QF.x(66); x++) {
+    // (rock spills eight tiles out, was five, and grass eats three rows in, was two: section 6's 8+)
+    for (let y = QF.y(2); y <= QF.y(21); y++) for (let x = QF.x(39); x <= QF.x(69); x++) {
       if (!ok(x, y)) continue;
       const d = rectDist(QUARRY, x, y), t = at(x, y), qn = dn(QF.ix(x) + 90, QF.iy(y));
-      if (d >= 1 && d <= 5 && GRASSY.has(t) && addOk(x, y) && qn > 0.4 + d * 0.08) { set(x, y, rnd() < 0.2 ? T.IRON : T.ROCK); S.dither.quarry++; }
-      else if (d === 0) { const depth = Math.min(x - QUARRY.x0, QUARRY.x1 - x, y - QUARRY.y0, QUARRY.y1 - y); if (depth <= 2 && ROCKY.has(t) && qn < 0.45 - depth * 0.12) { set(x, y, T.GRASS); S.dither.quarry++; } }
+      if (d >= 1 && d <= 8 && GRASSY.has(t) && addOk(x, y) && qn > 0.4 + d * 0.06) { set(x, y, rnd() < 0.2 ? T.IRON : T.ROCK); S.dither.quarry++; }
+      else if (d === 0) { const depth = Math.min(x - QUARRY.x0, QUARRY.x1 - x, y - QUARRY.y0, QUARRY.y1 - y); if (depth <= 3 && ROCKY.has(t) && qn < 0.45 - depth * 0.1) { set(x, y, T.GRASS); S.dither.quarry++; } }
     }
     // Hollowford: the fire's edge was a rectangle; the wood reaches back into its margin, and scorched ground reaches out
-    for (let y = HF.y0 - 3; y <= HF.y1 + 3; y++) for (let x = HF.x0 - 3; x <= HF.x1 + 3; x++) {
+    // (the burn reaches eight tiles out into the wood, was three, and the wood four rows in: section 6's 8+)
+    for (let y = HF.y0 - 8; y <= HF.y1 + 8; y++) for (let x = HF.x0 - 8; x <= HF.x1 + 8; x++) {
       if (!ok(x, y)) continue;
       const d = rectDist(HF, x, y), t = at(x, y), n = dn(HFF.ix(x) + 33, HFF.iy(y) + 17);
-      if (d === 0) { const depth = Math.min(x - HF.x0, HF.x1 - x, y - HF.y0, HF.y1 - y); if (depth <= 3 && t === T.GRASS && addOk(x, y) && n > 0.5 + depth * 0.1) { set(x, y, tree()); S.dither.hollowford++; } }
-      else if (d <= 3) {
-        if (TREES.has(t) && n < 0.4 - (d - 1) * 0.1) { set(x, y, T.GRASS); S.dither.hollowford++; }
-        else if (SCORCH >= 0 && t === T.GRASS && n > 0.78 + (d - 1) * 0.06) { set(x, y, SCORCH); S.dither.hollowford++; }
+      if (d === 0) { const depth = Math.min(x - HF.x0, HF.x1 - x, y - HF.y0, HF.y1 - y); if (depth <= 4 && t === T.GRASS && addOk(x, y) && n > 0.5 + depth * 0.08) { set(x, y, tree()); S.dither.hollowford++; } }
+      else if (d <= 8) {
+        if (TREES.has(t) && n < 0.4 - (d - 1) * 0.045) { set(x, y, T.GRASS); S.dither.hollowford++; }
+        else if (SCORCH >= 0 && t === T.GRASS && n > 0.72 + (d - 1) * 0.03) { set(x, y, SCORCH); S.dither.hollowford++; }
       }
     }
     // rock outcrops at the foot of Deepholm's walls, obsidian at the foot of the lair's: the blocks become massifs

@@ -372,9 +372,11 @@
     'ash_shrine.shrine': ['ash_shrine', 87, 103],
     'fang_lair.gate': ['fang_lair', 18, 108], 'fang_lair.circle': ['fang_lair', 18, 117], 'fang_lair.approach': ['fang_lair', 20, 105], 'fang_lair.node': ['fang_lair', 36, 105],
     'canopy.door': ['canopy', 121, 101], 'sylvaris.gap': ['sylvaris', 137, 114], 'sylvaris.node': ['sylvaris', 133, 112],
-    // §4/§5, in the 400x280 plan (old_bridge.south is 138,99, not 140,98: the watchtower's ruin stands on 141..145 x 97..101)
+    // §4/§5, in the 400x280 plan (old_bridge.south is 138,99, not 140,98: the watchtower's ruin stands on 141..145 x 97..101;
+    // saltmere.huts is 251,72, not 256,72: at the spread 256,72 is the Grey Sea, and the Coast Path starts on the shore, by
+    // the stilt huts Stage 5 builds out over the water)
     'old_bridge.span': ['new', 136, 93], 'old_bridge.south': ['new', 138, 99], 'goblin_road.bridge': ['new', 228, 92],
-    'millbrook.gate': ['new', 86, 80], 'saltmere.gate': ['new', 252, 74], 'saltmere.huts': ['new', 256, 72], 'crossroads_inn.yard': ['new', 160, 122],
+    'millbrook.gate': ['new', 86, 80], 'saltmere.gate': ['new', 252, 74], 'saltmere.huts': ['new', 251, 72], 'crossroads_inn.yard': ['new', 160, 122],
     'beacon_hills.tower_w': ['new', 116, 12], 'beacon_hills.tower_n': ['new', 128, 8], 'beacon_hills.tower_e': ['new', 139, 15],
     'hunters_lodge.door': ['new', 112, 110], 'outpost_north.road': ['new', 217, 70], 'outpost_south.road': ['new', 236, 100],
     'bandit_hills.toll': ['new', 262, 158], 'skypier.pad': ['new', 167, 20], 'skypier.mast': ['new', 167, 12], 'brightwater.landing': ['new', 378, 150],

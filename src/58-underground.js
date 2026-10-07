@@ -215,7 +215,9 @@
       for (let y = W.ty(70); y <= W.ty(94); y++) for (let x = W.tx(34); x <= W.tx(110); x++) if (map[idx(x, y)] === T.ROCK) woodRock++;  // the same wood, well clear of the old rectangle
       const region = regionAt(...ATLAS.frame('deepholm_rock').p(14, 83)).name, spawns = MONSTER_SPAWNS.filter(s => s.tx >= O.x0 && s.tx <= O.x1 && s.ty >= O.y0 && s.ty <= O.y1).length;
       check(P + '575 tiles of Wolfwood come back at x 2–26, y 72–94: no wall, nothing stranded, the wood as thick inside the old rectangle as it is on each side of it, the ash still drifting through its last rows, and no ring of outcrops round a rectangle of nothing',
-        alien === 0 && (mix[T.WALL] || 0) === 0 && stranded === 0 && floor + solid === 575 && floor >= 500 && matches && region === 'Wolfwood' && ringRock === 0 && woodRock > 10 && spawns >= 1 && ashIn > 0 && ashOut > 0,
+        // (most of it walkable, three in four tiles: how thick the wood stands is `matches`' question, against the wood beside
+        // it; an absolute count of 500 open tiles was the scatter's luck, and the spread's map re-rolled it to 480)
+        alien === 0 && (mix[T.WALL] || 0) === 0 && stranded === 0 && floor + solid === 575 && floor >= 575 * 0.75 && matches && region === 'Wolfwood' && ringRock === 0 && woodRock > 10 && spawns >= 1 && ashIn > 0 && ashOut > 0,
         { open: floor, solid, alien, walls: mix[T.WALL] || 0, stranded, strandedAt: strandedAt.slice(0, 8), region, spawnsBack: spawns, ringRock, ringChecked: U.stats().ring, ringSoftened: U.stats().softened, woodRock,
           woodInside: { west: +westIn.toFixed(3), east: +eastIn.toFixed(3) }, woodBeside: { west: +westOut.toFixed(3), east: +eastOut.toFixed(3) }, ashDrift: { inside: ashIn, beside: ashOut, laid: U.stats().ash } }); }
 

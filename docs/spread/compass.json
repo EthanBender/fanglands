@@ -1,0 +1,462 @@
+{
+ "about": "The compass test (Great Spread Stage 4b; tools/compass.mjs, run by build.sh): every line the game says with a direction or a distance word is a row here. A row on the map ({ file, match, from, to, dir }) is checked against the Atlas: the bearing from `from` to `to` (a port, a place's anchor or an Atlas place, each its centre) must be within 67.5 degrees of `dir`. A row inside one place or one instance is `local`, with its reason: places moved whole, so their insides kept their directions.",
+ "rows": [
+  {
+   "file": "02-world.js",
+   "match": "Wolves in the south wood",
+   "from": "thistledown",
+   "to": "wolfwood",
+   "dir": "south",
+   "note": "a Thistledown villager's line"
+  },
+  {
+   "file": "02-world.js",
+   "match": "The quarry north of the road",
+   "from": "signpost.sign",
+   "to": "quarry",
+   "dir": "north",
+   "note": "the Cave Road by the story signpost"
+  },
+  {
+   "file": "04-state.js",
+   "match": "The way out is east",
+   "from": "cave.spawn",
+   "to": "cave.mouth",
+   "dir": "east"
+  },
+  {
+   "file": "04-state.js",
+   "match": "Follow the dirt road east",
+   "from": "cave.mouth",
+   "to": "signpost.sign",
+   "dir": "east"
+  },
+  {
+   "file": "04-state.js",
+   "match": "castle at the south end of town",
+   "from": "thistledown.square",
+   "to": "thistledown.castle",
+   "dir": "south"
+  },
+  {
+   "file": "04-state.js",
+   "match": "East of the village the goblins hold a camp",
+   "from": "thistledown",
+   "to": "camp",
+   "dir": "east"
+  },
+  {
+   "file": "06-systems.js",
+   "match": "THISTLEDOWN, east",
+   "from": "signpost.sign",
+   "to": "thistledown.west_gate",
+   "dir": "east",
+   "note": "the story signpost; its '1 mile' is the signpost's own figure"
+  },
+  {
+   "file": "06-systems.js",
+   "match": "GREY QUARRY, north",
+   "from": "signpost.sign",
+   "to": "quarry",
+   "dir": "north"
+  },
+  {
+   "file": "06-systems.js",
+   "match": "south-east over the Old Bridge",
+   "from": "signpost.sign",
+   "to": "hollowford",
+   "dir": "south-east"
+  },
+  {
+   "file": "06-systems.js",
+   "match": "East, past the gate, follow the road",
+   "from": "thistledown.duke",
+   "to": "camp",
+   "dir": "east",
+   "note": "the Duke, in his castle"
+  },
+  {
+   "file": "07-update.js",
+   "match": "The castle is south of it",
+   "from": "thistledown.fountain",
+   "to": "thistledown.castle",
+   "dir": "south"
+  },
+  {
+   "file": "10-hud.js",
+   "match": "Goblins came up the east road",
+   "from": "thistledown",
+   "to": "camp",
+   "dir": "east"
+  },
+  {
+   "file": "20-hollowford.js",
+   "match": "Take the road south from the Goblin Camp",
+   "from": "camp",
+   "to": "hollowford",
+   "dir": "south"
+  },
+  {
+   "file": "20-hollowford.js",
+   "match": "Hollowford lies south of their camp",
+   "from": "camp",
+   "to": "hollowford",
+   "dir": "south"
+  },
+  {
+   "file": "24-dwarves.js",
+   "match": "Talk to the king, south past the guards",
+   "local": "inside Deepholm (an instance: its own map)"
+  },
+  {
+   "file": "24-dwarves.js",
+   "match": "Speak to King Thrain, south past the guards",
+   "local": "inside Deepholm (an instance: its own map)"
+  },
+  {
+   "file": "25-elves.js",
+   "match": "The targets are east of the boardwalk",
+   "local": "inside Sylvaris, which moved whole (its own frame)"
+  },
+  {
+   "file": "25-elves.js",
+   "match": "She sits in the great hall, north",
+   "local": "inside Sylvaris, which moved whole (its own frame)"
+  },
+  {
+   "file": "25-elves.js",
+   "match": "Its eyes look east, at the gap beside it",
+   "local": "the totem at Sylvaris' gap, which moved whole (its own frame)"
+  },
+  {
+   "file": "27-dragons.js",
+   "match": "The Voice speaks of dragons in the south-west",
+   "from": "hollowford",
+   "to": "ashfields",
+   "dir": "south-west",
+   "note": "said when Hollowford is avenged"
+  },
+  {
+   "file": "27-dragons.js",
+   "match": "stirs in the south-west, past Wolfwood",
+   "from": "hollowford",
+   "to": "ashfields",
+   "dir": "south-west"
+  },
+  {
+   "file": "27-dragons.js",
+   "match": "Take the path south from the old stone circle",
+   "from": "stone_circle",
+   "to": "warden.gate",
+   "dir": "south"
+  },
+  {
+   "file": "27-dragons.js",
+   "match": "The dragons sleep south of the farm",
+   "from": "warden.dunstan",
+   "to": "ashfields_dragons",
+   "dir": "south",
+   "note": "Dunstan, at his farm"
+  },
+  {
+   "file": "27-dragons.js",
+   "match": "The Fang sleeps in the far south-west. Find the lair.",
+   "from": "warden.dunstan",
+   "to": "fang_lair",
+   "dir": "south-west"
+  },
+  {
+   "file": "27-dragons.js",
+   "match": "What sleeps in the far south-west is called The Fang",
+   "from": "warden.dunstan",
+   "to": "fang_lair",
+   "dir": "south-west"
+  },
+  {
+   "file": "27-dragons.js",
+   "match": "Its lair is west, past the lava",
+   "from": "warden.dunstan",
+   "to": "fang_lair.gate",
+   "dir": "west"
+  },
+  {
+   "file": "27-dragons.js",
+   "match": "the big green ones south of here breathe fire",
+   "from": "warden.dunstan",
+   "to": "ashfields_dragons",
+   "dir": "south"
+  },
+  {
+   "file": "27-dragons.js",
+   "match": "the heat in the far south-west won't cook you",
+   "from": "warden.dunstan",
+   "to": "fang_lair",
+   "dir": "south-west"
+  },
+  {
+   "file": "27-dragons.js",
+   "match": "The big green ones south of here do",
+   "from": "warden.dunstan",
+   "to": "ashfields_dragons",
+   "dir": "south"
+  },
+  {
+   "file": "27-dragons.js",
+   "match": "It sleeps in the far south-west, under the lava",
+   "from": "ashfields",
+   "to": "fang_lair",
+   "dir": "south-west",
+   "note": "said in dragon country"
+  },
+  {
+   "file": "28-thefang.js",
+   "match": "a sealed gate in the far west of dragon country",
+   "from": "ashfields",
+   "to": "fang_lair.gate",
+   "dir": "west",
+   "note": "was 'far south' (the old map's lair gate was west of dragon country too); reworded in Stage 4b"
+  },
+  {
+   "file": "31-rebuild.js",
+   "match": "The beast walked through the east wall",
+   "local": "Hollowford's own wall (the town moved whole)"
+  },
+  {
+   "file": "33-goblincity.js",
+   "match": "The yard out east has two walkers",
+   "local": "inside Grubmarket (the Far Shore moved whole)"
+  },
+  {
+   "file": "33-goblincity.js",
+   "match": "East of the market, past the scrap yard",
+   "from": "grubmarket",
+   "to": "far_shore.lab_door",
+   "dir": "east"
+  },
+  {
+   "file": "33-goblincity.js",
+   "match": "Tinkerton's lab is east of the market",
+   "from": "grubmarket",
+   "to": "far_shore.lab_door",
+   "dir": "east"
+  },
+  {
+   "file": "36-aerieplan.js",
+   "match": "when the east wind comes",
+   "local": "the Aerie (an instance: its own map)"
+  },
+  {
+   "file": "36-aerieplan.js",
+   "match": "The West Twin Spire",
+   "local": "the Aerie (an instance: its own map)"
+  },
+  {
+   "file": "36-aerieplan.js",
+   "match": "The East Twin Spire",
+   "local": "the Aerie (an instance: its own map)"
+  },
+  {
+   "file": "36-skycity.js",
+   "match": "Highest rock in the Grey Quarry, north of the road",
+   "from": "signpost.sign",
+   "to": "quarry.shrine",
+   "dir": "north"
+  },
+  {
+   "file": "37-dragonkillers.js",
+   "match": "The road south is yours, knight",
+   "from": "warden.post",
+   "to": "warden.dunstan",
+   "dir": "south"
+  },
+  {
+   "file": "37-dragonkillers.js",
+   "match": "South of here is the Ashfields",
+   "from": "warden.post",
+   "to": "ashfields",
+   "dir": "south"
+  },
+  {
+   "file": "37-dragonkillers.js",
+   "match": "There is a village east of Thistledown",
+   "from": "thistledown",
+   "to": "hollowford",
+   "dir": "east"
+  },
+  {
+   "file": "37-dragonkillers.js",
+   "match": "Fang's lair in the far south-west",
+   "from": "thistledown",
+   "to": "fang_lair",
+   "dir": "south-west"
+  },
+  {
+   "file": "38-agility.js",
+   "match": "the yard course south of Hale's yard",
+   "from": "thistledown.forge",
+   "to": "thistledown.agility_gate",
+   "dir": "south",
+   "note": "Hale's yard is the smithy yard by the forge"
+  },
+  {
+   "file": "41-guild.js",
+   "match": "The burned house on the east street",
+   "local": "Hollowford's own street (the town moved whole)"
+  },
+  {
+   "file": "41-guild.js",
+   "match": "The guild hall stands on the east street",
+   "local": "Hollowford's own street (the town moved whole)"
+  },
+  {
+   "file": "44-wiki.js",
+   "match": "The log course south of Hale's yard",
+   "from": "thistledown.forge",
+   "to": "thistledown.agility_gate",
+   "dir": "south"
+  },
+  {
+   "file": "51-mounts.js",
+   "match": "every mile in the Fanglands is half a mile",
+   "local": "a figure of speech: the mare halves every walk"
+  },
+  {
+   "file": "62-ores.js",
+   "match": "the hills north of Thistledown",
+   "from": "thistledown",
+   "to": "skypier",
+   "dir": "north",
+   "note": "the blackiron hills (62-ores) run along the map's north edge above the town; the Skypier's plot stands among them"
+  },
+  {
+   "file": "62-ores.js",
+   "match": "The scrub on the Far Shore, south of Castle Gnash",
+   "from": "castle_gnash",
+   "to": "grub_fields",
+   "dir": "south",
+   "note": "the stormstone diggings lie between Gnash and the Grub Fields"
+  },
+  {
+   "file": "63-house.js",
+   "match": "The deep road south. Keep to the paths.",
+   "local": "an island arch's caption for the Wolfwood (where the Long Road goes south over the Old Bridge)"
+  },
+  {
+   "file": "63-house.js",
+   "match": "inside the north wall at",
+   "from": "thistledown.square",
+   "to": "thistledown.house_portal",
+   "dir": "north"
+  },
+  {
+   "file": "66-storm.js",
+   "match": "the thunder walks away east",
+   "local": "Stormfront (an instance: its own sky)"
+  },
+  {
+   "file": "66-storm.js",
+   "match": "the corner by the south tower",
+   "local": "Grubmarket's gate (the Far Shore moved whole)"
+  },
+  {
+   "file": "88-aerie.js",
+   "match": "the spires east of the Crown",
+   "local": "the Aerie (an instance: its own map)"
+  },
+  {
+   "file": "90-canyon.js",
+   "match": "three of them, just north of here",
+   "local": "inside the Redcut (it moved whole)"
+  },
+  {
+   "file": "90-canyon.js",
+   "match": "Three ledges north of the fire",
+   "local": "inside the Redcut (it moved whole)"
+  },
+  {
+   "file": "90-canyon.js",
+   "match": "thirty paces east of here",
+   "local": "inside the Redcut (it moved whole)"
+  },
+  {
+   "file": "90-canyon.js",
+   "match": "follow the edge east and you will smell his fire",
+   "local": "inside the Redcut (it moved whole)"
+  },
+  {
+   "file": "90-canyon.js",
+   "match": "A table of red rock in the far south-east",
+   "from": "thistledown",
+   "to": "redcut",
+   "dir": "south-east",
+   "note": "the wiki's place page, read from the town"
+  },
+  {
+   "file": "90-canyon.js",
+   "match": "then south past the stormstone diggings",
+   "from": "far_shore.landing",
+   "to": "redcut.mouth",
+   "dir": "south"
+  },
+  {
+   "file": "90-canyon.js",
+   "match": "back on the same scrub thirty paces east",
+   "local": "inside the Redcut (it moved whole); its numbers are read through the Redcut's frame since Stage 4b"
+  },
+  {
+   "file": "90-canyon.js",
+   "match": "through the west escarpment onto the table",
+   "local": "inside the Redcut (it moved whole); its numbers are read through the Redcut's frame since Stage 4b"
+  },
+  {
+   "file": "91-cloudkingdom.js",
+   "match": "East of the plaza, on Forge Street",
+   "local": "the Cloud Kingdom (an instance: its own map)"
+  },
+  {
+   "file": "91-cloudkingdom.js",
+   "match": "She went west along the Garden Walk",
+   "local": "the Cloud Kingdom (an instance: its own map)"
+  },
+  {
+   "file": "91-cloudkingdom.js",
+   "match": "The way in is on the north side",
+   "local": "the Cloud Kingdom (an instance: its own map)"
+  },
+  {
+   "file": "91-cloudkingdom.js",
+   "match": "The maze gate is on the north side",
+   "local": "the Cloud Kingdom (an instance: its own map)"
+  },
+  {
+   "file": "91-cloudkingdom.js",
+   "match": "north of the Kingsway",
+   "local": "the Cloud Kingdom (an instance: its own map)"
+  },
+  {
+   "file": "91-cloudkingdom.js",
+   "match": "at the north end of the Kingsway",
+   "local": "the Cloud Kingdom (an instance: its own map)"
+  },
+  {
+   "file": "91-royalmine.js",
+   "match": "THE ROYAL SEAMS (west)",
+   "local": "the Royal Mine (an instance: its own map)"
+  },
+  {
+   "file": "91-royalmine.js",
+   "match": "THE GIANT HALL (east)",
+   "local": "the Royal Mine (an instance: its own map)"
+  },
+  {
+   "file": "95-thistledown.js",
+   "match": "Osric at the West Gate watches the wall",
+   "local": "the gate's name (the town moved whole)"
+  },
+  {
+   "file": "95-thistledown.js",
+   "match": "Osric is at the West Gate",
+   "local": "the gate's name (the town moved whole)"
+  }
+ ]
+}

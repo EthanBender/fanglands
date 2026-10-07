@@ -814,9 +814,11 @@ resize();
     'ash_shrine.shrine': ['ash_shrine', 87, 103],
     'fang_lair.gate': ['fang_lair', 18, 108], 'fang_lair.circle': ['fang_lair', 18, 117], 'fang_lair.approach': ['fang_lair', 20, 105], 'fang_lair.node': ['fang_lair', 36, 105],
     'canopy.door': ['canopy', 121, 101], 'sylvaris.gap': ['sylvaris', 137, 114], 'sylvaris.node': ['sylvaris', 133, 112],
-    // §4/§5, in the 400x280 plan (old_bridge.south is 138,99, not 140,98: the watchtower's ruin stands on 141..145 x 97..101)
+    // §4/§5, in the 400x280 plan (old_bridge.south is 138,99, not 140,98: the watchtower's ruin stands on 141..145 x 97..101;
+    // saltmere.huts is 251,72, not 256,72: at the spread 256,72 is the Grey Sea, and the Coast Path starts on the shore, by
+    // the stilt huts Stage 5 builds out over the water)
     'old_bridge.span': ['new', 136, 93], 'old_bridge.south': ['new', 138, 99], 'goblin_road.bridge': ['new', 228, 92],
-    'millbrook.gate': ['new', 86, 80], 'saltmere.gate': ['new', 252, 74], 'saltmere.huts': ['new', 256, 72], 'crossroads_inn.yard': ['new', 160, 122],
+    'millbrook.gate': ['new', 86, 80], 'saltmere.gate': ['new', 252, 74], 'saltmere.huts': ['new', 251, 72], 'crossroads_inn.yard': ['new', 160, 122],
     'beacon_hills.tower_w': ['new', 116, 12], 'beacon_hills.tower_n': ['new', 128, 8], 'beacon_hills.tower_e': ['new', 139, 15],
     'hunters_lodge.door': ['new', 112, 110], 'outpost_north.road': ['new', 217, 70], 'outpost_south.road': ['new', 236, 100],
     'bandit_hills.toll': ['new', 262, 158], 'skypier.pad': ['new', 167, 20], 'skypier.mast': ['new', 167, 12], 'brightwater.landing': ['new', 378, 150],
@@ -1489,7 +1491,9 @@ const REGIONS = [
   AT_WHOLE(AT_W.rect({ name: 'Goblin Fields', sub: 'The road east', x0: 21, y0: 0, x1: 159, y1: 61 })),
   { name: 'The Wilds', sub: 'Uncharted', x0: AT_W.tx(0), y0: AT_W.ty(0), x1: MAP_W - 1, y1: MAP_H - 1 },
 ];
-const regionAt = (tx, ty) => REGIONS.find(r => tx >= r.x0 && tx <= r.x1 && ty >= r.y0 && ty <= r.y1) || REGIONS[REGIONS.length - 1];
+// once 92-worldshape's outlines are on (after the world is built), ask them directly (the spread spec, section 12: no bisect
+// through REGIONS.find on every call); before that, and in any build without 92, the plain box test
+const regionAt = (tx, ty) => (window.WORLDSHAPE && WORLDSHAPE.on() ? WORLDSHAPE.regionAt(tx, ty) : REGIONS.find(r => tx >= r.x0 && tx <= r.x1 && ty >= r.y0 && ty <= r.y1) || REGIONS[REGIONS.length - 1]);
 
 // buildings: door on the bottom wall at x+door (or top wall at x+doorTop). f = furniture [tile, rx, ry] inside.
 const BUILDINGS = [
@@ -1575,12 +1579,18 @@ function generateWorld() {
   // a main road two tiles wide (a second row below a level stretch, a second column west of a steep one), a spur or path
   // one. Everything after this reads them as roads (39 bridges them over the river and keeps solids off them, 92 leaves
   // the scarp open where they cross it).
+  // (a one-wide spur that steps diagonally also takes the corner tile, so it is joined side to side: a knight cannot squeeze
+  // between two giants that only touch at their corners, and the Bandit Track through the jungle was such a squeeze)
   const lay = (pts, wide) => {
+    let lx = null, ly = null;
+    const put = (px, py) => { const t = tileAt(px, py); if (t === T.GRASS || t === T.DIRT) setTile(px, py, T.DIRT); };
     for (let s = 0; s < pts.length - 1; s++) {
       const [ax, ay] = pts[s], [bx, by] = pts[s + 1], steps = Math.max(1, Math.round(Math.max(Math.abs(bx - ax), Math.abs(by - ay))));
       const level = Math.abs(bx - ax) >= Math.abs(by - ay), ox = wide && !level ? -1 : 0, oy = wide && level ? 1 : 0;
       for (let k = 0; k <= steps; k++) { const x = Math.round(ax + (bx - ax) * k / steps), y = Math.round(ay + (by - ay) * k / steps);
-        for (const [px, py] of [[x, y], [x + ox, y + oy]]) { const t = tileAt(px, py); if (t === T.GRASS || t === T.DIRT) setTile(px, py, T.DIRT); } }
+        if (!wide && lx !== null && x !== lx && y !== ly) put(x, ly);
+        for (const [px, py] of [[x, y], [x + ox, y + oy]]) put(px, py);
+        lx = x; ly = y; }
     }
   };
   for (const id of ATLAS.ROAD_IDS) if (id !== 'shaft_lane' && id !== 'path_farm') lay(ATLAS.track(id), ATLAS.MAIN_ROADS.includes(id) ? 1 : 0);
@@ -4233,19 +4243,25 @@ function drawMapPanel(g, narrow) {
   if (inside) { g.fillStyle = '#0b0f14'; g.fillRect(ix, iy, iw, ih); }
   g.imageSmoothingEnabled = false; g.drawImage(miniCanvas, 0, 0, view.w, view.h, ox, oy, view.w * sc, view.h * sc); g.imageSmoothingEnabled = true;
   const fs = Math.max(9, Math.min(15, sc * 2.4));
-  for (const r of REGIONS) {
+  const targets = mapTargets();
+  // out in the world the names come from one source, laid out so none sits on another or on a ring (src/61-maplabels.js,
+  // the spread spec's ADDENDUM B); inside, only a region a feature marked as this instance's own, and not the
+  // whole-instance one the title already names
+  if (!inside && window.MAP_LABELS) MAP_LABELS.drawWorld({ g, ox, oy, sc, ix, iy, iw, ih, narrow, targets });
+  else for (const r of REGIONS) {
     if (r.name === 'Goblin Fields' || r.name === 'The Wilds') continue;
-    // inside: only a region a feature marked as this instance's own, and not the whole-instance one the title already names
     if (inside ? r.instance !== view.id || (r.x0 <= 0 && r.y0 <= 0 && r.x1 >= view.w - 1 && r.y1 >= view.h - 1) : r.instance) continue;
     const cx = ox + (r.x0 + r.x1 + 1) / 2 * sc, cy = oy + (r.y0 + r.y1 + 1) / 2 * sc;
     HK.text(g, r.name.toUpperCase(), cx, cy, { font: HK.FC(800, fs), align: 'center', color: T.ink, halo: 3 });
   }
   if (player.home && !inside) HK.emblem(g, 'home', ox + player.home.x / TILE * sc, oy + player.home.y / TILE * sc, 13, T.home, { hole: null, relief: 'rgba(0,0,0,0.9)' });
-  for (const tg of mapTargets()) {
+  for (const tg of targets) {
     const tx = ox + (tg.x + 0.5) * sc, ty = oy + (tg.y + 0.5) * sc, isTracked = tg.id === quest.tracked;
     g.strokeStyle = isTracked ? T.goldHi : 'rgba(217,178,92,0.8)'; g.lineWidth = isTracked ? 2.5 : 1.5;
     g.beginPath(); g.arc(tx, ty, (isTracked ? 6 : 5) + Math.sin(time * 4) * 2, 0, 7); g.stroke();
-    if (tg.label) HK.text(g, tg.label, tx, ty - 10, { font: HK.FS(700, narrow ? 10 : 11.5), align: 'center', color: T.goldHi, halo: 3 });
+    // a ring's own words only inside an instance: out in the world a ring on a place lights the place's name, and a
+    // person or a thing is a marker, not a label (ADDENDUM B)
+    if (tg.label && inside) HK.text(g, tg.label, tx, ty - 10, { font: HK.FS(700, narrow ? 10 : 11.5), align: 'center', color: T.goldHi, halo: 3 });
   }
   // you: a white arrowhead pointing the way you face (its dark rim keeps it visible on Aerie's white cloud)
   {
@@ -5101,8 +5117,9 @@ window.FANGLANDS = {
       // patchy rather than a flat sheet, there must be open ground between it, and lava and obsidian must survive.
       check('ashfields: ash lies in patches — 25–80% of dragon country, scorch and bare dirt between, lava and obsidian kept', cover >= 0.25 && cover <= 0.8 && green > 500 && lava >= 40 && obs >= 30, { cover: +cover.toFixed(2), ash, area, openGround: green, lava, obs }); }
     { // the jungle runs south to the map edge: giant trees and ferns in the band y 140–178 at the old density
-      // (to the Sound's west shore: since the spread the Sound's deep water runs down the jungle's east side)
-      let trees = 0, ferns = 0, band = 0, row150 = 0; for (let y = AW.ty(140); y <= AW.ty(178); y++) for (let x = AW.tx(100), xe = Math.min(AW.tx(198), ATLAS.GROUNDS.sound[0] - 1); x <= xe; x++) { band++; const t = tileAt(x, y); if (t === T.JUNGLE) { trees++; if (y === AW.ty(150)) row150++; } else if (t === T.FERN) ferns++; }
+      // (to the Sound's west shore: since the spread the Sound's deep water runs down the jungle's east side; and from
+      // eight tiles in from the jungle's west edge: since Stage 4b its first eight tiles blend with the Wilds, 92's soft seam)
+      let trees = 0, ferns = 0, band = 0, row150 = 0; for (let y = AW.ty(140); y <= AW.ty(178); y++) for (let x = AW.tx(100) + 8, xe = Math.min(AW.tx(198), ATLAS.GROUNDS.sound[0] - 1); x <= xe; x++) { band++; const t = tileAt(x, y); if (t === T.JUNGLE) { trees++; if (y === AW.ty(150)) row150++; } else if (t === T.FERN) ferns++; }
       check('jungle: the biome continues south (y 140–178, x 100–198) at the same density; jungle trees stand at y 150', row150 >= 20 && trees / band > 0.3 && trees / band < 0.5 && ferns / band > 0.06 && regionAt(AW.tx(150), AW.ty(160)).name === 'The Jungle' && regionAt(...ATLAS.frame('sylvaris').p(133, 120)).name === 'Sylvaris', { row150, trees: +(trees / band).toFixed(2), ferns: +(ferns / band).toFixed(2), region: regionAt(AW.tx(150), AW.ty(160)).name }); }
     peace(false);
     for (const h of HOOKS.selfTest) h(check, F, { give, peace, openSpot, clearJunk });
@@ -6578,8 +6595,9 @@ const MUSIC = (() => {
     // the overworld first: the recorder must hear the world's names and quest labels, or the checks below prove nothing
     F.tp(...DEN_CV.p(22, 12)); const world = drawMap(); closePanel();
     const worldWords = new Set(REGIONS.map(r => r.name.toUpperCase()).concat(mapTargets().map(t => t.label), M ? M.known().map(m => m.label) : []));
-    const heard = ['Old Wren', 'Tobin', 'THISTLEDOWN'].filter(w => world.texts.includes(w));
-    check('instance maps: out in the world the map names the regions and the quest targets (the recorder hears them)', heard.length === 3 && !!mapLayout && mapLayout.view.id === null, { heard, view: mapLayout && mapLayout.view.id });
+    // (out in the world a quest ring on a person prints no name: people are markers, not labels, src/61-maplabels.js)
+    const heard = ['THISTLEDOWN', 'HOLLOWFORD'].filter(w => world.texts.includes(w)), people = ['Old Wren', 'Tobin'].filter(w => world.texts.includes(w));
+    check('instance maps: out in the world the map names the places (the recorder hears them) and no person by their quest ring', heard.length === 2 && !people.length && !!mapLayout && mapLayout.view.id === null, { heard, people, view: mapLayout && mapLayout.view.id });
     const bad = [];
     for (const id of INSTANCES.list()) {
       const inst = INST[id];
@@ -10243,6 +10261,13 @@ PEOPLE_UI.auditPrompt = function (p) {
     line(RIVER_S, 0, (x, y) => { if (inJungle(x, y) && soft(x, y)) { set(x, y, T.WATER); if (inJungle(x, y + 1) && soft(x, y + 1) && y + 1 < JR.y1) set(x, y + 1, T.WATER); } });
     // 3. the path from Hollowford: it ends at the wall of jungle, and the ground along the wall is open enough to wander
     line(PATH, 1, (x, y) => { if (inJungle(x, y) && soft(x, y)) set(x, y, T.DIRT); });
+    // and every other road through the jungle (the canopy spur, the Bandit Track, the Drovers' Track): trodden one wide,
+    // joined side to side where it steps diagonally (02-world laid them before the giants grew; the spread spec, section 5:
+    // every place, port and stake joined on day one)
+    for (const id of ATLAS.ROAD_IDS) { if (id === 'r3b_jungle') continue; const pl = ATLAS.track(id); let lx = null, ly = null;
+      const tread = (x, y) => { if (inJungle(x, y) && soft(x, y) && at(x, y) !== T.DIRT) set(x, y, T.DIRT); };
+      for (let s = 0; s < pl.length - 1; s++) { const [ax, ay] = pl[s], [bx, by] = pl[s + 1], steps = Math.max(1, Math.round(Math.max(Math.abs(bx - ax), Math.abs(by - ay))));
+        for (let k = 0; k <= steps; k++) { const x = Math.round(ax + (bx - ax) * k / steps), y = Math.round(ay + (by - ay) * k / steps); if (lx !== null && x !== lx && y !== ly) tread(x, ly); tread(x, y); lx = x; ly = y; } } }
     for (let y = SYL.y(112); y <= SYL.y(113); y++) for (let x = SYL.x(128); x <= SYL.x(146); x++) if (soft(x, y)) set(x, y, rnd() < 0.3 ? EL_FERN : rnd() < 0.5 ? T.DIRT : T.GRASS);
     // 4. the ring wall, the gap and the totem
     for (let y = RING.y0; y <= RING.y1; y++) for (let x = RING.x0; x <= RING.x1; x++) { const edge = x === RING.x0 || x === RING.x1 || y === RING.y0 || y === RING.y1; if (edge) set(x, y, EL_JUNGLE); }
@@ -12232,7 +12257,7 @@ PEOPLE_UI.auditPrompt = function (p) {
     return false;
   };
   // ---------- main quest, stages 14–16 ----------
-  if (!HOOKS.mainQuest[14]) HOOKS.mainQuest[14] = { text: () => "Find The Fang's lair: a sealed gate at the far south of dragon country." };
+  if (!HOOKS.mainQuest[14]) HOOKS.mainQuest[14] = { text: () => "Find The Fang's lair: a sealed gate in the far west of dragon country." };   // (west: docs/spread/compass.json)
   HOOKS.mainQuest[15] = { text: () => 'The Fang is slain. The Dragon Killers ride home: return to Duke Ferrin.', onEnter: () => {
     say('It is done. The dragon of legend is dead by your hand. Go home, knight. Thistledown should hear it from you.', 'The Voice');
   } };
@@ -14207,9 +14232,12 @@ window.PLACE_KIT = PLACE_KIT;
       check('beast: climb up → player.mech.kind === "beast" (300 hp, r 26, speed 100)', piloting, { mech: player.mech, r: player.r, speed: player.speed, tile: tileAt(wt.x, wt.y) });
       // 6. ram: a goblin in front is shoved 60 px along the spikes (on top of the core's knockback) and left reeling
       const gob = monsters.find(m => m.type === 'goblin'); const gs = { x: gob.x, y: gob.y, dead: gob.dead, hp: gob.hp, state: gob.state };
-      gob.dead = false; gob.hp = 999; gob.x = player.x + 44; gob.y = player.y; gob.stunT = 0; player.facing = { x: 1, y: 0 }; player.attackCd = 0; const gx0 = gob.x, r0 = rams;
-      F.press('Space'); const shove = gob.x - gx0, reeling = gob.stunT > 0.3;
-      check('beast: Space rams — a goblin in front is shoved 60 px (plus the stomp knockback) and reels', rams >= r0 + 1 && shove >= 60 && reeling && Math.abs(gob.y - player.y) < 2, { shove: +shove.toFixed(1), rams, reeling });
+      // (rammed along open ground: the side whose next three tiles are clear, east first; on the spread's map a tree can
+      // stand two tiles east of the wreck, and a goblin shoved into it stops there)
+      const rtx = Math.floor(player.x / TILE), rty = Math.floor(player.y / TILE), way = [[1, 0], [0, 1], [-1, 0], [0, -1]].find(([dx, dy]) => [1, 2, 3].every(k => !SOLID.has(tileAt(rtx + dx * k, rty + dy * k)))) || [1, 0];
+      gob.dead = false; gob.hp = 999; gob.x = player.x + way[0] * 44; gob.y = player.y + way[1] * 44; gob.stunT = 0; player.facing = { x: way[0], y: way[1] }; player.attackCd = 0; const gx0 = gob.x, gy0 = gob.y, r0 = rams;
+      F.press('Space'); const shove = (gob.x - gx0) * way[0] + (gob.y - gy0) * way[1], reeling = gob.stunT > 0.3, aside = way[0] ? gob.y - player.y : gob.x - player.x;
+      check('beast: Space rams — a goblin in front is shoved 60 px (plus the stomp knockback) and reels', rams >= r0 + 1 && shove >= 60 && reeling && Math.abs(aside) < 2, { shove: +shove.toFixed(1), rams, reeling, way });
       gob.x = gs.x; gob.y = gs.y; gob.dead = gs.dead; gob.hp = gs.hp; gob.state = gs.state; gob.stunT = 0; gob.angry = MONSTER_DEFS.goblin.aggro;
       // 7. bomb lob: B lobs one bomb projectile (owner player, speed 300, life 0.7); a second press inside 4 s does nothing
       projectiles = []; const bl0 = bombsLobbed; F.press('KeyB'); const b1 = projectiles.filter(p => p.kind === 'bomb' && p.owner === 'player'); const cd1 = bombCd;
@@ -16657,7 +16685,13 @@ window.PLACE_KIT = PLACE_KIT;
     // (and the jungle's western edge, x 100, closes the way round from the east)
     const open = t => !SOLID.has(t) && !PUSH_THROUGH.has(t);
     for (let x = DK_W.tx(1); x <= rimX1(); x++) { if (x >= ROAD_X0 && x <= ROAD_X1) continue; const y = rimRow(x); if (open(api.tileAt(x, y))) api.setTile(x, y, T.TREE); }
-    for (let y = DK_W.ty(96); y <= DK_W.ty(138); y++) { const x = wallX(y); if (open(api.tileAt(x, y))) api.setTile(x, y, T.TREE); }
+    // (on its pin near the warden's east wall the line steps a column sideways every row or two: each row takes every tile
+    // from the last row's column to its own, and the wall's top is carried up to the rim's east end, so it is one unbroken
+    // line, never trees that touch only at their corners; the spread's map found the corner open, sealed by luck of scatter)
+    { let px = null; const top = DK_W.ty(96);
+      for (let y = Math.min(top, rimRow(rimX1())); y <= DK_W.ty(138); y++) { const x = wallX(Math.max(y, top)), a = px === null ? x : Math.min(px, x), b = px === null ? x : Math.max(px, x);
+        for (let xx = a; xx <= b; xx++) if (open(api.tileAt(xx, y))) api.setTile(xx, y, T.TREE);
+        px = x; } }
     for (let x = ROAD_X0; x <= ROAD_X1; x++) { const y = DK_WD.y(95); if (open(api.tileAt(x, y))) api.setTile(x, y, T.DIRT); }
     for (const [x, y] of GATE_T) api.setTile(x, y, WARDEN_GATE);
   });
@@ -17638,44 +17672,50 @@ window.PLACE_KIT = PLACE_KIT;
     // (rows and the noise in OLD world coordinates, on the giants pin: the Wolfwood / Jungle wall)
     for (let x = W.tx(101); x <= W.tx(161); x++) {
       const ox = W.ix(x);
-      for (const [y, oy] of rowsOf('giants', 92, 95, x)) {
-        swap(x, y, TREES, JUNGLE, dn(ox, oy) > 0.45 + (95 - oy) * 0.15, 'jungle'); swap(x, y, GRASSY, FERN, dn(ox + 7, oy) > 0.6 + (95 - oy) * 0.12, 'jungle');
-        if (ok(x, y) && GRASSY.has(at(x, y)) && addOk(x, y) && dn(ox + 13, oy) > 0.7 + (95 - oy) * 0.07) { set(x, y, JUNGLE); S.dither.jungle++; } // the jungle thickens northward
+      // (six old rows each side, about nine new ones at the spread's stretch: the spread spec, section 6, has every land
+      // seam blend over 8 tiles or more; the chances fade over the wider band as they did over the four rows before)
+      for (const [y, oy] of rowsOf('giants', 90, 95, x)) {
+        swap(x, y, TREES, JUNGLE, dn(ox, oy) > 0.45 + (95 - oy) * 0.1, 'jungle'); swap(x, y, GRASSY, FERN, dn(ox + 7, oy) > 0.6 + (95 - oy) * 0.08, 'jungle');
+        if (ok(x, y) && GRASSY.has(at(x, y)) && addOk(x, y) && dn(ox + 13, oy) > 0.7 + (95 - oy) * 0.05) { set(x, y, JUNGLE); S.dither.jungle++; } // the jungle thickens northward
       }
-      for (const [y, oy] of rowsOf('giants', 96, 99, x)) {
-        if (ok(x, y) && at(x, y) === JUNGLE && dn(ox, oy) < 0.55 - (oy - 96) * 0.12) { set(x, y, tree()); S.dither.jungle++; }
-        swap(x, y, JUNGLES, T.GRASS, dn(ox + 29, oy) < 0.32 - (oy - 96) * 0.07, 'jungle'); // and thins southward into Wolfwood's density
+      for (const [y, oy] of rowsOf('giants', 96, 101, x)) {
+        if (ok(x, y) && at(x, y) === JUNGLE && dn(ox, oy) < 0.55 - (oy - 96) * 0.09) { set(x, y, tree()); S.dither.jungle++; }
+        swap(x, y, JUNGLES, T.GRASS, dn(ox + 29, oy) < 0.32 - (oy - 96) * 0.05, 'jungle'); // and thins southward into Wolfwood's density
       }
     }
     // Wolfwood's north edge (y 62): the wood reaches north in tongues, clearings reach south
     // (rows and the noise in OLD world coordinates, on the gw_steps pin: the Goblin Fields / Wolfwood scarp)
     for (let x = W.tx(1); x <= W.tx(159); x++) {
       const ox = W.ix(x);
-      for (const [y, oy] of rowsOf('gw_steps', 58, 61, x)) if (ok(x, y) && GRASSY.has(at(x, y)) && addOk(x, y) && dn(ox, oy) > 0.5 + (61 - oy) * 0.12) { set(x, y, tree()); S.dither.wolfwood++; }
-      for (const [y, oy] of rowsOf('gw_steps', 62, 66, x)) swap(x, y, TREES, T.GRASS, dn(ox, oy) < 0.45 - (oy - 62) * 0.1, 'wolfwood');
+      // (six old rows each side, about nine new ones: section 6's 8+)
+      for (const [y, oy] of rowsOf('gw_steps', 56, 61, x)) if (ok(x, y) && GRASSY.has(at(x, y)) && addOk(x, y) && dn(ox, oy) > 0.5 + (61 - oy) * 0.09) { set(x, y, tree()); S.dither.wolfwood++; }
+      for (const [y, oy] of rowsOf('gw_steps', 62, 67, x)) swap(x, y, TREES, T.GRASS, dn(ox, oy) < 0.45 - (oy - 62) * 0.08, 'wolfwood');
     }
     // the Goblin Camp's ring of bare grass: the thicket creeps in, trodden ground creeps out
-    for (let y = CAMP.y(15); y <= CAMP.y(45); y++) for (let x = CAMP.x(136); x <= CAMP.x(164); x++) {
-      const d = rectDist(PAL, x, y); if (d < 1 || d > 6 || !ok(x, y) || !GRASSY.has(at(x, y))) continue;
+    // (eight tiles out, was six: section 6's 8+; the window holds the camp ground plus eight)
+    for (let y = CAMP.y(12); y <= CAMP.y(48); y++) for (let x = CAMP.x(134); x <= CAMP.x(166); x++) {
+      const d = rectDist(PAL, x, y); if (d < 1 || d > 8 || !ok(x, y) || !GRASSY.has(at(x, y))) continue;
       const n = dn(CAMP.ix(x) + 50, CAMP.iy(y));
-      if (n > 0.42 + (6 - d) * 0.05 && addOk(x, y)) { set(x, y, tree()); S.dither.camp++; }
-      else if (n < 0.14 + (6 - d) * 0.05) { set(x, y, T.DIRT); S.dither.camp++; }
+      if (n > 0.42 + (8 - d) * 0.04 && addOk(x, y)) { set(x, y, tree()); S.dither.camp++; }
+      else if (n < 0.14 + (8 - d) * 0.04) { set(x, y, T.DIRT); S.dither.camp++; }
     }
     // Grey Quarry: rock spills past the rectangle, grass eats into its edge
-    for (let y = QF.y(5); y <= QF.y(18); y++) for (let x = QF.x(42); x <= QF.x(66); x++) {
+    // (rock spills eight tiles out, was five, and grass eats three rows in, was two: section 6's 8+)
+    for (let y = QF.y(2); y <= QF.y(21); y++) for (let x = QF.x(39); x <= QF.x(69); x++) {
       if (!ok(x, y)) continue;
       const d = rectDist(QUARRY, x, y), t = at(x, y), qn = dn(QF.ix(x) + 90, QF.iy(y));
-      if (d >= 1 && d <= 5 && GRASSY.has(t) && addOk(x, y) && qn > 0.4 + d * 0.08) { set(x, y, rnd() < 0.2 ? T.IRON : T.ROCK); S.dither.quarry++; }
-      else if (d === 0) { const depth = Math.min(x - QUARRY.x0, QUARRY.x1 - x, y - QUARRY.y0, QUARRY.y1 - y); if (depth <= 2 && ROCKY.has(t) && qn < 0.45 - depth * 0.12) { set(x, y, T.GRASS); S.dither.quarry++; } }
+      if (d >= 1 && d <= 8 && GRASSY.has(t) && addOk(x, y) && qn > 0.4 + d * 0.06) { set(x, y, rnd() < 0.2 ? T.IRON : T.ROCK); S.dither.quarry++; }
+      else if (d === 0) { const depth = Math.min(x - QUARRY.x0, QUARRY.x1 - x, y - QUARRY.y0, QUARRY.y1 - y); if (depth <= 3 && ROCKY.has(t) && qn < 0.45 - depth * 0.1) { set(x, y, T.GRASS); S.dither.quarry++; } }
     }
     // Hollowford: the fire's edge was a rectangle; the wood reaches back into its margin, and scorched ground reaches out
-    for (let y = HF.y0 - 3; y <= HF.y1 + 3; y++) for (let x = HF.x0 - 3; x <= HF.x1 + 3; x++) {
+    // (the burn reaches eight tiles out into the wood, was three, and the wood four rows in: section 6's 8+)
+    for (let y = HF.y0 - 8; y <= HF.y1 + 8; y++) for (let x = HF.x0 - 8; x <= HF.x1 + 8; x++) {
       if (!ok(x, y)) continue;
       const d = rectDist(HF, x, y), t = at(x, y), n = dn(HFF.ix(x) + 33, HFF.iy(y) + 17);
-      if (d === 0) { const depth = Math.min(x - HF.x0, HF.x1 - x, y - HF.y0, HF.y1 - y); if (depth <= 3 && t === T.GRASS && addOk(x, y) && n > 0.5 + depth * 0.1) { set(x, y, tree()); S.dither.hollowford++; } }
-      else if (d <= 3) {
-        if (TREES.has(t) && n < 0.4 - (d - 1) * 0.1) { set(x, y, T.GRASS); S.dither.hollowford++; }
-        else if (SCORCH >= 0 && t === T.GRASS && n > 0.78 + (d - 1) * 0.06) { set(x, y, SCORCH); S.dither.hollowford++; }
+      if (d === 0) { const depth = Math.min(x - HF.x0, HF.x1 - x, y - HF.y0, HF.y1 - y); if (depth <= 4 && t === T.GRASS && addOk(x, y) && n > 0.5 + depth * 0.08) { set(x, y, tree()); S.dither.hollowford++; } }
+      else if (d <= 8) {
+        if (TREES.has(t) && n < 0.4 - (d - 1) * 0.045) { set(x, y, T.GRASS); S.dither.hollowford++; }
+        else if (SCORCH >= 0 && t === T.GRASS && n > 0.72 + (d - 1) * 0.03) { set(x, y, SCORCH); S.dither.hollowford++; }
       }
     }
     // rock outcrops at the foot of Deepholm's walls, obsidian at the foot of the lair's: the blocks become massifs
@@ -22858,6 +22898,29 @@ window.SETTINGS = SETTINGS;
     if (POST) api.setTile(POST.x, POST.y, T_HITCH);
   });
 
+  // ---------- the rails (the spread spec, section 6 "The horse"; Stage 4b) ----------
+  // Every hitching rail the mare knows. Fennick's is first; each new place adds its own with RAILS.add when it is built
+  // (Stage 5), and the two reserved plots (ADDENDUM A) have theirs reserved now, with no post yet. When she is hurt out from
+  // under the knight, or he falls, she bolts to the NEAREST rail he has visited (stood within VISIT tiles of), and the Voice
+  // names that place. Fennick's rail always counts: she was bought there.
+  //   { id, place: the words for it ("Fennick's rail in Thistledown"), at: () => { x, y } | null (the post's tile), reserved }
+  const VISIT = 6;
+  const RAILS = window.RAILS = [];
+  RAILS.add = r => { if (!r || !r.id || RAILS.some(q => q.id === r.id) || typeof r.at !== 'function') return null; const e = Object.assign({ place: r.id, reserved: false }, r); RAILS.push(e); return e; };
+  RAILS.remove = id => { const i = RAILS.findIndex(q => q.id === id); if (i >= 0) RAILS.splice(i, 1); return i >= 0; };
+  RAILS.add({ id: 'thistledown', place: "Fennick's rail in Thistledown", at: () => POST });
+  RAILS.add({ id: 'alchemy', place: "the Glasshouse's rail", at: () => null, reserved: true });
+  RAILS.add({ id: 'necromancy', place: "the Old Barrow's rail", at: () => null, reserved: true });
+  const visited = () => { const h = H(); if (!Array.isArray(h.rails)) h.rails = ['thistledown']; return h.rails; };
+  RAILS.visited = id => id === 'thistledown' || visited().includes(id);
+  // the nearest built rail he has visited, from a point in pixels (Fennick's when no other is nearer, or none is built)
+  RAILS.nearest = (px, py) => {
+    let best = null;
+    for (const r of RAILS) { const p = r.at(); if (!p || !RAILS.visited(r.id)) continue; const d = dist(px, py, tc(p.x), tc(p.y)); if (!best || d < best.d) best = { r, d }; }
+    return best ? best.r : RAILS[0];
+  };
+  RAILS.of = (tx, ty) => RAILS.find(r => { const p = r.at(); return p && p.x === tx && p.y === ty; }) || null;
+
   // ---------- putting her down and picking her up ----------
   function horseAt() { const a = H().at; return (a && inMap(a[0], a[1]) && tileAt(a[0], a[1]) === T_HORSE) ? { tx: a[0], ty: a[1] } : null; }
   function liftHorse() { const at = horseAt(); if (at) changeTile(at.tx, at.ty, groundUnder()); H().at = null; H().under = null; }
@@ -22878,11 +22941,13 @@ window.SETTINGS = SETTINGS;
     }
     return false;
   }
-  function sendToRail() {
+  // to a rail (Fennick's unless one is named)
+  function sendToRail(rail) {
     liftHorse();
-    if (POST) {
-      for (const [dx, dy] of [[0, 1], [1, 0], [-1, 0], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]]) if (parkAt(POST.x + dx, POST.y + dy)) return true;
-      if (parkNear(POST.x, POST.y, 4)) return true;
+    const p = (rail || RAILS[0]).at();
+    if (p) {
+      for (const [dx, dy] of [[0, 1], [1, 0], [-1, 0], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]]) if (parkAt(p.x + dx, p.y + dy)) return true;
+      if (parkNear(p.x, p.y, 4)) return true;
     }
     return parkNear(Math.floor(player.x / TILE), Math.floor(player.y / TILE), 4);
   }
@@ -23063,9 +23128,10 @@ window.SETTINGS = SETTINGS;
     H().hp = 1;
     const free = safeSpot(player.x, player.y, BASE_R, 'player');
     if (free) { player.x = free.x; player.y = free.y; }
-    sendToRail(); handled = true;
+    const rail = RAILS.nearest(bx, by);
+    sendToRail(rail); handled = true;
     burst(bx, by, '#c9a36a', 26, 150); sfx('hurt');
-    say(`${NAME} has had enough of that. She throws you clear and bolts for Fennick's rail in Thistledown. She will be standing there, and she will need a rest before she carries you again.`, 'The Voice');
+    say(`${NAME} has had enough of that. She throws you clear and bolts for ${rail.place}. She will be standing there, and she will need a rest before she carries you again.`, 'The Voice');
     save();
   }
   // Wraps, so X, the touch EXIT button and every hit that lands all go the mare's way instead of the walker's.
@@ -23083,19 +23149,20 @@ window.SETTINGS = SETTINGS;
     }; }
 
   // ---------- the rail: whistle her in and let her rest ----------
-  function whistle() {
+  function whistle(rail) {
+    rail = rail || RAILS[0];
     if (!H().owned) { say("A hitching rail, a rope, and a grey mare tied to it. Fennick keeps her here. He will sell her to anyone who has walked far enough to want her.", 'The Voice'); return; }
     if (riding()) { notify(`You are already on ${NAME}.`); return; }
-    const at = horseAt();
-    if (at && POST && Math.abs(at.tx - POST.x) <= 1 && Math.abs(at.ty - POST.y) <= 1) {
+    const at = horseAt(), p = rail.at();
+    if (at && p && Math.abs(at.tx - p.x) <= 1 && Math.abs(at.ty - p.y) <= 1) {
       H().hp = HORSE_HP; notify(`${NAME} is tied at the rail, rested and ready.`); save(); return;
     }
-    if (sendToRail()) { H().hp = HORSE_HP; sfx('ui'); notify(`You whistle. ${NAME} trots up to the rail.`); save(); }
+    if (sendToRail(rail)) { H().hp = HORSE_HP; sfx('ui'); notify(`You whistle. ${NAME} trots up to the rail.`); save(); }
     else notify('No room at the rail. Clear the ground beside the post.');
   }
   HOOKS.use.push((t, tx, ty) => {
     if (t === T_HORSE) { mount(tx, ty); return true; }
-    if (t === T_HITCH) { whistle(); return true; }
+    if (t === T_HITCH) { whistle(RAILS.of(tx, ty)); return true; }
     return false;
   });
 
@@ -23104,11 +23171,15 @@ window.SETTINGS = SETTINGS;
   HOOKS.update.push(dt => {
     const r = riding();
     if (rideWas !== r && typeof tapCancel === 'function') tapCancel('manual'); // the old path was built for the wrong body
-    if (rideWas && !r && !handled) { // die() clears player.mech itself: she is loose, so she goes home
-      H().hp = Math.max(1, H().hp); sendToRail();
-      notify(`${NAME} ran for Fennick's rail in Thistledown.`); save();
+    if (rideWas && !r && !handled) { // die() clears player.mech itself: she is loose, so she goes to the nearest rail he knows
+      const rail = RAILS.nearest(player.x, player.y);
+      H().hp = Math.max(1, H().hp); sendToRail(rail);
+      notify(`${NAME} ran for ${rail.place}.`); save();
     }
     handled = false; rideWas = r;
+    // a rail is visited when the knight stands within VISIT tiles of its post (the overworld only)
+    if (H().owned && !window.__instance) { const tx = player.x / TILE, ty = player.y / TILE;
+      for (const q of RAILS) { if (q.id === 'thistledown' || RAILS.visited(q.id)) continue; const p = q.at(); if (p && Math.hypot(tx - p.x - 0.5, ty - p.y - 0.5) <= VISIT) { visited().push(q.id); save(); } } }
 
     const blocked = panel && !['skills', 'quests', 'map'].includes(panel);
     if (!blocked && !player.dead && (pressed.has('KeyG') || tapped('ride'))) tryRide();
@@ -23775,6 +23846,31 @@ window.SETTINGS = SETTINGS;
     if (typeof tapCancel === 'function') tapCancel('manual');
     closePanel(); h.peace(false);
     window.__forceTouch = wasTouch; dialog.cur = dc; dialog.queue.push(...dq);
+  });
+
+  // ---------- the rails: she bolts to the nearest rail the knight has visited (Stage 4b) ----------
+  HOOKS.selfTest.push((check, F, h) => {
+    const P = 'mounts: ', h0 = player.horse, dc = dialog.cur, dq = dialog.queue.slice();
+    h.peace(true); closePanel(); dialog.cur = null; dialog.queue.length = 0;
+    player.horse = { owned: true, hp: HORSE_HP, at: null, under: null };
+    // a second rail, as a new place's file adds one (RAILS.add), on open ground by the story signpost, far from Thistledown
+    const near = h.openSpot(...ATLAS.port('signpost.sign').map(Math.round), (x, y) => !SOLID.has(tileAt(x + 1, y)) && !SOLID.has(tileAt(x, y + 1)));
+    const post = { x: near.x, y: near.y };
+    const added = RAILS.add({ id: 'selftest', place: 'the test rail by the signpost', at: () => post });
+    const voice = () => { const d = [dialog.cur, ...dialog.queue].find(q => q && q.who === 'The Voice'); return d ? d.text : ''; };
+    // thrown off beside it before he has stood there: she runs for Fennick's (the only rail he has visited)
+    const throwNear = () => { if (riding()) dismount(true); liftHorse(); dialog.cur = null; dialog.queue.length = 0; F.tp(post.x, post.y + 2); player.mech = null; mount(); bolt(); const at = horseAt(); return { at: at && [at.tx, at.ty], said: voice() }; };
+    const first = throwNear();
+    const fen = RAILS[0].at(), toFennick = !!first.at && !!fen && Math.max(Math.abs(first.at[0] - fen.x), Math.abs(first.at[1] - fen.y)) <= 4 && /Fennick's rail in Thistledown/.test(first.said);
+    // he walks up to the new rail (within six tiles of its post): now it is the nearest he knows, and the Voice names it
+    F.tp(post.x, post.y + 2); F.step([]); const seen = RAILS.visited('selftest');
+    const second = throwNear(), toNew = !!second.at && Math.max(Math.abs(second.at[0] - post.x), Math.abs(second.at[1] - post.y)) <= 4 && /the test rail by the signpost/.test(second.said);
+    // the registry: Fennick's first, the two reserved plots' rails held (no post yet), the visited list saved on the horse
+    const reg = RAILS[0].id === 'thistledown' && ['alchemy', 'necromancy'].every(id => { const r = RAILS.find(q => q.id === id); return r && r.reserved && r.at() === null; }) && Array.isArray(player.horse.rails) && player.horse.rails.includes('selftest');
+    if (riding()) dismount(true); liftHorse(); RAILS.remove('selftest'); player.horse = h0 || { owned: false, hp: HORSE_HP, at: null, under: null };
+    dialog.cur = dc; dialog.queue.length = 0; dialog.queue.push(...dq); h.peace(false);
+    check(P + "thrown off, she bolts to the NEAREST rail he has visited and the Voice names it: Fennick's while the new rail is unvisited, the new one once he has stood by it (RAILS: Fennick's first, the Glasshouse's and the Old Barrow's reserved)",
+      !!added && toFennick && seen && toNew && reg, { first, second, seen, reg, post: [post.x, post.y], fennick: fen && [fen.x, fen.y] });
   });
 }
 
@@ -26629,7 +26725,9 @@ window.SETTINGS = SETTINGS;
       for (let y = W.ty(70); y <= W.ty(94); y++) for (let x = W.tx(34); x <= W.tx(110); x++) if (map[idx(x, y)] === T.ROCK) woodRock++;  // the same wood, well clear of the old rectangle
       const region = regionAt(...ATLAS.frame('deepholm_rock').p(14, 83)).name, spawns = MONSTER_SPAWNS.filter(s => s.tx >= O.x0 && s.tx <= O.x1 && s.ty >= O.y0 && s.ty <= O.y1).length;
       check(P + '575 tiles of Wolfwood come back at x 2–26, y 72–94: no wall, nothing stranded, the wood as thick inside the old rectangle as it is on each side of it, the ash still drifting through its last rows, and no ring of outcrops round a rectangle of nothing',
-        alien === 0 && (mix[T.WALL] || 0) === 0 && stranded === 0 && floor + solid === 575 && floor >= 500 && matches && region === 'Wolfwood' && ringRock === 0 && woodRock > 10 && spawns >= 1 && ashIn > 0 && ashOut > 0,
+        // (most of it walkable, three in four tiles: how thick the wood stands is `matches`' question, against the wood beside
+        // it; an absolute count of 500 open tiles was the scatter's luck, and the spread's map re-rolled it to 480)
+        alien === 0 && (mix[T.WALL] || 0) === 0 && stranded === 0 && floor + solid === 575 && floor >= 575 * 0.75 && matches && region === 'Wolfwood' && ringRock === 0 && woodRock > 10 && spawns >= 1 && ashIn > 0 && ashOut > 0,
         { open: floor, solid, alien, walls: mix[T.WALL] || 0, stranded, strandedAt: strandedAt.slice(0, 8), region, spawnsBack: spawns, ringRock, ringChecked: U.stats().ring, ringSoftened: U.stats().softened, woodRock,
           woodInside: { west: +westIn.toFixed(3), east: +eastIn.toFixed(3) }, woodBeside: { west: +westOut.toFixed(3), east: +eastOut.toFixed(3) }, ashDrift: { inside: ashIn, beside: ashOut, laid: U.stats().ash } }); }
 
@@ -30600,6 +30698,207 @@ HOOKS.selfTest.push((check, F, h) => {
   });
 }
 
+// ---- src/61-maplabels.js ----
+// ============================================================================
+// THE WORLD MAP'S PLACE NAMES (the Great Spread, Stage 4b; spec ADDENDUM B)
+// src/61-maplabels.js
+//
+// The world map panel (10-hud's drawMapPanel) names the places from ONE source: the Atlas's overworld places (each a
+// REGIONS box or outline, one entry per place). The old panel drew every REGIONS name at its box's centre and every quest
+// target's own words beside its ring, so on the 400 x 280 map names sat on names ("THE GREY SEA" on "IRONCLAD ISLE",
+// "Hollowford" in gold over "HOLLOWFORD"), on the gold rings, and a prospector's name was printed in the Redcut.
+//
+// Now:
+//   - one label per place, from the Atlas places (MAP_LABELS.items);
+//   - laid out by priority (towns, then regions, then landmarks, then small places); each label's box is nudged (a set
+//     distance at most) off the labels already placed, off every marker and quest ring, and off the key strip; a label
+//     that cannot fit is DROPPED at that zoom, never drawn over another (MAP_LABELS.layout);
+//   - people and things are markers, not labels: a quest ring keeps its ring; a ring on a place lights that place's own
+//     name in gold instead of printing the name a second time; a ring on a person or a thing prints no words.
+//
+// MAP_LABELS.layout is one shared function: any screen that draws the world small (the teacher view's map) calls it with
+// its own scale, rings and bounds and gets the same answer.
+//
+// window.MAP_LABELS = { items(), layout(items, opts), draw(g, result), textWidth(g, s, font, size), TIERS, last }
+// ============================================================================
+{
+  // ---------- which kind of place each is (the Atlas id; anything not listed is a small place) ----------
+  // 0 towns, 1 regions (the broad grounds and seas), 2 landmarks, 3 small places (the staked new places among them)
+  const TOWNS = ['thistledown', 'hollowford', 'grubmarket', 'sylvaris'];
+  const REGION_IDS = ['wolfwood', 'ashfields', 'jungle', 'grey_sea', 'sound', 'grub_fields', 'ash_wastes', 'far_shore', 'redcut'];
+  const LANDMARKS = ['castle_thistledown', 'castle_gnash', 'brightwater', 'cave', 'grey_quarry', 'goblin_camp', 'miller_pond', 'gull_isle', 'ironclad_isle',
+    'fang_lair', 'old_bridge', 'beacon_hills', 'bandit_hills', 'wreck_rock', 'skypier'];
+  // the two broad grounds the map never names (as before): the open fields and the Wilds round everything
+  const UNNAMED = ['goblin_fields', 'wilds'];
+  const tierOf = id => TOWNS.includes(id) ? 0 : REGION_IDS.includes(id) ? 1 : LANDMARKS.includes(id) ? 2 : 3;
+  const TIERS = { towns: TOWNS, regions: REGION_IDS, landmarks: LANDMARKS, unnamed: UNNAMED };
+
+  // ---------- the items: one per overworld place, made once per world (keyed by the Atlas hash) ----------
+  let cache = null, cacheKey = null;
+  function items() {
+    const A = window.ATLAS; if (!A || !A.built || !A.built()) return [];
+    const key = A.hash() + '|' + MAP_W + 'x' + MAP_H; if (cache && cacheKey === key) return cache;
+    const out = [], seen = new Set();
+    for (const p of A.places) {
+      if (p.map !== 'over' || p.kind !== 'region' || UNNAMED.includes(p.id) || seen.has(p.id) || !p.rects.length) continue;
+      seen.add(p.id);
+      const r = p.rects[0], area = (r[2] - r[0] + 1) * (r[3] - r[1] + 1);
+      // where the name goes: the box's centre when the place owns it (its outline may not: Wolfwood's box runs under the
+      // Ashfields' rim), else the tile of its own nearest that centre
+      const cx = (r[0] + r[2] + 1) / 2, cy = (r[1] + r[3] + 1) / 2;
+      const owns = (x, y) => { const g = regionAt(x, y); return !!g && (g.atlas || ATLAS.slug(g.name)) === p.id; };
+      let at = [cx, cy];
+      if (!owns(Math.floor(cx), Math.floor(cy))) {
+        let best = null; const step = area > 2000 ? 3 : 1;
+        for (let y = Math.max(0, r[1]); y <= Math.min(MAP_H - 1, r[3]); y += step) for (let x = Math.max(0, r[0]); x <= Math.min(MAP_W - 1, r[2]); x += step) {
+          if (!owns(x, y)) continue; const d = Math.hypot(x + 0.5 - cx, y + 0.5 - cy); if (!best || d < best[2]) best = [x + 0.5, y + 0.5, d]; }
+        if (best) at = [best[0], best[1]];
+      }
+      out.push({ id: p.id, text: p.name.toUpperCase(), name: p.name, x: at[0], y: at[1], tier: tierOf(p.id), area, owns });
+    }
+    // priority: tier first; within a tier the bigger place first (it has the fewer places it can go)
+    out.sort((a, b) => a.tier - b.tier || b.area - a.area || (a.id < b.id ? -1 : 1));
+    cache = out; cacheKey = key; return out;
+  }
+
+  // ---------- measuring: the real canvas, or (a headless canvas measures every string as 10 px) a fair estimate ----------
+  function textWidth(g, s, font, size) {
+    try { g.font = font; const a = g.measureText('M').width, b = g.measureText('MMMMMMMMMM').width; if (b > a * 2) return g.measureText(String(s)).width; } catch (e) { }
+    return String(s).length * size * 0.74;   // Cinzel 800 capitals run about 0.7 of their size wide
+  }
+
+  // ---------- the layout ----------
+  // opts: { sc, ox, oy (the map's top-left on screen and its pixels a tile), bounds: { x, y, w, h } (where a label may
+  //         sit), rings: [{ x, y, r }] (marker and quest rings, screen px), blocks: [{ x, y, w, h }], measure(text, tier) ->
+  //         { w, size, font }, lit: Set of place ids lit gold, nudge (px, small places; regions may move further) }
+  // returns { drawn: [{ id, text, cx, cy, box: { x, y, w, h }, size, font, tier, lit, moved }], dropped: [{ id, why }] }
+  function layout(list, opts) {
+    const o = opts, B = o.bounds, PAD = 2, drawn = [], dropped = [];
+    const hitsBox = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+    const hitsRing = (a, c) => { const nx = Math.max(a.x, Math.min(c.x, a.x + a.w)), ny = Math.max(a.y, Math.min(c.y, a.y + a.h)); return Math.hypot(c.x - nx, c.y - ny) < c.r; };
+    const free = b => b.x >= B.x && b.y >= B.y && b.x + b.w <= B.x + B.w && b.y + b.h <= B.y + B.h &&
+      !drawn.some(d => hitsBox(b, { x: d.box.x - PAD, y: d.box.y - PAD, w: d.box.w + PAD * 2, h: d.box.h + PAD * 2 })) &&
+      !(o.rings || []).some(c => hitsRing(b, c)) && !(o.blocks || []).some(k => hitsBox(b, k));
+    for (const it of list) {
+      const m = o.measure(it.text, it.tier), h = m.size * 1.15, w = m.w + 4;
+      const sx = o.ox + it.x * o.sc, sy = o.oy + it.y * o.sc;
+      // the offsets tried, nearest first: none, then rings of 8 directions every few pixels out to the nudge limit
+      // (a region's name may move further, but only onto its own ground; a landmark's half as far again as a small place's)
+      // (a town's name may move as far, to stand clear of the town's own rings: its shops and quests crowd its middle)
+      const lim = it.tier <= 1 ? Math.max(o.nudge * 3, 40) : it.tier === 2 ? o.nudge * 1.5 : o.nudge, stepPx = Math.max(3, h * 0.4);
+      const tries = [[0, 0]];
+      for (let d = stepPx; d <= lim + 0.01; d += stepPx) for (const [ux, uy] of [[0, -1], [0, 1], [1, 0], [-1, 0], [1, -1], [-1, -1], [1, 1], [-1, 1]]) tries.push([ux * d * (ux && uy ? 0.75 : 1), uy * d * (ux && uy ? 0.75 : 1)]);
+      let put = null;
+      for (const [dx, dy] of tries) {
+        const cx = sx + dx, cy = sy + dy, box = { x: cx - w / 2, y: cy - h / 2, w, h };
+        if (!free(box)) continue;
+        if (it.tier === 1 && (dx || dy) && it.owns && !it.owns(Math.floor((cx - o.ox) / o.sc), Math.floor((cy - o.oy) / o.sc))) continue;
+        put = { cx, cy, box, moved: Math.round(Math.hypot(dx, dy)) }; break;
+      }
+      if (!put) { dropped.push({ id: it.id, why: 'no room within ' + Math.round(lim) + ' px' }); continue; }
+      drawn.push({ id: it.id, text: it.text, cx: put.cx, cy: put.cy, box: put.box, size: m.size, font: m.font, tier: it.tier, lit: !!(o.lit && o.lit.has(it.id)), moved: put.moved });
+    }
+    return { drawn, dropped };
+  }
+
+  // ---------- drawing ----------
+  const COLOUR = t => [HK.T.ink, HK.T.inkDim, HK.T.ink, HK.T.inkDim][t];
+  function draw(g, res) {
+    for (const d of res.drawn) HK.text(g, d.text, d.cx, d.box.y + d.size * 0.92, { font: d.font, align: 'center', color: d.lit ? HK.T.goldHi : COLOUR(d.tier), halo: 3 });
+  }
+
+  // ---------- the world map's own call (10-hud's drawMapPanel, out in the world) ----------
+  // L: { g, ox, oy, sc, ix, iy, iw, ih, narrow, targets } -> the layout drawn (kept as MAP_LABELS.last for the self-test)
+  function drawWorld(L) {
+    const g = L.g, base = Math.max(9, Math.min(15, L.sc * 2.4));
+    const size = t => Math.max(8, base + [1, 0, -1, -2][t]);
+    const measure = (s, t) => { const sz = size(t), font = t === 1 ? HK.FC(700, sz) : HK.FC(800, sz); return { w: textWidth(g, s, font, sz), size: sz, font }; };
+    const rings = [], lit = new Set(), list = items();
+    // the quest rings: a ring on a place lights that place's name; any ring is kept clear of every name
+    for (const tg of L.targets || []) {
+      rings.push({ x: L.ox + (tg.x + 0.5) * L.sc, y: L.oy + (tg.y + 0.5) * L.sc, r: 9 });
+      const word = String(tg.label || '').replace(/^the\s+/i, '').toLowerCase();
+      const p = window.ATLAS && ATLAS.at(tg.x, tg.y), byName = list.find(it => it.name.replace(/^the\s+/i, '').toLowerCase() === word);
+      if (byName) lit.add(byName.id); else if (p && list.some(it => it.id === p.id) && p.name.replace(/^the\s+/i, '').toLowerCase() === word) lit.add(p.id);
+    }
+    if (player.home) rings.push({ x: L.ox + player.home.x / TILE * L.sc, y: L.oy + player.home.y / TILE * L.sc, r: 9 });
+    // the markers (61-markers draws them after this, over the map) and the key strip at the map's foot
+    const M = window.MARKERS; let foot = L.ih;
+    if (M) {
+      try { const lay = M.layout(g, L.ix, L.iy, L.iw, L.ih, L.narrow); if (lay && lay.y > L.iy) foot = lay.y - L.iy; } catch (e) { }
+      if (M.show()) for (const m of M.known()) rings.push({ x: L.ox + (m.x + 0.5) * L.sc, y: L.oy + (m.y + 0.5) * L.sc, r: (M.MAP_R || 5.2) + 1.5 });
+    }
+    const res = layout(list, { sc: L.sc, ox: L.ox, oy: L.oy, bounds: { x: L.ix + 2, y: L.iy + 2, w: L.iw - 4, h: foot - 4 }, rings, measure, lit, nudge: Math.max(12, base * 1.6) });
+    draw(g, res);
+    res.rings = rings; res.bounds = { x: L.ix + 2, y: L.iy + 2, w: L.iw - 4, h: foot - 4 }; res.view = [VW, VH]; res.markers = !!(M && M.show());
+    MAP_LABELS.last = res;
+    return res;
+  }
+
+  window.MAP_LABELS = { items, layout, draw, drawWorld, textWidth, TIERS, tierOf, last: null };
+
+  // ---------- self-test (ADDENDUM B, rule 3) ----------
+  // At 1280x800, 1024x768 (iPad landscape), 768x1024 (iPad portrait) and 390x844 (phone), markers on and off: no two drawn
+  // labels' boxes meet, no label box meets a marker or quest ring, no place is named twice (every word the map panel draws
+  // is heard through a recording canvas that measures real-ish letter widths), and no person's name is printed.
+  HOOKS.selfTest.push((check, F, h) => {
+    const P = 'map labels: ', M = window.MARKERS;
+    const own = k => Object.getOwnPropertyDescriptor(window, k), saved = { w: own('innerWidth'), h: own('innerHeight'), t: window.__forceTouch };
+    const st0 = M ? { show: M.show(), seen: { ...M.state().seen } } : null, q0 = { wren: quest.wren, tracked: quest.tracked, u: quest.untrackedByPlayer };
+    const recorder = () => { const texts = []; const g = new Proxy({}, {
+      get: (t, k) => k === 'measureText' ? s => ({ width: String(s).length * 8.5 }) : k === 'fillText' ? s => { texts.push(String(s)); }
+        : (k === 'createLinearGradient' || k === 'createRadialGradient' || k === 'createConicGradient') ? () => ({ addColorStop: () => { } }) : k === 'getImageData' ? () => ({ data: new Uint8ClampedArray(4) }) : typeof k === 'string' ? () => { } : undefined,
+      set: () => true }); return { g, texts }; };
+    h.peace(true); closePanel(); dialog.cur = null; dialog.queue.length = 0;
+    // a person's quest ring (Old Wren) and a place's (Hollowford, when its quest is on the map) on the map
+    quest.wren = 'active'; quest.tracked = 'wren'; quest.untrackedByPlayer = false;
+    if (M) { M.refresh(); for (const m of M.all()) M.state().seen[m.key] = 1; }
+    const people = NPCS.map(n => n.name).filter(Boolean);
+    const problems = [], seenSizes = []; let tried = 0, drawnMin = 1e9, names = new Set();
+    for (const [w, hh, touch] of [[1280, 800, false], [1024, 768, true], [768, 1024, true], [390, 844, true]]) for (const on of [true, false]) {
+      try { window.innerWidth = w; window.innerHeight = hh; } catch (e) { }
+      window.__forceTouch = touch; if (typeof resize === 'function' && (VW !== w || VH !== hh)) resize();
+      if (VW !== w || VH !== hh) { problems.push(`${w}x${hh}: the view is ${VW}x${VH}`); continue; }
+      if (M) M.setShow(on);
+      const r = recorder(); buttons.length = 0; openPanel('map'); MAP_LABELS.last = null; drawPanels(r.g, VW < 700, VH < 500, 0, 44); buttons.length = 0;
+      const res = MAP_LABELS.last, tag = `${w}x${hh} markers ${on ? 'on' : 'off'}`; tried++;
+      if (!res) { problems.push(tag + ': no labels laid out'); continue; }
+      seenSizes.push(tag + ': ' + res.drawn.length + ' drawn, ' + res.dropped.length + ' dropped');
+      drawnMin = Math.min(drawnMin, res.drawn.length); for (const d of res.drawn) names.add(d.id);
+      const D = res.drawn;
+      for (let i = 0; i < D.length; i++) for (let j = i + 1; j < D.length; j++) { const a = D[i].box, b = D[j].box; if (a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h) problems.push(`${tag}: ${D[i].id} meets ${D[j].id}`); }
+      for (const d of D) for (const c of res.rings) { const a = d.box, nx = Math.max(a.x, Math.min(c.x, a.x + a.w)), ny = Math.max(a.y, Math.min(c.y, a.y + a.h)); if (Math.hypot(c.x - nx, c.y - ny) < c.r) problems.push(`${tag}: ${d.id} on a ring at ${Math.round(c.x)},${Math.round(c.y)}`); }
+      for (const d of D) { const a = d.box, B = res.bounds; if (a.x < B.x - 0.01 || a.y < B.y - 0.01 || a.x + a.w > B.x + B.w + 0.01 || a.y + a.h > B.y + B.h + 0.01) problems.push(`${tag}: ${d.id} off the map`); }
+      if (new Set(D.map(d => d.id)).size !== D.length) problems.push(`${tag}: a place laid out twice`);
+      // every word drawn: a place's name at most once (any case), and no person's name
+      const counts = {}; for (const s of r.texts) { const k = s.toUpperCase(); counts[k] = (counts[k] || 0) + 1; }
+      for (const it of MAP_LABELS.items()) if ((counts[it.text] || 0) > 1) problems.push(`${tag}: ${it.text} drawn ${counts[it.text]} times`);
+      for (const p of people) if (r.texts.includes(p)) problems.push(`${tag}: the person ${p} is named on the map`);
+      if (on && M && !res.rings.length) problems.push(tag + ': no rings to keep clear of');
+      closePanel();
+    }
+    if (saved.w) { Object.defineProperty(window, 'innerWidth', saved.w); Object.defineProperty(window, 'innerHeight', saved.h); }
+    window.__forceTouch = saved.t; if (typeof resize === 'function') resize();
+    if (M) { M.setShow(st0.show); M.state().seen = st0.seen; M.refresh(); }
+    quest.wren = q0.wren; quest.tracked = q0.tracked; quest.untrackedByPlayer = q0.u; render(); h.peace(false);
+    // one source: every overworld place but the two open grounds has exactly one item, and nothing else is an item
+    const want = ATLAS.places.filter(p => p.map === 'over' && p.kind === 'region' && !UNNAMED.includes(p.id)).map(p => p.id).sort(), got = items().map(i => i.id).sort();
+    check(P + 'one label per place from the Atlas places (no second list); at 1280x800, 1024x768, 768x1024 and 390x844, markers on and off, no two drawn names meet, none sits on a marker or quest ring or off the map, no place is named twice and no person is named',
+      tried === 8 && !problems.length && JSON.stringify(want) === JSON.stringify(got) && drawnMin >= 4 && ['thistledown', 'hollowford'].every(id => names.has(id)),
+      { tried, problems: problems.slice(0, 8), more: Math.max(0, problems.length - 8), sizes: seenSizes, one: JSON.stringify(want) === JSON.stringify(got) });
+    // the layout itself: priority wins, a nudge moves a name off another, and a name with no room is dropped, not drawn over
+    { const meas = () => ({ w: 60, size: 10, font: '' });
+      const L = (list, rings) => layout(list, { sc: 1, ox: 0, oy: 0, bounds: { x: 0, y: 0, w: 200, h: 100 }, rings: rings || [], measure: meas, nudge: 20 });
+      // (screen pixels in a 200 x 100 box, written in units of u = 50 px: a test of the layout, not a place on the map)
+      const u = 50, item = (id, tier, px, py) => ({ id, text: id, x: px, y: py, tier, area: 4 - tier }), ring = (px, py, r) => ({ x: px, y: py, r });
+      const a = L([item('town', 0, 2 * u, u), item('small', 3, 2 * u + 2, u + 6)]);
+      const nudged = a.drawn.length === 2 && a.drawn[0].id === 'town' && a.drawn[0].moved === 0 && a.drawn[1].moved > 0;
+      const b = L([item('town', 0, 2 * u, u), item('small', 3, 2 * u, u)], [ring(2 * u, u + 14, 6), ring(2 * u, u - 14, 6), ring(3.4 * u, u, 30), ring(0.6 * u, u, 30)]);
+      const dropped = b.drawn.length === 1 && b.dropped.length === 1 && b.dropped[0].id === 'small';
+      check(P + 'the layout: the higher tier keeps its spot, a lower one is nudged off it, and one with no room is dropped (never drawn over)', nudged && dropped, { a: a.drawn.map(d => [d.id, d.moved]), b: b.drawn.map(d => d.id), dropped: b.dropped }); }
+  });
+}
+
 // ---- src/61-markers.js ----
 // ============================================================================
 // MAP MARKERS — icons for the places that matter, on the minimap and on the world map.
@@ -31038,7 +31337,7 @@ HOOKS.selfTest.push((check, F, h) => {
     rebuildWorld: buildAll,
     get: key => all().find(m => m.key === key) || null,
     at: (x, y) => all().find(m => m.x === x && m.y === y) || null,
-    hitAt, layout: legendLayout, MAX_ROWS, STRIP_SHARE,
+    hitAt, layout: legendLayout, MAX_ROWS, STRIP_SHARE, MAP_R,
     selected: () => selected && (known().find(m => m.key === selected) || null),
     hovered: () => hover && (known().find(m => m.key === hover) || null),
     get lastMini() { return lastMini; },
@@ -63610,9 +63909,10 @@ const MOUNT_LOOK = (() => {
     'A table of red rock in the far south-east, with a canyon cut right round inside it. Four heights: the table on top, the ledges, the cliff faces, and the canyon floor in the shade at the bottom.',
     '',
     'GETTING THERE. Harl\'s ferry to the Far Shore (combat level 10, 40 coins), then south past the stormstone diggings until the ground goes red and stands up in front of you.',
-    'THE MOUTH, x 215 y 103, is a walk straight in at floor level. Follow the canyon either way round and you come out of THE SLOT, x 246 y 101, back on the same scrub thirty paces east — the short way between the diggings and the east side.',
-    'THE RISE, x 206 y 139, is a ramp of cut steps through the west escarpment onto the table.',
-    'THE STAIR, x 220 y 117, climbs out of the canyon onto the mesa the ring encircles. There is no other way onto it.',
+    // (the places' numbers are read through the Redcut's frame: on the spread's map the mouth is not at 215,103)
+    `THE MOUTH, x ${R.x(215)} y ${R.y(103)}, is a walk straight in at floor level. Follow the canyon either way round and you come out of THE SLOT, x ${R.x(246)} y ${R.y(101)}, back on the same scrub thirty paces east — the short way between the diggings and the east side.`,
+    `THE RISE, x ${R.x(206)} y ${R.y(139)}, is a ramp of cut steps through the west escarpment onto the table.`,
+    `THE STAIR, x ${R.x(220)} y ${R.y(117)}, climbs out of the canyon onto the mesa the ring encircles. There is no other way onto it.`,
     'THE SWITCHBACK, three ledges at x 223–227 y 147–151, drops from Marlow\'s camp into the spur.',
     'THE FALL, y 143–144, is a slab of cliff that came down and filled the spur. Walk over it from the table, or up and over it from the floor.',
     '',
@@ -70565,23 +70865,44 @@ const MOUNT_LOOK = (() => {
       'Sylvaris': (x, y, t) => TREES.has(t) ? (JUNGLE >= 0 ? JUNGLE : null) : (t === T.GRASS && FERN >= 0 && rnd() < 0.45) ? FERN : null,
     };
     // the ground is dressed on every tile the outlines moved from one region to another, and on every tile
-    // within five of a border, so the wood starts where the wood's name starts instead of a dozen tiles later
-    const BAND = 5;
+    // within eight of a border, so the wood starts where the wood's name starts instead of a dozen tiles later.
+    // BAND was 5; the spread spec (section 6, Stage 4b) has every land seam blend over 8 tiles or more (Int8 holds it).
+    const BAND = 8;
     const own = new Array(MAP_W * MAP_H);
     for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) { const r = resolve(x, y); own[y * MAP_W + x] = r ? r.name : ''; }
-    const dist = new Int8Array(MAP_W * MAP_H).fill(-1); const q = [];
+    // (the Ash Wastes are the Wilds' ground, reserved: their edge with the Wilds is no border of grounds, so the Jungle's
+    // edge along them is one seam, the Wilds' and the Jungle's, however the boxes split that strip)
+    const gname = n => (n === 'The Ash Wastes' ? 'The Wilds' : n);
+    const dist = new Int8Array(MAP_W * MAP_H).fill(-1), other = new Array(MAP_W * MAP_H); const q = [];
     for (let y = 1; y < MAP_H - 1; y++) for (let x = 1; x < MAP_W - 1; x++) {
-      const i = y * MAP_W + x;
-      if (!N4.some(([dx, dy]) => own[(y + dy) * MAP_W + x + dx] !== own[i])) continue;
-      dist[i] = 0; q.push(i);
+      const i = y * MAP_W + x, nb = N4.find(([dx, dy]) => gname(own[(y + dy) * MAP_W + x + dx]) !== gname(own[i]));
+      if (!nb) continue;
+      dist[i] = 0; other[i] = gname(own[(y + nb[1]) * MAP_W + x + nb[0]]); q.push(i);
     }
     for (let qi = 0; qi < q.length; qi++) { const c = q[qi], x = c % MAP_W, y = (c / MAP_W) | 0;
       if (dist[c] >= BAND) continue;
-      for (const [dx, dy] of N4) { const nx = x + dx, ny = y + dy; if (!inMap(nx, ny)) continue; const n = ny * MAP_W + nx; if (dist[n] >= 0) continue; dist[n] = dist[c] + 1; q.push(n); } }
+      for (const [dx, dy] of N4) { const nx = x + dx, ny = y + dy; if (!inMap(nx, ny)) continue; const n = ny * MAP_W + nx; if (dist[n] >= 0) continue; dist[n] = dist[c] + 1; other[n] = other[c]; q.push(n); } }
+    // SOFT seams: two grounds of living land that reach into each other (the spread spec, section 6: no seam on a ruled
+    // line). Within the band a tile wears its NEIGHBOUR's ground by a chance that falls from 0.7 on the border to a
+    // seventh of that at the band's edge, read from a noise of its own (in old coordinates, so its clumps stretch with the land):
+    // the oaks reach into the jungle in tongues and the giants into the wood. Cliffs, water and the Ashfields' rim keep
+    // their hard edges (93-ashedge fades the ash itself).
+    const SOFT_SEAM = new Set(['Wolfwood|The Jungle', 'The Jungle|Wolfwood', 'Wolfwood|Hollowford', 'Hollowford|Wolfwood', 'The Jungle|Hollowford', 'Hollowford|The Jungle',
+      'The Jungle|The Wilds', 'The Wilds|The Jungle']);   // (the Wilds: the Jungle's west edge south of the Ashfields, along the Ash Wastes)
+    const soft = makeNoise(SEED + 31, 3);
+    // what a tile wears when it takes its neighbour's ground across a soft seam: that ground's own dressing, and on open
+    // ground that ground's mark half the time (an oak for the wood and the Wilds, a giant for the jungle, scorch for the
+    // burn), so each ground's reach into the other is seen, not only its grass
+    const reachOf = { 'Wolfwood': () => tree(), 'The Wilds': () => tree(), 'The Jungle': () => (JUNGLE >= 0 ? JUNGLE : null), 'Hollowford': () => (SCORCH >= 0 ? SCORCH : null) };
+    const softGround = name => (x, y, t) => { const r = reachOf[name]; if (r && SOFT.has(t) && rnd() < 0.5 && (name === 'Hollowford' || addOk(x, y))) return r(); const g = GROUND[name]; return g ? g(x, y, t) : null; };
+    S.soft = 0;
     for (let y = 1; y < MAP_H - 1; y++) for (let x = 1; x < MAP_W - 1; x++) {
-      const i = y * MAP_W + x, name = own[i], was = boxRegion(x, y);
+      const i = y * MAP_W + x, was = boxRegion(x, y);
+      let name = own[i];
       if (dist[i] < 0 && (!was || was.name === name)) continue;
-      const g = GROUND[name]; if (!g || !plain(x, y)) continue;
+      let g = GROUND[name];
+      if (dist[i] >= 0 && SOFT_SEAM.has(gname(name) + '|' + other[i]) && soft(W.ix(x), W.iy(y)) < 0.7 * (1 - dist[i] / (BAND + 2))) { name = other[i]; g = softGround(name); S.soft++; }
+      if (!g || !plain(x, y)) continue;
       const t = at(x, y), to = g(x, y, t);
       if (to === null || to === undefined || to === t) continue;
       put(x, y, to); S.ground[name] = (S.ground[name] || 0) + 1;
@@ -70694,6 +71015,12 @@ const MOUNT_LOOK = (() => {
       const openBefore = (x, y) => N4.some(([dx, dy]) => inMap(x + dx, y + dy) && !SOLID.has(before[(y + dy) * MAP_W + x + dx]));
       S.freed = 0;
       let seen = reachSet();
+      // digging only ever opens ground, so what the knight reaches only grows: flood on from each opened tile that touches
+      // reached ground, instead of flooding the whole map again after every dig (the spread spec, section 12: the boot budget)
+      const grow = (sn, opened) => { const ok = t => !SOLID.has(t) || PUSH_THROUGH.has(t) || t === WARDEN_GATE, q = [];
+        for (const [ox, oy] of opened) { const i = oy * MAP_W + ox; if (!sn[i] && ok(at(ox, oy)) && N4.some(([dx, dy]) => inMap(ox + dx, oy + dy) && sn[(oy + dy) * MAP_W + ox + dx])) { sn[i] = 1; q.push(i); } }
+        for (let qi = 0; qi < q.length; qi++) { const c = q[qi], x = c % MAP_W, y = (c / MAP_W) | 0;
+          for (const [dx, dy] of N4) { const nx = x + dx, ny = y + dy; if (!inMap(nx, ny)) continue; const n = ny * MAP_W + nx; if (sn[n] || !ok(at(nx, ny))) continue; sn[n] = 1; q.push(n); } } };
       const served = (x, y) => N4.some(([dx, dy]) => inMap(x + dx, y + dy) && seen[(y + dy) * MAP_W + x + dx]);
       // which side of the Wolfwood line a tile sits on: the digging may open this file's rock, but it may
       // never open a way through the step itself, so it never crosses from one side to the other
@@ -70731,7 +71058,7 @@ const MOUNT_LOOK = (() => {
         if (undo.some(([ox, oy]) => Math.abs(oy - sGW(ox)) < 12) && leaking(north()).length) {
           for (const [ox, oy, ot] of undo) set(ox, oy, ot);
           S.kept++;
-        } else { S.freed += undo.length; seen = reachSet(); }
+        } else { S.freed += undo.length; grow(seen, undo); }
       }
       S.stranded = stranded.length; }
     S.leaks = leaking(north());
@@ -72223,6 +72550,35 @@ const MOUNT_LOOK = (() => {
       if (best) { S.moved.push([s.type, s.tx, s.ty, best.x, best.y]); s.movedFrom = s.movedFrom || [s.tx, s.ty]; s.tx = best.x; s.ty = best.y; }
     }
 
+    // ---- 1b. every aggressive spawn 6+ tiles off a main road (§4, Stage 4b) ----
+    const RING8 = [[-1, -1], [0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0]];
+    // The open land stretched, the roads were laid anew: a wolf or a goblin whose old spot now lies by the Cave Road or the
+    // Wolfwood Road would wake on every passing knight. Each moves to the nearest open ground of its own region 6.5+ tiles
+    // from every main road's centre line (no dice: nearest first, ties by row then column). Not the fights a road leads
+    // to (the camp, the outposts, the bandit hills, the lair, Hollowford's occupiers) nor the Ashfields' dragons on the Ash
+    // Road, which the road goes through to its end (97-spreadchecks lists them).
+    { const mainD = new Float32Array(MAP_W * MAP_H).fill(99);
+      for (const id of A.MAIN_ROADS) { const pl = A.track(id);
+        for (let k = 1; k < pl.length; k++) { const [ax, ay] = pl[k - 1], [bx, by] = pl[k];
+          for (let y = Math.max(0, Math.floor(Math.min(ay, by) - 8)); y <= Math.min(MAP_H - 1, Math.ceil(Math.max(ay, by) + 8)); y++)
+            for (let x = Math.max(0, Math.floor(Math.min(ax, bx) - 8)); x <= Math.min(MAP_W - 1, Math.ceil(Math.max(ax, bx) + 8)); x++) { const d = segD(x, y, ax, ay, bx, by), i = y * MAP_W + x; if (d < mainD[i]) mainD[i] = d; } } }
+      const KEEP_AT = ['camp', 'outpost_north', 'outpost_south', 'bandit_hills', 'fang_lair', 'hollowford'].map(id => A.box(id));
+      const kept = (x, y) => KEEP_AT.some(b => b && x >= b[0] - 6 && x <= b[2] + 6 && y >= b[1] - 6 && y <= b[3] + 6) || /^The Ashfields$|^The Fang's Lair$/.test(regionAt(x, y).name);
+      S.offRoad = [];
+      for (const s of MONSTER_SPAWNS) {
+        const d = MONSTER_DEFS[s.type]; if (!d || !d.aggro || s.camp || mainD[s.ty * MAP_W + s.tx] >= 6 || kept(s.tx, s.ty)) continue;
+        const home = regionAt(s.tx, s.ty).name; let best = null;
+        for (let r = 1; r <= 16 && !best; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+          if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue; const x = s.tx + dx, y = s.ty + dy;
+          if (!inMap(x, y) || x < 1 || y < 1 || x > MAP_W - 2 || y > MAP_H - 2 || mainD[y * MAP_W + x] < 6.5 || !OPEN(at(x, y)) || buildingAt(x, y) || near[y * MAP_W + x] || A.reservedAt(x, y) || regionAt(x, y).name !== home) continue;
+          // (open all round: a new game clears the ground about a spawn, and that clearing must not cut a way through a wall)
+          if (!RING8.every(([ex, ey]) => OPEN(at(x + ex, y + ey)) && !buildingAt(x + ex, y + ey))) continue;
+          const dd = Math.hypot(dx, dy); if (!best || dd < best.d) best = { x, y, d: dd };
+        }
+        if (best) { S.offRoad.push([s.type, s.tx, s.ty, best.x, best.y]); s.movedFrom = s.movedFrom || [s.tx, s.ty]; s.tx = best.x; s.ty = best.y; }
+        else S.skipped.push('no ground 6 tiles off the road for the ' + s.type + ' at ' + s.tx + ',' + s.ty);
+      } }
+
     // ---- 2. Castle Brightwater: a cliff ring one tile inside its box, no gap; sand between it and the east sea ----
     if (CLIFF >= 0) { const b = A.box('brightwater'), r = [b[0] + 1, b[1] + 1, b[2] - 1, b[3] - 1];
       for (let y = r[1]; y <= r[3]; y++) for (let x = r[0]; x <= r[2]; x++) {
@@ -72302,7 +72658,6 @@ const MOUNT_LOOK = (() => {
     // ---- 4. a signpost beside every road node (§5): the old SIGN tile, two to six tiles off the node, off the road ----
     // (a post never cuts a way: the open ground round it, walked round the eight tiles about it, is one piece, so every
     // open side of it still reaches every other without it)
-    const RING8 = [[-1, -1], [0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0]];
     const simple = (x, y) => { const o = RING8.map(([dx, dy]) => OPEN(at(x + dx, y + dy)));
       let runs = 0; for (let k = 0; k < 8; k++) if (o[k] && !o[(k + 7) % 8]) runs++;
       return runs === 1 || (runs === 0 && o.every(Boolean)); };
@@ -77016,6 +77371,357 @@ const MOUNT_LOOK = (() => {
     } finally {
       if (quest.fang) quest.fang.restUntil = keep.fang || 0; if (quest.hollowford) quest.hollowford.shedRestUntil = keep.shed || 0; player.dayTime = keep.day; save();
     }
+  });
+}
+
+// ---- src/97-spreadchecks.js ----
+// ============================================================================
+// THE GREAT SPREAD'S CHECKS ON THE NEW MAP (Stage 4b of the spread spec, ~/.fanglands/work/spread/spec.md §1, §4, §5, §6,
+// §13 4b, ADDENDUM C)
+// src/97-spreadchecks.js
+//
+// Self-tests only, plus the measurements behind them (window.SPREAD_CHECKS), which the tools print as tables
+// (tools/spread-report.mjs: the walk-clock table, the beat-gap report, the seam transects):
+//   - spacing: named-place centres are 25+ tiles apart (§1's exceptions listed with their reasons);
+//   - the walk-clock: each §1 trip measured as an 8-connected walk with root-2 diagonals over walkable tiles, the story
+//     gates open (quest-complete), at a knight's foot speed; inside its window, or listed in WALK_HELD with the reason;
+//   - every port reachable from the cave mouth (the ferry and the boats are links; the ports no foot reaches are listed);
+//   - reach floods with each story gate closed: the Warden's gate, the lair gate, the palisade, the ferry;
+//   - the scarp seal: the Goblin Fields reach the Wolfwood by exactly the two road bridges and the Agility 18 steps;
+//   - seam transects: 20 lines across each land seam, each blending over 8+ tiles;
+//   - main roads clear of solids and props; aggressive spawns 6+ tiles off a main road (the camp, the outposts, the
+//     bandit hills and the story's own fights aside);
+//   - ADDENDUM C: the outer 8-tile ring of the east and south edges holds no place, port or fixed structure (the east
+//     sea aside), so land can be added at an edge;
+//   - the beat-gap report (report-only in Stage 4: stakes are not stops).
+// Every position is read from the Atlas (ports, frames, boxes, tracks); nothing here is a bare map number.
+// ============================================================================
+{
+  const A = ATLAS, Tn = n => (n in T ? T[n] : -1);
+  const N4 = [[1, 0], [-1, 0], [0, 1], [0, -1]], N8 = [...N4, [1, 1], [1, -1], [-1, 1], [-1, -1]];
+  const P = id => A.port(id).map(Math.round);
+  // the story gates, open (quest-complete) unless a check closes one; the Agility 18 steps are not a gate, and stay shut
+  const GATE_NAMES = ['WARDEN_GATE', 'LAIR_GATE', 'CRYPT_BARS', 'CITY_GATE'];
+  const gates = () => new Set(GATE_NAMES.map(Tn).filter(v => v >= 0));
+  const walkable = (open, shut) => t => (!SOLID.has(t) || PUSH_THROUGH.has(t) || open.has(t)) && !(shut && shut.has(t));
+  // a flood over walkable tiles, 4-connected (as a knight walks); `closed(i)` shuts single tiles
+  function flood(froms, pass, closed) {
+    const seen = new Uint8Array(MAP_W * MAP_H), q = [];
+    const push = (x, y) => { if (!inMap(x, y)) return; const i = y * MAP_W + x; if (seen[i] || !pass(map[i]) || (closed && closed(i))) return; seen[i] = 1; q.push(i); };
+    for (const f of froms) push(f[0], f[1]);
+    for (let k = 0; k < q.length; k++) { const c = q[k], x = c % MAP_W, y = (c / MAP_W) | 0; for (const [dx, dy] of N4) push(x + dx, y + dy); }
+    return seen;
+  }
+  // the nearest walkable tile to a point (a port on a door, a well or a wall stands beside it)
+  const stand = (p, pass) => { for (let r = 0; r <= 3; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) { if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue; const x = p[0] + dx, y = p[1] + dy; if (inMap(x, y) && pass(map[y * MAP_W + x])) return [x, y]; } return p; };
+  // (a port on a well, a fountain, a door or a wall corner is reached when a knight stands within two tiles of it)
+  const reached = (seen, p, r = 2) => { for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) if (inMap(p[0] + dx, p[1] + dy) && seen[(p[1] + dy) * MAP_W + p[0] + dx]) return true; return false; };
+  // (a gate's far side: the tile itself or one beside it, never two away across the wall)
+  const reachedAt = (seen, p) => [[0, 0], ...N4].some(([dx, dy]) => inMap(p[0] + dx, p[1] + dy) && seen[(p[1] + dy) * MAP_W + p[0] + dx]);
+
+  // ---------- the walk-clock (§1) ----------
+  // an 8-connected walk with root-2 diagonals (no corner cut between two solid tiles), Dijkstra on a binary heap
+  function walkTiles(a, b, pass) {
+    const D = new Float64Array(MAP_W * MAP_H).fill(Infinity), H = [];
+    const up = e => { H.push(e); let i = H.length - 1; while (i > 0) { const p = (i - 1) >> 1; if (H[p][0] <= H[i][0]) break; [H[p], H[i]] = [H[i], H[p]]; i = p; } };
+    const down = () => { const top = H[0], last = H.pop(); if (H.length) { H[0] = last; let i = 0; for (;;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < H.length && H[l][0] < H[m][0]) m = l; if (r < H.length && H[r][0] < H[m][0]) m = r; if (m === i) break; [H[m], H[i]] = [H[i], H[m]]; i = m; } } return top; };
+    const s = a[1] * MAP_W + a[0], goal = b[1] * MAP_W + b[0]; D[s] = 0; up([0, s]);
+    while (H.length) {
+      const [d, c] = down(); if (d > D[c]) continue; if (c === goal) return d;
+      const x = c % MAP_W, y = (c / MAP_W) | 0;
+      for (const [dx, dy] of N8) { const nx = x + dx, ny = y + dy; if (!inMap(nx, ny) || !pass(map[ny * MAP_W + nx])) continue;
+        if (dx && dy && (!pass(map[y * MAP_W + nx]) || !pass(map[ny * MAP_W + x]))) continue;
+        const n = ny * MAP_W + nx, nd = d + (dx && dy ? Math.SQRT2 : 1); if (nd < D[n]) { D[n] = nd; up([nd, n]); } }
+    }
+    return Infinity;
+  }
+  // §1's table: [trip, from port, to port, window low, high] (seconds on foot)
+  const TRIPS = [
+    ['Cave mouth to Thistledown Fountain Square', 'cave.mouth', 'thistledown.square', 40, 55],
+    ['Fountain Square to Hollowford square', 'thistledown.square', 'hollowford.square', 45, 62],
+    ["Fountain Square to Harl's dock", 'thistledown.square', 'dock.land', 26, 40],
+    ["Fountain Square to the Warden's post", 'thistledown.square', 'warden.post', 45, 65],
+    ["Fountain Square to Wren's door", 'thistledown.square', 'wren.door', 50, 70],
+    ['Hollowford square to the Sylvaris gap', 'hollowford.square', 'sylvaris.gap', 18, 32],
+    ["Cave mouth to the Fang's Lair gate", 'cave.mouth', 'fang_lair.gate', 100, 135],
+  ];
+  // Trips the open land makes shorter than §1's window, held for the owner (the windows were drawn from road lengths; the
+  // walk-clock is the shortest walk over open ground, which cuts every bend of the road). Each keeps its measured time as
+  // a pin: the check fails if the trip drifts more than 3 s from it, or comes inside its window (then it leaves this list).
+  const WALK_HELD = {
+    'Fountain Square to Hollowford square': { s: 34, why: "by the east gate and the goblin-road bridge the square is 112 straight tiles from Hollowford's; 45 s is 164 tiles, and no track point or anchor inside the plan's ground makes the open walk that long (Hollowford would have to move about 37 tiles south, into Sylvaris' ring)" },
+    "Fountain Square to the Warden's post": { s: 39, why: "the Wolfwood between the Old Bridge and the rim is open wood: the walk goes straight down through it (about 62 tiles from the bridge), not round by the inn and the stone circle as the Ash Road does (about 110)" },
+    "Fountain Square to Wren's door": { s: 48, why: "from the Old Bridge to Wren's door the open walk is as straight as the Wolfwood Road itself (about 92 tiles); 50 s needs 8 tiles more, and a bend in the road does not lengthen a walk the open wood lets cut" },
+    "Cave mouth to the Fang's Lair gate": { s: 87, why: "the same cut through the open Wolfwood, and none of the Ash Road's loop east to the inn: section 1's 415 tiles is the road; the open walk is about 318" },
+  };
+  const footTilesPerS = () => A.SPEED_CAP.foot / TILE;
+  function walkClock() {
+    const pass = walkable(gates()), v = footTilesPerS();
+    return TRIPS.map(([trip, a, b, lo, hi]) => { const d = walkTiles(stand(P(a), pass), stand(P(b), pass), pass), s = d / v;
+      return { trip, from: a, to: b, tiles: Math.round(d), s: Math.round(s), lo, hi, inside: s >= lo && s <= hi, held: WALK_HELD[trip] || null }; });
+  }
+
+  // ---------- spacing (§1) ----------
+  // named-place centres 25+ apart. Not named places: the open grounds and rings (the Ash Wastes, Sylvaris' growth ring)
+  // and the two machine lanes with no name on the map (the drill field; §2's own plan puts it 24.2 from the signpost)
+  const NOT_NAMED = ['ash_wastes', 'sylvaris_growth', 'drill_field'];
+  const SPACING_EXEMPT = {
+    'old_bridge|watchtower': 'the watchtower is the Old Bridge\'s ruined tower (§1)',
+    'dock|gull_isle': 'Gull Isle and the dock: open water, reached by boat (§1)',
+    'deepholm_rock|graveyard': 'the Deepholm rock is rock scenery, not a named stop (§1)',
+    'sylvaris|sylvaris_growth': 'Sylvaris grows into its own ring (§4)',
+  };
+  function spacing() {
+    const ids = Object.keys(A.ANCHORS).filter(id => A.box(id) && !NOT_NAMED.includes(id)), c = id => { const b = A.box(id); return [(b[0] + b[2]) / 2, (b[1] + b[3]) / 2]; };
+    const near = [], exempt = [];
+    for (let i = 0; i < ids.length; i++) for (let j = i + 1; j < ids.length; j++) {
+      const [ax, ay] = c(ids[i]), [bx, by] = c(ids[j]), d = Math.hypot(ax - bx, ay - by); if (d >= 25) continue;
+      const k = [ids[i], ids[j]].sort().join('|'); (SPACING_EXEMPT[k] ? exempt : near).push(k + ' ' + d.toFixed(1));
+    }
+    // Grubmarket and Castle Gnash are one rigid frame (the Far Shore's): two regions, one place anchor
+    return { near, exempt, places: ids.length };
+  }
+
+  // ---------- every port reachable ----------
+  // the links a knight takes that are not his feet: Harl's ferry (the dock to the Far Shore's landing) and the boats to the
+  // isles. The ports no foot reaches yet, each with its reason.
+  const LINKS = ['far_shore.landing', 'gull_isle.pete', 'ironclad_isle.hull'];
+  const PORT_UNREACHED = {
+    'brightwater.landing': 'Castle Brightwater has no way in on foot: the blimp lands there (chapter 10)',
+    'wreck_rock.rock': 'Wreck Rock stands in the Grey Sea: its boat route comes later (26-boats LOC)',
+    'far_shore.strait': 'the strait itself: water',
+    'pond.centre': "the middle of Miller's Pond, on its stepping stones (Agility 10)",
+  };
+  function ports() {
+    const pass = walkable(gates()), seen = flood([P('cave.mouth'), ...LINKS.map(id => stand(P(id), pass))], pass);
+    const missed = [], held = [];
+    for (const id of Object.keys(A.PORTS)) { const p = P(id); if (reached(seen, p)) continue; (PORT_UNREACHED[id] ? held : missed).push(id + ' ' + p.join(',')); }
+    return { missed, held, of: Object.keys(A.PORTS).length };
+  }
+
+  // ---------- the story gates closed ----------
+  function gateFloods() {
+    const all = gates(), out = {};
+    const shut = name => { const s = new Set(all); s.delete(Tn(name)); return walkable(s); };
+    const from = [P('cave.mouth')];
+    // the Warden's gate: nothing south of the rim (Dunstan, the shrine, the lair's approach)
+    { const seen = flood(from, shut('WARDEN_GATE')); out.warden = ['warden.dunstan', 'ash_shrine.shrine', 'fang_lair.node'].filter(id => reachedAt(seen, P(id))); }
+    // the lair gate: the summoning circle and the lair's floor
+    { const seen = flood(from, shut('LAIR_GATE')); out.lair = ['fang_lair.circle'].filter(id => reachedAt(seen, P(id))); }
+    // the palisade: with its gaps shut (every ring tile that is not a stake), the camp's walker is not reached
+    { const R = window.PALISADE && PALISADE.ring, pal = walkable(all); let ring = 0;
+      const onRing = i => { const x = i % MAP_W, y = (i / MAP_W) | 0; const on = (x === R.x0 || x === R.x1) && y >= R.y0 && y <= R.y1 || (y === R.y0 || y === R.y1) && x >= R.x0 && x <= R.x1; return on; };
+      if (R && R.laid) { for (let y = R.y0; y <= R.y1; y++) for (let x = R.x0; x <= R.x1; x++) if (onRing(y * MAP_W + x)) ring++;
+        const seen = flood(from, pal, onRing); out.palisade = ['camp.walker', 'camp.cage'].filter(id => reachedAt(seen, P(id))); out.ringTiles = ring; } else out.palisade = ['no palisade ring']; }
+    // the ferry: on foot (every gate open), no tile east of the strait's west edge
+    { const seen = flood(from, walkable(all)), x0 = A.frame('far_shore').x(200); let east = 0, at = null;
+      for (let y = 0; y < MAP_H; y++) for (let x = x0; x < MAP_W; x++) if (seen[y * MAP_W + x]) { east++; if (!at) at = [x, y]; }
+      out.ferry = { east, at, x0 }; }
+    return out;
+  }
+
+  // ---------- the scarp seal (§5): the Goblin Fields reach the Wolfwood only by the two road bridges and the steps ----------
+  function scarpSeal() {
+    const all = gates(), BRIDGE = Tn('BRIDGE'), STEPS = Tn('SCARP_STEPS');
+    // each crossing's tiles: the bridge tiles within 4 of each bridge's port, the steps' own tile
+    const near = (pid, t) => { const [px, py] = P(pid), out = []; for (let y = py - 4; y <= py + 4; y++) for (let x = px - 4; x <= px + 4; x++) if (inMap(x, y) && map[y * MAP_W + x] === t) out.push(y * MAP_W + x); return out; };
+    const CROSS = { old_bridge: near('old_bridge.span', BRIDGE), goblin_bridge: near('goblin_road.bridge', BRIDGE), steps: near('graveyard.steps', STEPS) };
+    const south = ['wren.door', 'graveyard.grave', 'hunters_lodge.door', 'hollowford.square', 'crossroads_inn.yard'];
+    const run = open => { const shut = new Set(); for (const k in CROSS) if (!open.includes(k)) for (const i of CROSS[k]) shut.add(i);
+      const pass = t => t === STEPS ? open.includes('steps') : walkable(all)(t);
+      const seen = flood([P('cave.mouth')], pass, i => shut.has(i)); return south.filter(id => reachedAt(seen, P(id))); };
+    const none = run([]), each = {}; for (const k in CROSS) each[k] = run([k]).length;
+    return { none, each, tiles: Object.fromEntries(Object.entries(CROSS).map(([k, v]) => [k, v.length])) };
+  }
+
+  // ---------- seam transects (§6): 20 lines across each land seam, the two grounds mixed over 8+ tiles ----------
+  // a seam: the tile kinds that mark each side (A, B) and the kinds of a fade between them; 20 lines across the seam, each
+  // from 16 tiles on A's side to 16 on B's (the border at 0). A line's MIXED RUN is how deep B (or the fade) reaches onto
+  // A's side plus how deep A (or the fade) reaches onto B's: a ruled line is 0, a fade or a reach of one ground into the
+  // other is its depth. A seam blends when its median line runs 8 or more and no line is a ruled line. Exempt, each with its reason: cliffs (the Goblin Fields / Wolfwood scarp and the river along it,
+  // the Ashfields' rim), water (every coast, the Sound), the story gates and the camp's palisade, and the Ash Wastes'
+  // own edge with the Ashfields (ash on both sides: reserved ground, not open yet).
+  const SEAM_EXEMPT = {
+    goblin_fields_wolfwood: 'the scarp: a cliff, and the river under it (the seal test holds it)',
+    wolfwood_ashfields: "the Ashfields' rim: a cliff with the Warden's gate in it",
+    camp_palisade: "the camp's palisade: a story gate (its ring of bare grass is dithered eight tiles out, 39)",
+    coasts: 'water: the Grey Sea, the strait, the Sound, the east sea, the river, the ponds',
+    ashfields_ash_wastes: "ash on both sides of the Ash Wastes' edge (reserved ground, not open yet)",
+  };
+  function seams() {
+    const W = A.world, WS = window.WORLDSHAPE, sw = WS && WS.seams;
+    const set = names => new Set(names.map(Tn).filter(v => v >= 0));
+    const out = [];
+    if (!sw) return out;
+    const wallX = y => W.line('jungle_west', y);
+    const spread = (v0, v1) => { const r = []; for (let k = 0; k < 20; k++) r.push(Math.round(v0 + (v1 - v0) * (k + 0.5) / 20)); return r; };
+    const TREES = ['TREE', 'OAK'], JUNG = ['JUNGLE', 'FERN'], FADE = Object.keys(T).filter(n => /^AF_/.test(n)).concat(['SCORCH']);
+    // the Wolfwood / Jungle giants (39 and 92): the wood's oaks north, the jungle's giants and fern south
+    { const x0 = wallX(W.ty(96)) + 14, x1 = A.frame('hollowford').x(132);
+      out.push({ id: 'wolfwood_jungle', a: set(TREES), b: set(JUNG), fade: new Set(), bRegion: ['The Jungle'], lines: spread(x0, x1).map(x => ({ x, y: Math.round(sw.sWJ(x)), dx: 0, dy: 1 })) }); }
+    // the Ashfields / Jungle edge (the old x 100 line): the ash fades east through charred and singed ground into the jungle
+    { const y0 = W.ty(100), y1 = W.ty(136);
+      out.push({ id: 'ashfields_jungle', a: set(['ASH', 'DEADTREE', 'OBSIDIAN']), b: set(JUNG), fade: set(FADE), lines: spread(y0, y1).map(y => ({ x: wallX(y), y, dx: 1, dy: 0 })) }); }
+    // the Jungle's west edge below the Ashfields' fade, along the Wilds by the Ash Wastes (92's soft seam)
+    { const aw = A.box('ash_wastes'), y0 = aw[1] + 12, y1 = MAP_H - 4, cut = y => { let x = aw[2] - 8; while (x < aw[2] + 24 && regionAt(x, y).name !== 'The Jungle') x++; return x; };
+      out.push({ id: 'jungle_wilds', a: set(TREES), b: set(JUNG), fade: new Set(), bRegion: ['The Jungle'], lines: spread(y0, y1).map(y => ({ x: cut(y), y, dx: 1, dy: 0 })) }); }
+    // Hollowford's burn (its west side, the wood to the ruins): scorch reaches out into the wood, the wood into the ruins
+    { const F = A.frame('hollowford'), y0 = F.y(72), y1 = F.y(88);
+      out.push({ id: 'hollowford_burn', a: set([...TREES, 'MUSHROOM']), b: set(['SCORCH', 'ASH', 'RUBBLE']), fade: new Set(), bRegion: ['Hollowford'], lines: spread(y0, y1).map(y => ({ x: F.x(122), y, dx: 1, dy: 0 })) }); }
+    // the Grey Quarry's south edge: grass to the quarry's rock (rock spills out, grass eats in)
+    { const Q = QUARRY_ROCK;
+      out.push({ id: 'quarry_edge', a: set(['GRASS', 'FLOWERS']), b: set(['ROCK', 'IRON', 'COAL']), fade: new Set(), lines: spread(Q.x0 + 1, Q.x1 - 1).map(x => ({ x, y: Q.y1, dx: 0, dy: -1 })) }); }
+    return out;
+  }
+  function transects() {
+    const res = [];
+    for (const s of seams()) {
+      const runs = [];
+      for (const L0 of s.lines) {
+        // the border on this line: the first tile (from A's side) that is B's region, within 12 of the seam's line
+        let L = L0; if (s.bRegion) for (let t = -12; t <= 12; t++) { const x = L0.x + L0.dx * t, y = L0.y + L0.dy * t; if (inMap(x, y) && s.bRegion.includes(regionAt(x, y).name)) { L = { x, y, dx: L0.dx, dy: L0.dy }; break; } }
+        // how far B (or the fade) reaches onto A's side of the border, plus how far A (or the fade) reaches onto B's
+        let first = null, last = null;
+        for (let t = -16; t <= 16; t++) { const x = L.x + L.dx * t, y = L.y + L.dy * t; if (!inMap(x, y)) continue; const k = map[y * MAP_W + x];
+          if ((s.b.has(k) || s.fade.has(k)) && first === null) first = t; if (s.a.has(k) || s.fade.has(k)) last = t; }
+        runs.push((first === null ? 0 : Math.max(0, -first)) + (last === null ? 0 : Math.max(0, last + 1)));
+      }
+      const sorted = runs.slice().sort((a, b) => a - b);
+      res.push({ id: s.id, runs, min: sorted[0], median: sorted[Math.floor(sorted.length / 2)], under8: runs.filter(r => r < 8).length });
+    }
+    return res;
+  }
+
+  // ---------- main roads clear; aggressive spawns off them ----------
+  // the road's centre line and its second lane (2 wide): no solid tile and no prop on it; a gate, a door, a bridge, the
+  // story signpost and Hollowford's ruins (rebuilt in play, 31-rebuild) aside
+  function roadsClear() {
+    const OK = new Set([T.SIGN, Tn('WARDEN_GATE'), Tn('LAIR_GATE'), T.GATE, T.DOOR, Tn('CITY_GATE')].filter(v => v >= 0)), PROP = window.SPREAD_GROUND ? SPREAD_GROUND.PROP : -1, hf = A.box('hollowford'), BRIDGE = Tn('BRIDGE');
+    const bad = [];
+    // the tiles 02-world laid for the road: each step's tile and its second lane (a row below a level stretch, a column
+    // west of a steep one)
+    for (const id of A.MAIN_ROADS) { const pl = A.track(id);
+      for (let k = 1; k < pl.length; k++) { const [ax, ay] = pl[k - 1], [bx, by] = pl[k], n = Math.max(1, Math.round(Math.max(Math.abs(bx - ax), Math.abs(by - ay))));
+        const level = Math.abs(bx - ax) >= Math.abs(by - ay), ox = level ? 0 : -1, oy = level ? 1 : 0;
+        for (let s = 0; s <= n; s++) { const cx = Math.round(ax + (bx - ax) * s / n), cy = Math.round(ay + (by - ay) * s / n);
+          for (const [x, y] of [[cx, cy], [cx + ox, cy + oy]]) {
+            if (!inMap(x, y) || (x >= hf[0] && x <= hf[2] && y >= hf[1] && y <= hf[3])) continue;
+            const t = map[y * MAP_W + x];
+            // (the river beside a bridge: the road narrows to its planks there; Stage 5 lays the Old Bridge three wide)
+            if (t === T.WATER && N8.some(([dx, dy]) => inMap(x + dx, y + dy) && map[(y + dy) * MAP_W + x + dx] === BRIDGE)) continue;
+            if ((t === PROP && PROP >= 0) || (SOLID.has(t) && !PUSH_THROUGH.has(t) && !OK.has(t))) bad.push(id + ' ' + x + ',' + y + ' ' + tileName(t)); } } } }
+    return [...new Set(bad)];
+  }
+  // aggressive spawns: 6+ tiles from every main road's centre line, but the fights the knight chooses where the road meets
+  // them (§4): the camp, the outposts, the bandit hills; and the story's own ground a road goes through to its end (the
+  // Ashfields' dragons and drakes, the lair, and Hollowford's occupiers, whom the Long Road and the Goblin Road meet in
+  // Hollowford's square). 93-spread moves every other one off the roads.
+  const SPAWN_PLACES = ['camp', 'outpost_north', 'outpost_south', 'bandit_hills', 'fang_lair', 'hollowford'];
+  function spawnsOffRoads() {
+    const segD = (px, py, ax, ay, bx, by) => { const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy || 1, t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / l2)); return Math.hypot(px - ax - t * dx, py - ay - t * dy); };
+    const roads = A.MAIN_ROADS.map(id => [id, A.track(id)]), inPlace = (x, y) => SPAWN_PLACES.some(id => { const b = A.box(id); return b && x >= b[0] - 6 && x <= b[2] + 6 && y >= b[1] - 6 && y <= b[3] + 6; });
+    const ashfields = (x, y) => { const r = regionAt(x, y); return r && (r.name === 'The Ashfields' || r.name === "The Fang's Lair"); };
+    const near = [], chosen = [];
+    for (const s of MONSTER_SPAWNS) { const d = MONSTER_DEFS[s.type]; if (!d || !d.aggro) continue;
+      let best = null; for (const [id, pl] of roads) for (let k = 1; k < pl.length; k++) { const v = segD(s.tx, s.ty, pl[k - 1][0], pl[k - 1][1], pl[k][0], pl[k][1]); if (!best || v < best[1]) best = [id, v]; }
+      if (!best || best[1] >= 6) continue;
+      const row = s.type + ' ' + s.tx + ',' + s.ty + ' ' + best[1].toFixed(1) + ' off ' + best[0];
+      (s.camp || inPlace(s.tx, s.ty) || ashfields(s.tx, s.ty) ? chosen : near).push(row);
+    }
+    return { near, chosen };
+  }
+
+  // ---------- ADDENDUM C: the outer 8-tile ring of the east and south edges stays generic ----------
+  // no place's box, no port, no building, no person and no fixed wall or cliff with x >= MAP_W - 8 or y >= MAP_H - 8, but
+  // the east sea itself and the open grounds (the Ash Wastes are reserved Wilds; the Jungle and the Grub Fields run to the edge)
+  const EDGE = 8;
+  function edgeRing() {
+    const inRing = (x, y) => x >= MAP_W - EDGE || y >= MAP_H - EDGE, bad = [];
+    const boxIn = b => b[2] >= MAP_W - EDGE || b[3] >= MAP_H - EDGE;
+    for (const id of Object.keys(A.ANCHORS)) { const b = A.box(id); if (b && id !== 'ash_wastes' && boxIn(b)) bad.push('place ' + id); }
+    for (const id of Object.keys(A.PORTS)) { const [x, y] = P(id); if (inRing(x, y)) bad.push('port ' + id); }
+    for (const b of BUILDINGS) if (inRing(b.x + b.w - 1, b.y + b.h - 1)) bad.push('building ' + b.id);
+    for (const n of NPCS) if (inRing(n.x, n.y)) bad.push('person ' + n.id);
+    const fixed = new Set(A.FIXED_TILES.map(Tn).filter(v => v >= 0)); let walls = 0, wallAt = null;
+    for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) { if (!inRing(x, y) || !fixed.has(map[y * MAP_W + x])) continue; walls++; if (!wallAt) wallAt = [x, y, tileName(map[y * MAP_W + x])]; }
+    if (walls) bad.push(walls + ' fixed wall or cliff tiles, first ' + wallAt.join(','));
+    // and the east sea is water from end to end
+    const sea = A.GROUNDS.east_sea; let dry = 0; for (let y = sea[1]; y <= sea[3]; y++) for (let x = sea[0]; x <= sea[2]; x++) if (map[y * MAP_W + x] !== T.WATER) dry++;
+    return { bad, dry, ring: EDGE };
+  }
+
+  // ---------- the beat-gap report (§6; report-only in Stage 4) ----------
+  // along each main road, the beats within 10 tiles of its centre line: a STOP is something to do (a person who talks, a
+  // monster's spawn, a signpost, a built place's box, a shop or quest marker); a GLANCE is a landmark on screen (a stop,
+  // a building, a reserved place's stakes, the river or the sea, a bridge, a wall). Reports the longest gap of each.
+  function beatGaps() {
+    const segs = [], beats = [];
+    const BRIDGE = Tn('BRIDGE'), WALLISH = new Set([T.TOWN_WALL, Tn('CLIFF'), Tn('PALISADE')].filter(v => v >= 0));
+    for (const n of NPCS) if (!n.ghost) beats.push([n.x, n.y, 'stop', 'person ' + n.id]);
+    for (const s of MONSTER_SPAWNS) beats.push([s.tx, s.ty, 'stop', 'spawn ' + s.type]);
+    if (window.SPREAD_GROUND) for (const [x, y] of SPREAD_GROUND.signs) beats.push([x, y, 'stop', 'signpost']);
+    beats.push([SIGN_TILE.x, SIGN_TILE.y, 'stop', 'the story signpost']);
+    for (const id of Object.keys(A.ANCHORS)) { const b = A.box(id); if (!b) continue; const kind = A.ANCHORS[id].kind === 'place' ? 'stop' : 'glance';
+      for (let y = b[1]; y <= b[3]; y += 2) for (let x = b[0]; x <= b[2]; x += 2) beats.push([x, y, kind, id]); }
+    for (const b of BUILDINGS) beats.push([b.x, b.y, 'glance', 'building']);
+    for (let y = 0; y < MAP_H; y += 2) for (let x = 0; x < MAP_W; x += 2) { const t = map[y * MAP_W + x]; if (t === T.WATER || t === BRIDGE || WALLISH.has(t)) beats.push([x, y, 'glance', tileName(t)]); }
+    const out = [];
+    for (const id of A.MAIN_ROADS) {
+      const pl = A.track(id); let along = 0; const stops = [], glances = [];
+      for (let k = 1; k < pl.length; k++) { const [ax, ay] = pl[k - 1], [bx, by] = pl[k], L = Math.hypot(bx - ax, by - ay), l2 = L * L || 1;
+        for (const [x, y, kind] of beats) { const t = Math.max(0, Math.min(1, ((x - ax) * (bx - ax) + (y - ay) * (by - ay)) / l2)), d = Math.hypot(x - ax - t * (bx - ax), y - ay - t * (by - ay));
+          if (d > 10) continue; const at = along + t * L; glances.push(at); if (kind === 'stop') stops.push(at); }
+        along += L; }
+      const gap = list => { const s = [0, ...list.sort((a, b) => a - b), along]; let g = 0; for (let k = 1; k < s.length; k++) g = Math.max(g, s[k] - s[k - 1]); return Math.round(g); };
+      out.push({ road: id, length: Math.round(along), stopGap: gap(stops), glanceGap: gap(glances) });
+    }
+    return out;
+  }
+
+  // the world as generated, every time it is (the suite before these checks has dug, built and burned; a reader of the
+  // generated world asks for this). A wrap, not a world pass: the Atlas's pass stays the last of HOOKS.world.
+  let SNAP = null;
+  { const _generateWorld = generateWorld; generateWorld = function () { const r = _generateWorld.apply(this, arguments); SNAP = map.slice(); return r; }; }
+
+  window.SPREAD_CHECKS = { walkClock, TRIPS, WALK_HELD, SEAM_EXEMPT, spacing, ports, gateFloods, scarpSeal, transects, roadsClear, spawnsOffRoads, edgeRing, beatGaps, walkTiles, flood, EDGE };
+
+  // ---------- the self-tests ----------
+  HOOKS.selfTest.push((check, F, h) => {
+    const PF = 'spread map: ';
+    // the checks read the world as generated (the suite before this has dug, built and burned): put the pristine map back
+    // for the duration, then the played one
+    const played = map.slice(); if (SNAP && SNAP.length === map.length) map.set(SNAP);
+    try {
+      { const s = spacing();
+        check(PF + "named places stand 25+ tiles apart, centre to centre (section 1's exceptions: the watchtower in the Old Bridge, Gull Isle by the dock, the Deepholm rock by the graveyard, Sylvaris in its ring; the open grounds and the drill field's lane are not named places)", s.near.length === 0 && s.places >= 30, s); }
+      { const rows = walkClock(), bad = rows.filter(r => r.inside ? !!r.held : !r.held || Math.abs(r.s - r.held.s) > 3);
+        check(PF + "the walk-clock (section 1): each trip on foot, the shortest 8-connected walk with root-2 diagonals over walkable ground, the story gates open, is inside its window, or held for the owner at its measured time (WALK_HELD, each with its reason)", bad.length === 0 && rows.length === TRIPS.length,
+          { table: rows.map(r => `${r.trip}: ${r.tiles} tiles, ${r.s} s (window ${r.lo}-${r.hi})${r.inside ? '' : r.held ? ' held' : ' OUTSIDE'}`), bad: bad.map(r => r.trip) }); }
+      { const r = ports();
+        check(PF + "every port is reached from the cave mouth on foot (story gates open; Harl's ferry and the boats count as the links they are), but the ones listed with their reason (Brightwater's landing by blimp, Wreck Rock, the strait's water)", r.missed.length === 0, r); }
+      { const r = gateFloods();
+        check(PF + "each story gate holds: with the Warden's gate shut nothing south of the rim is reached, with the lair gate shut not the summoning circle, with the palisade's gaps shut not the camp's walker, and on foot no tile east of the strait (the ferry)",
+          r.warden.length === 0 && r.lair.length === 0 && r.palisade.length === 0 && r.ferry.east === 0 && r.ringTiles > 40, r); }
+      { const r = scarpSeal();
+        check(PF + "the scarp seal: from the cave mouth the Wolfwood is reached by exactly the Old Bridge, the goblin-road bridge and the Agility 18 steps (all three shut: none of it; each one alone: all of it)",
+          r.none.length === 0 && Object.values(r.each).every(n => n === 5) && Object.values(r.tiles).every(n => n > 0), r); }
+      { const r = transects();
+        check(PF + "the land seams blend over 8 tiles or more: 20 lines across each (the Wolfwood / Jungle giants, the Ashfields' fade into the Jungle, the Jungle's edge on the Wilds, the burn round Hollowford, the quarry's edge), the median line's mixed run 8+ and no more than 5 lines nearly ruled (under 3: a road or a ford crossing); cliffs, water and story gates are exempt (SEAM_EXEMPT)",
+          r.length === 5 && r.every(s => s.median >= 8 && s.runs.filter(v => v < 3).length <= 5), { seams: r.map(s => ({ id: s.id, median: s.median, min: s.min, ruled: s.runs.filter(v => v < 3).length, runs: s.runs.join(' ') })), exempt: SEAM_EXEMPT }); }
+      { const bad = roadsClear();
+        check(PF + "the main roads are clear surface: no solid tile and no builders' prop on either lane of the six main roads (gates, doors, the story signpost and Hollowford's ruins aside)", bad.length === 0, { bad: bad.slice(0, 10), more: Math.max(0, bad.length - 10) }); }
+      { const r = spawnsOffRoads();
+        check(PF + "every aggressive spawn stands 6+ tiles off a main road's centre line, but the fights the road leads to (the camp, the outposts, the bandit hills, the lair, the Ashfields' dragons on the Ash Road)", r.near.length === 0, r); }
+      { const r = edgeRing();
+        check(PF + "ADDENDUM C: the map's outer 8-tile ring on the east and south holds no place, port, building, person, wall or cliff (the east sea aside, water end to end), so land can be added at an edge", r.bad.length === 0 && r.dry === 0, r); }
+      { const r = beatGaps();
+        check(PF + 'the beat-gap report runs (report-only in Stage 4: stakes are not stops; Stage 5 brings the Cave, Long and Sea Roads under 73 / 36 tiles)', r.length === A.MAIN_ROADS.length && r.every(q => q.length > 0), r); }
+      // regionAt asks the outlines directly (section 12): no bisect through REGIONS.find on the way
+      { const nf = Object.getOwnPropertyDescriptor(REGIONS, 'find'); let calls = 0;
+        Object.defineProperty(REGIONS, 'find', { value: function () { calls++; return nf.value.apply(this, arguments); }, writable: true, configurable: true, enumerable: false });
+        let got = null, want = null; try { const [x, y] = P('hollowford.square'); got = regionAt(x, y); want = WORLDSHAPE.regionAt(x, y); } finally { Object.defineProperty(REGIONS, 'find', nf); }
+        check(PF + 'regionAt asks the outlines directly once they are on (no bisect through REGIONS.find)', calls === 0 && !!got && got === want, { calls, got: got && got.name }); }
+    } finally { map.set(played); }
   });
 }
 

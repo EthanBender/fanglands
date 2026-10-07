@@ -447,8 +447,9 @@ window.FANGLANDS = {
       // patchy rather than a flat sheet, there must be open ground between it, and lava and obsidian must survive.
       check('ashfields: ash lies in patches — 25–80% of dragon country, scorch and bare dirt between, lava and obsidian kept', cover >= 0.25 && cover <= 0.8 && green > 500 && lava >= 40 && obs >= 30, { cover: +cover.toFixed(2), ash, area, openGround: green, lava, obs }); }
     { // the jungle runs south to the map edge: giant trees and ferns in the band y 140–178 at the old density
-      // (to the Sound's west shore: since the spread the Sound's deep water runs down the jungle's east side)
-      let trees = 0, ferns = 0, band = 0, row150 = 0; for (let y = AW.ty(140); y <= AW.ty(178); y++) for (let x = AW.tx(100), xe = Math.min(AW.tx(198), ATLAS.GROUNDS.sound[0] - 1); x <= xe; x++) { band++; const t = tileAt(x, y); if (t === T.JUNGLE) { trees++; if (y === AW.ty(150)) row150++; } else if (t === T.FERN) ferns++; }
+      // (to the Sound's west shore: since the spread the Sound's deep water runs down the jungle's east side; and from
+      // eight tiles in from the jungle's west edge: since Stage 4b its first eight tiles blend with the Wilds, 92's soft seam)
+      let trees = 0, ferns = 0, band = 0, row150 = 0; for (let y = AW.ty(140); y <= AW.ty(178); y++) for (let x = AW.tx(100) + 8, xe = Math.min(AW.tx(198), ATLAS.GROUNDS.sound[0] - 1); x <= xe; x++) { band++; const t = tileAt(x, y); if (t === T.JUNGLE) { trees++; if (y === AW.ty(150)) row150++; } else if (t === T.FERN) ferns++; }
       check('jungle: the biome continues south (y 140–178, x 100–198) at the same density; jungle trees stand at y 150', row150 >= 20 && trees / band > 0.3 && trees / band < 0.5 && ferns / band > 0.06 && regionAt(AW.tx(150), AW.ty(160)).name === 'The Jungle' && regionAt(...ATLAS.frame('sylvaris').p(133, 120)).name === 'Sylvaris', { row150, trees: +(trees / band).toFixed(2), ferns: +(ferns / band).toFixed(2), region: regionAt(AW.tx(150), AW.ty(160)).name }); }
     peace(false);
     for (const h of HOOKS.selfTest) h(check, F, { give, peace, openSpot, clearJunk });
