@@ -40267,7 +40267,10 @@ window.RETALIATE = RETALIATE;
       NET.enabled = true; NET.token = 'view-test'; NET.useFake(fake); NET.connect();
       const hello = sent.find(m => m.t === 'hello');
       const caps = !!hello && Array.isArray(hello.caps) && hello.caps.includes('view');
-      // the knight beside a goblin that keeps moving (its row changes every frame), nobody else on the map
+      // the knight beside a goblin that keeps moving (its row changes every frame), nobody else on the map. The goblin starts on
+      // a whole pixel: the row rounds x, and a goblin whose x ends in .25 to .5 would round both of its jiggle's steps to the
+      // same pixel (an unchanged row: fewer snapshots), which a world laid out otherwise (the Great Spread) can hand it
+      gob.x = Math.round(gob.x);
       player.x = gob.x - 3 * TILE; player.y = gob.y;
       const run = (secs, move) => { for (let i = 0; i < secs * 60; i++) { if (move) { gob.x += (i % 2 ? 1 : -1) * 0.75; gob.stunT = 1; } F.step([]); } };
       sent.length = 0; run(10, true);
