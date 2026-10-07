@@ -245,7 +245,7 @@
     const town = !!player.visitedVillage || quest.stage >= 5;
     const want = town ? VILLAGE_SPAWN : SPAWN;
     const sp = safeSpot(want.x, want.y, 13, 'person') || respawnPoint();
-    player.x = sp.x; player.y = sp.y; areaBanner = null;
+    player.x = sp.x; player.y = sp.y; areaBanner = null; clearBanners();
     R.wake = [Math.floor(player.x / TILE), Math.floor(player.y / TILE)]; R.town = town;
     // the positions the quest keeps (§10's table)
     const q = quest;
@@ -395,6 +395,21 @@
     K.plate(g, px + 18, by, inner, R, 'Open the map', 'Open the map', () => { closePanel(); openPanel('map'); }, 'primary', true);
     K.plate(g, px + 18, by + R + G, inner, R, 'Close', 'Close', () => closePanel(), null, true);
   };
+
+  // the panel audit's scene (PLACE_KIT): the page as a knight with everything to be told sees it, and as a plain one
+  {
+    let keep;
+    const full = { told: true, owed: [{ id: 'bed', qty: 1 }], lines: ['While you slept, the land grew and settled. You wake in Thistledown.', 'Back in your bank: 3 planks, a lodestone and a bed.', 'In your pack: 2 potato seeds.',
+      'Aldous the banker is keeping a bed for you. He hands them over when your bank has room.', "Cinder is tied at Fennick's rail.", 'Your walker, 2 bulldozers, 12 walker wrecks and 3 bulldozer wrecks wait at the Dozer Bay.'] };
+    PLACE_KIT.scene({
+      id: 'newworld', panel: 'newworld', name: 'NEW WORLD (everything to tell, and nothing)',
+      setup() { keep = quest.spread; return () => { quest.spread = keep; }; },
+      variants: [
+        { name: '', open: () => { quest.spread = JSON.parse(JSON.stringify(full)); openPanel('newworld'); } },
+        { name: 'plain', open: () => { quest.spread = { told: true, owed: [], lines: [full.lines[0].replace('Thistledown', 'the cave')] }; openPanel('newworld'); } },
+      ],
+    });
+  }
 
   // ---------- self-test: an old knight comes into the new world ----------
   // A world-1 save made here by hand: the old map's cells are this map's cells through the frames' inverses (F.ix, F.iy),

@@ -292,6 +292,101 @@ purpose, so its transport and plate counts would name every blended tile).
 
 **Fingerprint.** `docs/spread/baseline-fingerprint.json` is regenerated from this build (4b changes the map on purpose): fingerprint 35efbd8a5f6807fc, `--diff` identical; later stages diff against it.
 
+## Stage 4c: THE SAVE MIGRATION (feat/spread)
+
+Built on 4b (ff826c0), 7 Oct 2026. Not deployed. The owner's decision (2 Oct): every knight goes back to spawn; quest
+progress is kept; what the story changed is made again from quest state; everything else placed or changed on the old map
+is cleared, and what he placed comes back.
+
+**The versions.** `WORLD_V` 2, `WORLD_REV` 0 (`src/00-core.js`); `save()` writes `worldRev` beside `worldV` and `mapW`.
+`load()` runs `HOOKS.saveIn` for a save below `WORLD_V` (or, later, below `WORLD_REV`); a newer world's save is refused as
+since Stage 0. `ATLAS.REVS` (empty) holds the later stages' footprints.
+
+**`src/97-spread.js`** (`window.SPREAD`):
+- `SPREAD.prepare(d)` (HOOKS.saveIn): the old `mapDiffs`, `crops`, `regrow` and `fires` come out of the save, decoded with
+  the old width (`mapW`, or 160 with none) into old x, y and the tile's NAME, so the core never lays an old index on the new
+  map; `player.cityV = 1` (95's own capital pass has nothing left to move); the old region, walk path and tied mare are
+  cleared. It holds `SAVE_LOCK` (with `SAVE_KEPT`'s words) until the knight stands in the new world: no save, here or to
+  the cloud, can write a half-moved knight. (A save made inside a dungeon or on the island already holds the step outside:
+  16-instances' save; there is no other inside-record to clear.)
+- Its load wrapper is the outermost (97 sorts after 96); `SPREAD.finish()` then:
+  - the knight: off his machine (the walker, bulldozer or Barrelbeast is parked, its hp kept as `exitMech` keeps it; the
+    mare is tied), bed and home cleared, at the Fountain Square (`VILLAGE_SPAWN`) if he has been to Thistledown or is at
+    stage 5 or more, else at the cave's `SPAWN`, facing south, region and banners cleared;
+  - `quest.markers.seen` keys through `oldToNew` (open land through the world), kept where that marker stands;
+    `player.chests` through `oldToNew` (dropped on open land); `quest.fang.looted` through the lair's frame; graves and the
+    night's grave tally cleared; the boats at the mooring; `quest.hollowford.wreck` moved;
+  - every `HOOKS.remake`, recording the cells each one changed;
+  - the old diffs sorted by NAME: (d) a story tile already made again at its frame-mapped cell; (b) `SPREAD.MACHINES`
+    (`MECH`, `DOZER`, `BEAST`, `WRECK`, `DOZER_WRECK`, `BEAST_WRECK`) parked round the Dozer Bay with 95's `parkSpot`
+    rings (`CAPITAL.parkSpot`, 1..8 then 1..16; past that any open ground within 40, and none at all throws: the save is
+    kept, never a machine lost); `HORSE`: Cinder tied at Fennick's rail the same way; (c) crops: a growing one gives its
+    seed back, a ripe one 3 of its harvest (the middle of a harvest's 2 to 4: no dice); a tile the new world already has
+    at that cell is left; (a) a tile some item places (`HOOKS.placedFrom`, then `ITEMS[id].place`, 95's
+    `placedItemFor`) comes back: to the bank, else the pack, else `quest.spread.owed`; (e) everything else is dropped
+    (regrown trees and rocks, stumps, rubble, soil, fires, mined seams, cleared ground; and the regrowth and fire lists);
+  - the Voice, once: "While you slept, the land grew and settled. You wake in Thistledown." (or "in the cave"), "Back in
+    your bank: 3 planks, a lodestone and a bed.", "In your pack: ...", "Aldous the banker is keeping a bed for you. He hands
+    them over when your bank has room.", "Cinder is tied at Fennick's rail.", "Your walker, 2 bulldozers and 12 walker
+    wrecks wait at the Dozer Bay.";
+  - `quest.spread = { v, at (his play seconds: no clock, so the output depends on the save alone), from, refunds, parked,
+    mare, remade, dropped, owed, lines, told }` (spec section 10's `d.spread`, kept on the quest so the save carries it);
+  - lets go of `SAVE_LOCK` and saves: worldV 2 from then on, so a second load changes nothing.
+- The NEW WORLD page (`HOOKS.panel.newworld`) opens by itself once the Voice is done (a NEW WORLD plaque stands in the
+  column until then): the same lines, an "Open the map" plate (a full row tall) that opens the map on the gold ring of his
+  next quest step, and Close. Its panel-audit scene passes at all 8 sizes, touch and mouse, normal and large text.
+- Aldous pays out what he keeps on each bank visit (the bank panel opening, the island's chest too), as many as fit, and
+  says "I am keeping some of your things for you. Make room in your bank and I will hand them over." while any are left.
+- worldRev sweeps: a save of this world with an older `worldRev` has only the diffs inside `ATLAS.REVS`' boxes taken out
+  and sorted the same way (`SPREAD.sweep(boxes, ground)` does it to the live game for the self-test); the knight stays.
+- `SPREAD.HANDLED`: every place in a save that holds a map position, and what the migration does with it.
+
+**HOOKS.remake** (each says nothing, pays nothing, saves nothing, and runs twice to the same map):
+| File | Reads | Makes again |
+|---|---|---|
+| 35-night | `quest.night.crypt` | the crypt door at `graveyard.crypt` |
+| 37-dragonkillers | `quest.dk.gate` | the warden's gate tiles as dirt |
+| 28-thefang | `quest.fang.gateOpen` | the lair gate as cave floor |
+| 20-hollowford | `hf.freed`; `hf.wreck` | the chapel bars as floor; the beast's wreck at its moved cell (or the first free spot by the War Shed), while it still lay there on the old map (`SPREAD.remaking.wreckLies`); a rebuilt beast is a machine and is parked |
+| 31-rebuild | `quest.rebuild.done` | each project's tiles (`TILES_OF`, split from what the project says and pays) |
+| 41-guild | `quest.guild.founded` | the hall (its rank changes no tile) |
+| 33-goblincity | `quest.tinker.stage >= 3` | the lever, on the overworld only in a build without instances |
+| 69-axestump | `player.tookAxe` | the empty stump |
+| 95-thistledown | `quest.capital` | nothing: made from quest state at world generation; the coverage proof finds no story tile left in Thistledown's box |
+
+**The changeTile classification gate.** `docs/spread/changetile.json` counts every `changeTile` call in src/ (211 in 40
+files) with what it writes and how the migration treats it, and names the file whose remake makes a story tile;
+`tools/changetile-gate.mjs` (in `build.sh`) fails on a changed count, an unlisted file, or a story file without a
+`HOOKS.remake`. Proved by mutation: one more call in 45-progression fails it, and so does 35-night without its remake.
+
+**The proofs** (`node tools/spread-migrate-check.mjs`, spec section 10 proofs 1-4). Each save goes into the slot and
+through `title.startSlot`, as on a page; each must keep its stage and every other flag and count of the old quest and
+knight (bar the positions section 10 moves), lose no item (pack, bank, gear, Death's chest and Aldous's keeping, at least
+the old number of each) and no coin, keep every machine (each kind counted, the ridden one included, each parked within 16
+of the Dozer Bay) and the mare (tied, within 8 of her rail), wake on a walkable tile by the right spawn, be stamped worldV 2
+/ worldRev 0 / mapW 400 and unlocked, change nothing on a second load, and pass the sweep.
+1. The synthetic matrix: `tools/spread-old-saves.mjs` makes 24 old saves on the Stage 3 build (d523504, 260 x 180, WORLD_V
+   1) with the old game's own rules (`tests/fixtures/spread-matrix.json`): tutorial, mid-story, end-game, bank full, bank
+   and pack full (owed), riding the walker, riding the bulldozer, riding the mare, the mare out in the Wolfwood, a bed and a
+   lodestone home, crops and fires, the crypt open, the warden's gate, the bars freed, the lair gate, Hollowford rebuilt
+   through Nell's board (every project), the guild at its top rank, the beast rebuilt, the beast ridden, the wrecks with Sera
+   following, inside the Spider Den, on the island, a pinned save from the 160-wide map (no mapW, no worldV), a fallen
+   knight. Planks and doors go on the island only since 3 Oct (64-island), so the generator lays an old plank or door with
+   the old game's own changeTile, as Q did before. All 24 pass.
+2. Coverage: `tests/fixtures/spread-old-end.json` migrated: FLOOR 7/7 (the bars), DIRT 3/3 (the warden's gate), CAVE 3/3
+   (the lair gate), STUMP 1/1 (the axe), BEAST_WRECK 1/1 at their frame-mapped cells; 5 old diffs in Thistledown's box, no
+   story tile among them. The rebuilt and founded saves remake 195 (31-rebuild) and 42 (41-guild) tiles; one old cobble of
+   the square is not re-paved: Stage 4a's road signpost stands on that cell (old 140,78, new 226,131).
+3. The sweep: every position-shaped value (a number pair, `{x, y}`, `{tx, ty}`, `'x,y'`) of every migrated save is on
+   `SPREAD.HANDLED`: player, facing, companion, horse.at, chests, house.grow (the island), dwarf.chests and
+   instances.chests (instances), hollowford.wreck, markers.seen.
+4. The real saves: the pre-spread-s23 admin export (`~/.fanglands/work/spread/saves-export.json`, used locally only; the tool
+   reads `saves` and `save_pins` and prints knight names, stages and counts only): all 94 saves (93 versions of 31 knights and the one pin) pass, with 0
+   stage changes and 0 lost machines, items or coins. 63 wake on the Fountain Square, 31 in the cave (knights below stage 5
+   who never reached Thistledown); 174 machines and wrecks parked (all within 2 tiles of the Dozer Bay), 12 mares tied
+   (within 1 of the rail), 13 saves get things back in the bank, nothing owed. The per-knight table:
+   `node tools/spread-migrate-check.mjs --export ~/.fanglands/work/spread/saves-export.json` (281 s).
+
 ## Proving "nothing visible changed" (spec §9.4)
 
 ```

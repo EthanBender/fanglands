@@ -72,11 +72,11 @@
       check(P + 'while locked nothing is written: the slot and its stamp keep the newer knight, no other key changes (the title\'s mirror only ever holds that same save) and no PUT /api/save goes out (save, flush, push, the welcome)', changed.length === 0 && puts.length === 0 && (!window.CLOUD || CLOUD.pending === null), { changed, puts: puts.length, pending: window.CLOUD && CLOUD.pending });
       render(); const plaque = buttons.find(b => b.label === 'NEWER WORLD');
       check(P + 'the NEWER WORLD plaque is up and its tap reloads the page', !!plaque && plaque.w >= 44 && plaque.h >= 32, { plaque: !!plaque });
-      // a world-1 save (no worldV, or worldV 1) still loads exactly as before
+      // a world-1 save (no worldV, or worldV 1) loads: 97-spread's migration brings it into this world
       // (no hand reset of SAVE_LOCK here: load() itself clears it for the knight it reads)
       const one = JSON.parse(was.slotRaw); delete one.worldV; localStorage.setItem(title.slotKey(title.slot), JSON.stringify(one));
       const loads = load() === true && !SAVE_LOCK; save(); const wrote = JSON.parse(localStorage.getItem(title.slotKey(title.slot)) || '{}');
-      check(P + 'a world-1 save loads as before, and a save names its world (worldV ' + WORLD_V + ')', loads && wrote.worldV === WORLD_V, { loads, worldV: wrote.worldV });
+      check(P + 'a world-1 save loads (the spread brings it into this world, unlocked), and a save names its world (worldV ' + WORLD_V + ')', loads && wrote.worldV === WORLD_V, { loads, worldV: wrote.worldV });
     } finally {
       SAVE_LOCK = false;
       if (window.CLOUD) CLOUD.reset(); NET.disconnect(); NET.fake = was.fake; NET.enabled = was.enabled; NET.setToken(was.token); NET.status = 'off'; NET.me = null;
