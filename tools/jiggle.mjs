@@ -578,5 +578,5 @@ fs.writeFileSync(path.join(WORK, 'report.json'), JSON.stringify(report, null, 1)
 // printed and kept in report.json, and counted in the exit code only with --spread-gate
 const reds = report.variants.filter(v => !v.ok).length + (report.world && !report.world.ok ? 1 : 0) + (flag('--spread-gate') && report.spread && !report.spread.ok ? 1 : 0);
 if (report.spread && !flag('--spread-gate')) console.log(`the real spread: ${report.spread.ok ? 'green' : 'RED'} (a rehearsal of Stage 4a, not counted below; --spread-gate counts it)`);
-console.log(`jiggle: ${report.variants.length} moved group${report.variants.length === 1 ? '' : 's'}${report.world ? ' + the x' + SCALE + ' world' : ''}${report.spread ? ' + the real spread' : ''}, ${reds ? reds + ' RED' : 'all green'} (${Math.round((Date.now() - t0) / 1000)} s); ${path.join(WORK, 'report.json')}`);
+console.log(`jiggle: ${report.variants.length} moved group${report.variants.length === 1 ? '' : 's'}${report.world ? ' + the x' + SCALE + ' world' : ''}${report.spread ? ' + the real spread' : ''}, ${reds ? reds + ' RED' : 'all green'}${report.spread && !report.spread.ok && !flag('--spread-gate') ? ' (the real spread RED, not counted)' : ''} (${Math.round((Date.now() - t0) / 1000)} s); ${path.join(WORK, 'report.json')}`);
 process.exit(reds ? 1 : 0);
