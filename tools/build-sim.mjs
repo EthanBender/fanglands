@@ -55,6 +55,8 @@ export const STRIP_FILES = [
   '83-townsart', '83-townsfolk',
   // the mounts' look (the knight's machines in the monster refit's art, a friend's mount online): pictures only, no rules
   '84-mountlook',
+  // the world map's place names (the Great Spread, Stage 4b; ADDENDUM B): the map panel's labels, pictures only, no rules
+  '61-maplabels',
 ];
 // What a stripped name reads before anything is written to it (the rest reads as the no-op stand-in).
 const STUB_SEED = { title: { active: false, bootActive: false } };
