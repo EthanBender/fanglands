@@ -138,7 +138,7 @@ const PROBE_SRC = `function __simProbe() { return { now: Date.now(), date: new D
 // checks press. A check opens a panel and taps its buttons; the buttons are laid out by the drawing (08-draw, 09-render,
 // 10-hud, 59-hudkit), the title's own (14-title), and the playthrough bot (42-playthrough) is a test that plays the game
 // through its rules. Everything else on STRIP_FILES stays a stand-in, exactly as on the server.
-export const TEST_UI_FILES = ['08-draw', '09-render', '10-hud', '59-hudkit', '14-title', '42-playthrough'];
+export const TEST_UI_FILES = ['08-draw', '09-render', '10-hud', '59-hudkit', '14-title', '42-playthrough', '61-maplabels'];   // (61-maplabels: the map panel's names, drawn by 10-hud's map panel)
 
 export function buildSim({ html, strip = false, keepTests = false, testUi = false } = {}) {
   let script = html.slice(html.indexOf('<script>') + 8, html.lastIndexOf('</script>'));

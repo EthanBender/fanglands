@@ -282,6 +282,14 @@ counts; 93-ashedge's charred trees (x2.5); 39's coast sand rim (x1.6); 61-marker
 32-beast rams along the side with open ground; 29-quests fishes in peace; 16-instances hears the place names and no
 person (people are markers).
 
+**Proved on the 4b build** (7 Oct 2026): `./build.sh` (literals gate 142 files, 0 bare; compass all hold); `node
+tools/headless.js` ALL 1364 PASS; `--play` ALL 1365 PASS (stage 16, nothing forced, the Fang dead); `node --test
+online/test/` 295 pass; atlas-drift (atlas.json regenerated, hash bd8d810602a3fcac); build-sim `--strip --reads` 0 not
+on the list (61-maplabels is stripped from the server copy and given back with the drawing in sim-suite's 1b); mmo-sim,
+`--room`, `--sim`; dom-keys; mmo-sim-admin; mmo-sim-party; mmo-sim-world; sim-suite ALL 28 PASS; boot-budget all within
+budget. Not re-run: `tools/jiggle.mjs --spread-only` (it rehearses the 4a move against d523504; 4b changes the land on
+purpose, so its transport and plate counts would name every blended tile).
+
 **Fingerprint.** `docs/spread/baseline-fingerprint.json` is regenerated from this build (4b changes the map on purpose): fingerprint 35efbd8a5f6807fc, `--diff` identical; later stages diff against it.
 
 ## Proving "nothing visible changed" (spec §9.4)
