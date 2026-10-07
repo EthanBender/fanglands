@@ -153,7 +153,8 @@ mmo-sim-world; sim-suite ALL 28 PASS; fingerprint `--diff` identical to the base
 hold, every pin holds). 95's C10b and C11 send a following hero away while they press E (a hero who follows can stand in
 front of the knight after a teleport and take the E; the playthrough leaves one following).
 
-**Walk-clock on this map, for 4b** (the bot's walk at a knight's foot speed, seconds; the spec's windows):
+**Walk-clock on this map, for 4b** (the shortest walk over open ground at a knight's foot speed, in seconds: a lower
+bound, not the bot's walk; 4b's walk-clock below gives both; the spec's windows):
 
 | Trip | Now | Window |
 | --- | --- | --- |
@@ -235,17 +236,24 @@ the last world pass).
 **The walk-clock** (an 8-connected walk, root-2 diagonals, no corner cut, story gates open, the Agility steps shut, at
 175 px/s):
 
-| Trip | Tiles | Seconds | Window | |
-| --- | --- | --- | --- | --- |
-| Cave mouth to Fountain Square | 167 | 46 | 40-55 | inside |
-| Fountain Square to Hollowford square | 124 | 34 | 45-62 | short, held |
-| Fountain Square to Harl's dock | 109 | 30 | 26-40 | inside |
-| Fountain Square to the Warden's post | 144 | 39 | 45-65 | short, held |
-| Fountain Square to Wren's door | 174 | 48 | 50-70 | short, held |
-| Hollowford square to the Sylvaris gap | 106 | 29 | 18-32 | inside |
-| Cave mouth to the Fang's Lair gate | 318 | 87 | 100-135 | short, held |
+| Trip | Tiles | Seconds (shortest) | Seconds (walked) | Window | |
+| --- | --- | --- | --- | --- | --- |
+| Cave mouth to Fountain Square | 167 | 46 | 52.3 | 40-55 | inside |
+| Fountain Square to Hollowford square | 124 | 34 | 38.7 | 45-62 | short both ways, held |
+| Fountain Square to Harl's dock | 109 | 30 | 34.1 | 26-40 | inside |
+| Fountain Square to the Warden's post | 144 | 39 | 43.9 | 45-65 | short both ways, held |
+| Fountain Square to Wren's door | 174 | 48 | 52.7 | 50-70 | short as the shortest; INSIDE when walked; held |
+| Hollowford square to the Sylvaris gap | 106 | 29 | 32.4 | 18-32 | inside as the shortest; 0.4 s OVER when walked |
+| Cave mouth to the Fang's Lair gate | 318 | 87 | 107.1 | 100-135 | short as the shortest; INSIDE when walked; held |
 
-Four trips are short, and **no track point or anchor move fixes them**: section 1's windows were drawn from the roads'
+"Shortest" is the walk-clock: the shortest 8-connected walk over open ground, a lower bound. "Walked" is the game's own
+bot (`FANGLANDS.walkTo`, every story gate open, 60 frames a second, a knight's foot speed), measured by the review of
+c34fddf and again on the fixed build (the same to 0.1 s): it walks round what the shortest walk cuts by a hair. On the
+mare each trip takes exactly half (Hollowford 19.4 s, the lair 36.0 s).
+
+**For the owner, both numbers:** on a real walk Wren (52.7 s) and the lair (107.1 s) are already inside their windows,
+Hollowford to the Sylvaris gap (32.4 s) is just over its 32, and Hollowford (38.7) and the Warden (43.9) stay short. As
+the shortest walk four trips are short, and **no track point or anchor move fixes them**: section 1's windows were drawn from the roads'
 lengths, and the walk-clock is the shortest walk over open ground, which cuts every bend of a road. Hollowford is 112
 straight tiles from the square by the goblin-road bridge (45 s is 164); the open Wolfwood lets the walk to the Warden's
 post and on to the lair go straight down from the Old Bridge instead of round by the inn; Wren is as far by the open
@@ -270,8 +278,10 @@ a direction or distance word; 73 rows, 40 on the map (each within 67.5 degrees o
 Atlas), 33 local (an instance, or the inside of a place that moved whole, or a figure of speech). The weakest on the
 map: "a village east of Thistledown" (Hollowford is 50 degrees round to the south-east, as it was on the old map).
 
-**The boot budget (`tools/boot-budget.mjs`).** node `generateWorld` 1.43 s (budget 2.0; 4a was 1.85 s before 92's
-incremental re-flood); Chromium at 4x CPU 3.84 s (budget 4.0: little room); workerd from `tools/sim-bench.mjs`
+**The boot budget (`tools/boot-budget.mjs`).** (Superseded by the review's fixes below: 92's step 7b grows its floods
+instead of flooding again, and the budget is a gate in `build.sh` on the slowest run.) At 4b: node `generateWorld` 1.43 s
+(budget 2.0; 4a was 1.85 s before 92's incremental re-flood); Chromium at 4x CPU 3.84 s as a median of warm runs (budget
+4.0; the review measured 7 of 13 runs over, every first run); workerd from `tools/sim-bench.mjs`
 (local `wrangler dev --local`, never a live Worker): the overworld copy boots in 2.57, 2.75 and 3.11 s inside workerd (budget 3.5: little room) and the isolate holds 17.8 MB with the overworld (budget 45).
 
 **Re-baselined counts** (each with its reason in the check): 11-main's Ashfields open ground, lava and obsidian, and
@@ -318,9 +328,12 @@ since Stage 0. `ATLAS.REVS` (empty) holds the later stages' footprints.
     night's grave tally cleared; the boats at the mooring; `quest.hollowford.wreck` moved;
   - every `HOOKS.remake`, recording the cells each one changed;
   - the old diffs sorted by NAME: (d) a story tile already made again at its frame-mapped cell; (b) `SPREAD.MACHINES`
-    (`MECH`, `DOZER`, `BEAST`, `WRECK`, `DOZER_WRECK`, `BEAST_WRECK`) parked round the Dozer Bay with 95's `parkSpot`
-    rings (`CAPITAL.parkSpot`, 1..8 then 1..16; past that any open ground within 40, and none at all throws: the save is
-    kept, never a machine lost); `HORSE`: Cinder tied at Fennick's rail the same way; (c) crops: a growing one gives its
+    (`MECH`, `DOZER`, `BEAST`, `WRECK`, `DOZER_WRECK`, `BEAST_WRECK`) parked round the Bulldozer bay (the port
+    `thistledown.dozer_bay`, in the smithy yard behind Brakka's) with 95's `parkSpot` rings (`CAPITAL.parkSpot`, 1..8 then
+    1..16; past that any open ground within 40, and none at all throws: the save is kept, never a machine lost), each cell
+    tried nearest first and taken only if the parking keeps the town's walks (the review's fix, below: nothing it touches
+    is anything the world built, and a flood from the square still reaches every cell it did and a free side of every
+    parked machine); `HORSE`: Cinder tied at Fennick's rail the same way; (c) crops: a growing one gives its
     seed back, a ripe one 3 of its harvest (the middle of a harvest's 2 to 4: no dice); a tile the new world already has
     at that cell is left; (a) a tile some item places (`HOOKS.placedFrom`, then `ITEMS[id].place`, 95's
     `placedItemFor`) comes back: to the bank, else the pack, else `quest.spread.owed`; (e) everything else is dropped
@@ -328,7 +341,7 @@ since Stage 0. `ATLAS.REVS` (empty) holds the later stages' footprints.
   - the Voice, once: "While you slept, the land grew and settled. You wake in Thistledown." (or "in the cave"), "Back in
     your bank: 3 planks, a lodestone and a bed.", "In your pack: ...", "Aldous the banker is keeping a bed for you. He hands
     them over when your bank has room.", "Cinder is tied at Fennick's rail.", "Your walker, 2 bulldozers and 12 walker
-    wrecks wait at the Dozer Bay.";
+    wrecks wait round the Bulldozer bay, behind Brakka's smithy.";
   - `quest.spread = { v, at (his play seconds: no clock, so the output depends on the save alone), from, refunds, parked,
     mare, remade, dropped, owed, lines, told }` (spec section 10's `d.spread`, kept on the quest so the save carries it);
   - lets go of `SAVE_LOCK` and saves: worldV 2 from then on, so a second load changes nothing.
@@ -362,8 +375,9 @@ files) with what it writes and how the migration treats it, and names the file w
 **The proofs** (`node tools/spread-migrate-check.mjs`, spec section 10 proofs 1-4). Each save goes into the slot and
 through `title.startSlot`, as on a page; each must keep its stage and every other flag and count of the old quest and
 knight (bar the positions section 10 moves), lose no item (pack, bank, gear, Death's chest and Aldous's keeping, at least
-the old number of each) and no coin, keep every machine (each kind counted, the ridden one included, each parked within 16
-of the Dozer Bay) and the mare (tied, within 8 of her rail), wake on a walkable tile by the right spawn, be stamped worldV 2
+the old number of each) and no coin, keep every machine (each kind counted, the ridden one included, each parked within 40
+of the Bulldozer bay) and the mare (tied, within 8 of her rail), keep the town's walks (from the square a knight reaches
+every person, door, marker and station a fresh game reaches, and a free side of every parked machine and the mare), wake on a walkable tile by the right spawn, be stamped worldV 2
 / worldRev 0 / mapW 400 and unlocked, change nothing on a second load, and pass the sweep.
 1. The synthetic matrix: `tools/spread-old-saves.mjs` makes 24 old saves on the Stage 3 build (d523504, 260 x 180, WORLD_V
    1) with the old game's own rules (`tests/fixtures/spread-matrix.json`): tutorial, mid-story, end-game, bank full, bank
@@ -383,7 +397,8 @@ of the Dozer Bay) and the mare (tied, within 8 of her rail), wake on a walkable 
 4. The real saves: the pre-spread-s23 admin export (`~/.fanglands/work/spread/saves-export.json`, used locally only; the tool
    reads `saves` and `save_pins` and prints knight names, stages and counts only): all 94 saves (93 versions of 31 knights and the one pin) pass, with 0
    stage changes and 0 lost machines, items or coins. 63 wake on the Fountain Square, 31 in the cave (knights below stage 5
-   who never reached Thistledown); 174 machines and wrecks parked (all within 2 tiles of the Dozer Bay), 12 mares tied
+   who never reached Thistledown); 174 machines and wrecks parked (on c34fddf all within 2 tiles of the bay, walling Brakka's yard off for 4 knights;
+after the review's fix within 3 tiles for 12 saves, 12 for 6, 13 for 3 and 15 for 3, every walk kept), 12 mares tied
    (within 1 of the rail), 13 saves get things back in the bank, nothing owed. The per-knight table:
    `node tools/spread-migrate-check.mjs --export ~/.fanglands/work/spread/saves-export.json` (281 s).
 
@@ -435,7 +450,9 @@ whole view would have to change (a later decision; the teacher view's own branch
 `node tools/boot-budget.mjs --workerd <bench.json>`: on the final 4d build the overworld copy boots in 2,385, 2,607 and
 2,408 ms inside workerd (budget 3,500), the isolate holds 28.3 MB with the overworld (budget 45), node's generateWorld
 1,447 ms (budget 2,000); the first 4d build measured 2,865, 2,895 and 3,017 ms and 24.5 MB. All inside, so no
-`online/src/world-<hash>.bin` snapshot (spec §7 writes one only when over). The margin is about 0.9 s.
+`online/src/world-<hash>.bin` snapshot (spec §7 writes one only when over). The margin is about 0.9 s. After the review's fixes
+(below): 1,370, 1,479 and 1,317 ms, 35.9 MB (the heap read moves by several MB from run to run), node 1,062 ms at its
+slowest; the margin is about 2 s.
 
 **The proofs** (logs in `~/.fanglands/work/spread/s4d/`).
 - The two-browser proof (`two-pages-final.txt`, screenshots in `shots/`): on a local `wrangler dev` (port 8812, `--var`
@@ -505,10 +522,70 @@ Then `~/.fanglands/tools/deploy-test.sh ~/fanglands-wt/spread` (it runs every ga
    ~/.fanglands/online-secrets.env` (dry run: check the Atlas is the new one), then the same with `--yes`.
 7. Watch: `GET /api/admin/sim` (every knight `same` once they reload), the parent page's saves for the first knights in
    (each newest save `worldV` 2), the mod log (the party row).
-8. Rollback if anything is wrong: check out the `pre-spread` tag and deploy it (client and server). Its Stage-0 guard
-   refuses a world-2 save and never writes over one. Then fix and roll forward (preferred), or restore a knight's kept
-   pre-spread version from the parent page (Saves, rollback: it is moved again on the next roll-forward), or, for the
-   whole world, `POST /api/admin/restore` with the bookmark from step 1.
+8. Rollback if anything is wrong. Roll forward if you can (fix, gates, deploy): every knight keeps his progress. If the
+   old map must come back:
+   - Per knight, BEFORE the code goes back (the new server holds them; the old one cannot read them), with nobody online:
+     on the parent page, Saves, "Last save from world 1 (the old map, before the Great Spread)", Go back to this one, for
+     each knight who has played on the new world. That save is kept apart (`save_worlds`) the moment his first world-2
+     save comes in, so it is there after any amount of play (the three kept versions are not: they turn over in about
+     30 s of play). Progress made on the new world is lost for that knight; he is moved again on the next roll-forward.
+   - Then check out the `pre-spread` tag and deploy it (client and server). Its Stage-0 guard refuses a world-2 save and
+     never writes over one, so a knight NOT rolled back above cannot play on the old world until the roll-forward.
+   - Or, for the whole world at once, `POST /api/admin/restore` with the bookmark from step 1: everyone's progress since
+     the deploy is lost.
+
+## Stage 4: the review of c34fddf, fixed (feat/spread, 7 Oct 2026)
+
+The four-lens review of c34fddf (`~/.fanglands/work/spread/review4-*`) found 2 majors and 9 minors. Each fix has a check that
+fails on c34fddf's code; probes and pictures in `~/.fanglands/work/spread/fix4/`.
+
+- **Machines walled off the smithy yard (major).** The migration parked up to 18 machines in Brakka's yard: Brakka, the
+  forge, the anvil and the Smithy door were cut off for 4 real knights (all 12 of their saves). Now each machine and the
+  mare is parked only where it touches nothing the world built, and only if the town's walks hold (a flood from the
+  Fountain Square reaches every cell it reached before the parking, and every parked machine keeps a free side);
+  `SPREAD.finish` records `walks: { cut, boxed }` and throws (keeping the old save) should either ever be above 0.
+  `tools/spread-migrate-check.mjs` checks it on its own flood: every person, door, map marker and station a fresh game
+  reaches, and a free side of each parked machine. 97-spread's self-test parks 18 machines and walks to Brakka, the forge,
+  the anvil, the bay and the Smithy door (with the old parking all five are cut off and 16 machines boxed in). The two
+  knights the review walked: both walk to Brakka now (the game's own bot, 577 frames), machines within 15 and 12 tiles of the
+  bay (`shots/yard-knight1.png`, `yard-knight5.png`).
+- **Where the machines are.** The Voice and the NEW WORLD page say "... wait round the Bulldozer bay, behind Brakka's
+  smithy." (the game's own panel calls it the Bulldozer bay; nothing was called the Dozer Bay).
+- **The walk-clock is a lower bound.** 4a's table is the shortest open-ground walk, not the bot's; 4b's table gives both
+  numbers and the owner's decision has both (Wren and the lair are inside their windows when walked; Hollowford to the
+  Sylvaris gap is 0.4 s over).
+- **The gold ring's place.** When the ring's own words name no place, the named place it stands in is lit (stages 5, 6, 7
+  and 11 to 15 lit nothing; `shots/map-1024x768-s12-lit.png`).
+- **Chapter 4's signpost.** The Cave Road's first post (71,24) says "→ Thistledown, south-east, past the old signpost."
+  (an arm names a landmark its road passes: the old signpost, the Old Bridge, the Crossroads Inn, the goblin bridge).
+- **"The Bandit Hills are coming."** A plural name takes "are"; a check reads every plaque.
+- **Signpost boards.** A board grows at its tail to fit its word (THISTLEDOWN ran 14 px past its 52 px board; in Chromium
+  31 of the 41 arms overflowed, none now; `shots/now-sign-71-24.png`). Only the fingerprint's render tables changed (2
+  calls more an arm: the measure), and the exports (SPREAD.reachFrom, BAY_WORDS, MAP_LABELS.placeOf, signBoard,
+  SIGN_ROOM): the baseline is this build's, 86da19ec5b8106f9.
+- **The per-knight rollback (release step 8).** The World keeps a knight's last world-1 save apart (`save_worlds`) the
+  moment his first world-2 save comes in; the parent page lists it and goes back to it (docs/ONLINE.md). Step 8 now says
+  to do that on the new server, before the code goes back.
+- **The export check and a knight saved at sea.** `quest.boats.sailing`'s fields no longer fail a correctly migrated save;
+  the matrix has a knight saved mid-voyage (made by the old game's ferry button): 25 saves.
+- **The boot budget (major).** 92-worldshape's step 7b flooded the map again after every dig; it grows its sets now (the
+  world byte-identical). generateWorld: node 1,456 to 1,515 -> 1,033 to 1,082 ms; Chromium at 4x CPU 3,764 to 4,211 (over)
+  -> 1,575 to 1,977 ms; the cold page boot to the title at 4x CPU 5,915 -> 3,827 ms (said, not gated). `build.sh` runs
+  `tools/boot-budget.mjs --chromium` on every build, gated on the slowest run (on c34fddf's page it exits 1).
+- **Deepholm's and the Aerie's copies.** They still build the whole overworld (sim-suite check 5: neither builds the same
+  without it), so each world-run copy build pauses the Room: about 1.1 s in workerd now (2.2 s on c34fddf, 0.65 on master).
+  Measured with `tools/sim-bench.mjs` and `tools/sim-load.mjs --minutes 30` (every pass bar met); docs/ONLINE.md's table.
+
+**Gates on this build** (logs in `~/.fanglands/work/spread/fix4/gates/`): `./build.sh` (literals gate 153 files, 0 bare;
+changetile 211 calls; compass all hold; boot-budget node 1,043 ms and Chromium 1,872 ms at their slowest); `node
+tools/headless.js` ALL 1405 PASS; `--play` ALL 1406 PASS (stage 16, nothing forced, the Fang dead); `node --test
+online/test/` 430 pass; mmo-sim ALL 43, `--room` ALL 43, `--sim` ALL 47; dom-keys ALL 16; mmo-sim-admin ALL 8;
+mmo-sim-party ALL 18; sim-suite ALL 28; mmo-sim-world ALL 16 (copy boots Deepholm 1,285, the Aerie 1,277 ms in node);
+mmo-sim-teacher 9/9; teacher-browser all 103 (a local `wrangler dev` only); build-sim `--strip --reads` 0 not on the list;
+atlas-drift matches (atlas.json unchanged, bd8d810602a3fcac: the world is the same); fingerprint `--diff` identical to the
+new baseline; spread-migrate-check 26 of 26 (the matrix and the end-of-story save) and the real saves 94 of 94 (0 stage
+changes, 0 lost machines, items or coins, every walk kept); `tools/jiggle.mjs --spread-only --spread-gate` green (transport
+1276 moved, 0 red; plate 8883/8883; suite ALL 1405 PASS).
 
 ## Proving "nothing visible changed" (spec §9.4)
 

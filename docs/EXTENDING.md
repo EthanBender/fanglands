@@ -517,7 +517,9 @@ A save names the world it was made in: `worldV` (`WORLD_V`, 2 since the Great Sp
 `worldRev` (`WORLD_REV`, the minor). `src/97-spread.js` brings an older save in (`HOOKS.saveIn` runs its
 `SPREAD.prepare` right after the parse; its own load wrapper, the outermost, runs `SPREAD.finish`): the knight wakes at
 spawn, what the story changed is made again from quest state, what he placed comes back to his bank (or pack, or Aldous
-keeps it), his machines are parked round the Dozer Bay and the mare is tied at her rail; everything else of the old map
+keeps it), his machines are parked round the Bulldozer bay (never where they would cut a way off: the parking keeps the
+town's walks, every cell a flood from the square reached and a free side of every machine) and the mare is tied at her
+rail; everything else of the old map
 is cleared. A save from a newer world is refused (`SAVE_LOCK`, the NEWER WORLD plaque). What a feature owes the migration:
 - **A tile the story changes** (a door opened, a town rebuilt, a gate thrown open: anything a quest does with
   `changeTile`) needs a `HOOKS.remake`: an idempotent function that lays those tiles again from quest state,
@@ -545,8 +547,10 @@ seam transects (8+ tiles of blend), main roads clear of solids and props, aggres
 the edge ring, and the beat-gap report. `node tools/spread-report.mjs` prints every table. `tools/compass.mjs` (run by
 `build.sh`) holds every line with a direction or distance word to a row in `docs/spread/compass.json`, checked against
 the Atlas: a new line saying "north of the inn" needs a row `{ file, match, from, to, dir }`, or `local` with a reason
-for a line about a place's own inside. `node tools/boot-budget.mjs --chromium` measures world generation (node <= 2.0 s,
-Chromium at 4x CPU <= 4.0 s; `--workerd bench.json` reads `tools/sim-bench.mjs`'s local workerd boot and heap).
+for a line about a place's own inside. `node tools/boot-budget.mjs --chromium` (run by `build.sh` on every build)
+measures world generation, the slowest of its runs (node <= 2.0 s, Chromium at 4x CPU <= 4.0 s), and says the cold page
+boot; `--workerd bench.json` reads `tools/sim-bench.mjs`'s local workerd boot and heap. A new world pass that floods the
+map should flood once and grow the set as it changes tiles (92-worldshape's step 7b), never flood again per change.
 
 The world map panel names places through `src/61-maplabels.js` (`MAP_LABELS`): one label per Atlas place, laid out by
 priority and nudged off rings; a new place needs no label code, only its Atlas place (and its tier in `TIERS` if it is

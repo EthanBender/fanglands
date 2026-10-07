@@ -96,13 +96,13 @@ online/
 | `POST /api/admin/invite` | `{invite}` | `{ok}` | change the invite code |
 | `GET /api/admin/chat?limit=500` | — | `[{at, n, text}]` | the whole log, newest last |
 | `GET /api/admin/invite` | — | `{invite}` | the current code |
-| `GET /api/admin/saves?name=` | — | `[{ver, at, bytes}]` | the kept versions; a pinned backup is listed first as `ver: 'pin'` |
-| `POST /api/admin/rollback` | `{name, ver}` | `{ok}` | make that version the current save (`ver: 'pin'` copies the pin forward and keeps it) |
+| `GET /api/admin/saves?name=` | — | `[{ver, at, bytes}]` | the kept versions; a pinned backup is listed first as `ver: 'pin'`; the knight's last save of each older world last, as `{ver: 'world1', world: 1, at, bytes}` (see *The Great Spread on the server*) |
+| `POST /api/admin/rollback` | `{name, ver}` | `{ok}` | make that version the current save (`ver: 'pin'` copies the pin forward and keeps it; `ver: 'world1'` the kept last world-1 save, which is kept too) |
 | `GET /api/admin/online` | — | `[{n, map, region, lv, since, role}]` | |
 | `GET /api/admin/trades?limit=200` | — | `[{at, a, b, aGave, bGave}]` | newest first (limit 1 to 2,000): every finished trade, who and exactly what each gave (see *Trading*) |
 | `GET /api/admin/spread-parties` | — | `{atlas, mapW, ended: false, parties}` | the live drop parties on the overworld (`[{id, by, region, at, expires, unlit, lit}]`) and the world's Atlas hash and width; read by `tools/spread-deploy-step.mjs` (see *The Great Spread on the server*) |
 | `POST /api/admin/spread-parties` | — | `{atlas, mapW, ended: true, parties}` | ends those parties (their unlit crackers go; a prize already won stays claimable); one `mod_log` row. Only inside the owner-approved spread deploy |
-| `GET /api/admin/export` | — | `{at, accounts, saves, chat, settings, mod_log, save_pins, parties, crackers, logins, trades}` | every row of every table but `sessions` (`online/src/backup.js`): the backup taken before a deploy |
+| `GET /api/admin/export` | — | `{at, accounts, saves, chat, settings, mod_log, save_pins, save_worlds, parties, crackers, logins, trades}` | every row of every table but `sessions` (`online/src/backup.js`): the backup taken before a deploy |
 | `GET /api/admin/bookmark` | — | `{bookmark, at}` | a Cloudflare point-in-time restore bookmark, also kept in `settings` |
 | `POST /api/admin/restore` | `{bookmark}` | `{ok, restoring}` | rewinds the whole world to that bookmark; every knight reconnects to it |
 
@@ -702,6 +702,8 @@ accounts  + role        TEXT    NOT NULL DEFAULT 'player'   -- 'player' | 'admin
 mod_log   (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, by TEXT NOT NULL, act TEXT NOT NULL,
            target TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '')
 save_pins (name_lc TEXT PRIMARY KEY, json TEXT NOT NULL, at INTEGER NOT NULL)
+save_worlds (name_lc TEXT NOT NULL, world INTEGER NOT NULL, json TEXT NOT NULL, at INTEGER NOT NULL,
+           PRIMARY KEY (name_lc, world))   -- a knight's last save of an older world (the Great Spread's rollback)
 parties   (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, by TEXT NOT NULL, map TEXT NOT NULL,
            region TEXT NOT NULL DEFAULT '', hat INTEGER NOT NULL, table_json TEXT NOT NULL, count INTEGER NOT NULL,
            expires INTEGER NOT NULL, ended INTEGER NOT NULL DEFAULT 0)
@@ -2318,7 +2320,7 @@ game's), against the same knights on the keeper path with its keeper stream and 
 
 | | 20 knights (8 Deepholm, 8 Aerie, 4 coal mine), 30 min, 10.0 knight-hours | 1 knight alone in Deepholm, 10 min |
 |---|---|---|
-| Copy boot | Deepholm 843 ms, the Aerie 976 ms, the coal mine 685 ms | Deepholm 1,320 ms |
+| Copy boot | Deepholm 843 ms, the Aerie 976 ms, the coal mine 685 ms (the 260 x 180 map; on the 400 x 280 map see *The Great Spread on the server*: about 1.1 s inside workerd, each a Room-wide pause) | Deepholm 1,320 ms |
 | Tick | p50 1 ms, p99 4 ms over the last 3,000; worst 30 s window p99 6 ms; max 38 ms; 12 skipped (the boots) | p50 1 ms, p99 2 ms; worst window 4 ms; max 19 ms |
 | Fallbacks | none; every keeper `@world:<map>` throughout; 0 copy errors in 17,978 ticks each | none |
 | `mon` to each knight | 9.98 a second; gap p50 100 ms, p99 103 ms, max 185 ms | 9.94 a second; gap p50 100, p99 102, max 121 ms |
@@ -2428,7 +2430,13 @@ game. `online/test/atlas.test.mjs` and `move.test.mjs` read the size, the anchor
 - Every save the game writes carries `worldV` (and `worldRev`, `mapW`). A save naming none is world 1.
 - When the knight's newest stored save is from world 2 or later and the incoming save's `worldV` is lower (missing, junk or
   not a whole number counts as 1), the world answers `409 {error: 'stale_world', code: 'stale_world'}` and stores nothing.
-  The stored `worldV` is read by SQLite (`json_extract`), the whole row only if SQLite cannot read it. No new table.
+  The stored `worldV` is read by SQLite (`json_extract`), the whole row only if SQLite cannot read it.
+- The knight's first save of a newer world (his newest stored save is world 1, the incoming one world 2) first copies that
+  newest world-1 save into `save_worlds` (`INSERT OR IGNORE`: the first one kept stays, through a rollback and a second
+  migration). The three kept versions turn over in about 30 s of play (a page pushes about every 15 s), so this is the
+  one per-knight way back to the old map after that: the parent page lists it under Saves as "Last save from world 1 (the
+  old map, before the Great Spread)" with Go back to this one (`POST /api/admin/rollback {name, ver: 'world1'}`), and
+  `GET /api/admin/export` carries the table. A knight with no world-1 save keeps nothing there.
 - An equal or newer world goes through as before. A knight whose newest save is world 1 takes world-1 saves as before
   (an old page keeps saving until that knight is first loaded on a new page).
 - The page (`src/72-cloudsave.js`): a push answered 409 `stale_world` locks it (`SAVE_LOCK`: no save here or to the cloud,
@@ -2438,7 +2446,8 @@ game. `online/test/atlas.test.mjs` and `move.test.mjs` read the size, the anchor
 - On purpose, these do NOT go through the guard: the parent page's rollback (`POST /api/admin/rollback`) and an admin's
   pin (`POST /api/save/pin`, `POST /api/save/restore`). A world-1 save restored that way is the newest again, and is moved
   into the new world the next time a new page loads it.
-- Proved in `online/test/accounts.test.mjs` (the guard, with the rollback and the pin) and by the two-browser proof below.
+- Proved in `online/test/accounts.test.mjs` (the guard, with the rollback and the pin; the kept world-1 save: listed after
+  six more pushes, rolled back to, kept through a second migration, exported) and by the two-browser proof below.
 
 **The Room keys old pages apart (`online/src/room.js`, `mapKey`).** A hello whose Atlas is not the world's (another hash,
 or none) while the world has an Atlas is "stale": every map that knight stands on is keyed `<map>@stale` (`over@stale`,
@@ -2474,6 +2483,34 @@ the overworld copy boots in 2,385, 2,607 and 2,408 ms inside workerd (budget 3,5
 the overworld (budget 45 MB); node's generateWorld 1,447 ms (budget 2,000). (The first 4d build measured 2,865, 2,895 and
 3,017 ms and 24.5 MB on a busier machine.) Inside the budget, so no `world-<hash>.bin` snapshot is written (spec §7: only if
 over). The margin is about 0.9 s: a later stage that adds world-building passes measures again.
+
+After the review of c34fddf (92-worldshape's step 7b grows its floods instead of flooding the map again after every
+dig; the world is byte-identical): the overworld copy boots in 1,370, 1,479 and 1,317 ms inside workerd, the isolate holds
+35.9 MB with the overworld (budget 45; the heap read moves by several MB from run to run: 24.5 and 28.3 on the 4d builds),
+node's generateWorld 1,062 ms at its slowest (`~/.fanglands/work/spread/fix4/bench/bench.json`).
+
+**The world-run instance copies (Deepholm, the Aerie) build the whole overworld too.** They boot with `worldGen` on:
+`tools/sim-suite.mjs` check 5 finds that neither builds the same without the overworld (Deepholm's tiles differ, the
+Aerie's 300 ticks differ), so they stay off `WORLDGEN_FREE` (war_shed, tinker_lab, stormfront: about 40 ms each). A copy
+is built synchronously inside the Room's Durable Object (`worlds.boot` -> `host.boot` -> `makeGame`), so **every knight
+online waits while a world-run map's copy is built**: inside workerd, full build (`tools/sim-bench.mjs`, local):
+
+| Map | master 8ff3459 (the review) | c34fddf (the review) | after the review's fix |
+| --- | --- | --- | --- |
+| Overworld copy | 833 / 816 / 672 ms | 2,280 / 2,534 / 2,363 ms | 1,370 / 1,479 / 1,317 ms |
+| Deepholm | 654 ms | 2,185 ms | 1,140 ms |
+| The Aerie | 624 ms | 2,201 ms | 1,125 ms |
+| Every instance, full build | 622 to 717 ms | 2,180 to 2,307 ms | 1,123 to 1,212 ms |
+| `worldGen: false` | about 40 ms | about 40 ms | 41 to 44 ms |
+
+`node tools/mmo-sim-world.js` (in node): copy boots Deepholm 706 / the Aerie 661 ms on master, 2,308 / 2,329 on c34fddf,
+1,233 / 1,195 after the fix. A Room-wide pause of about 1.1 s happens once per copy build (a copy is kept while its map
+has knights, and dropped 60 s after it empties). `node tools/sim-load.mjs --minutes 30` after the fix (20 knights, 10 in
+Deepholm and 10 in the Aerie, a local `wrangler dev`; `~/.fanglands/work/spread/fix4/load/`): copy boots Deepholm 1,338 ms
+and the Aerie 1,469 ms; tick p50 2 ms, p99 4 ms over the last 3,000, worst 30 s window p99 6 ms, max 39 ms, 10 skipped (the
+boots); no fallback; heap 20.4 MB; 898.1 requests a knight-hour world-run against 1,098.6 on the keeper path: every pass
+bar met. The next step if that is too long: the spec's §7 world snapshot for
+instance copies too (not built: every boot is inside its budget).
 
 **The two-browser proof (`tools/spread-two-pages.cjs`, a LOCAL `wrangler dev` only).** Real headless pages: the OLD page is
 the build live today (`git show master:index.html`, world 1), the NEW page this tree's; the harness serves each browser its
