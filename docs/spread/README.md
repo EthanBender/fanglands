@@ -38,8 +38,8 @@ for its peer branch.
 The server and its tests are Stage 4d's (spec §11: the contract written into docs/ONLINE.md, atlas.test and move.test
 there); the builder of 4d converts them, or brings them under the gate, before the spread ships. A new tool belongs at
 the top of `tools/`, where the gate reads it. A peer branch that adds a tool standing a knight on the overworld must
-wrap its spots before it merges after the spread (feat/teacher-view's `tools/teacher-browser.mjs` holds 14 bare spots
-at line 117 on 6 Oct: wrap them in frames, or list the file in `held.json` until it is converted).
+wrap its spots before it merges after the spread (feat/teacher-view's `tools/teacher-browser.mjs` held 14 bare spots
+on 6 Oct; feat/teacher-live reads every one through the game's own Atlas (`spotsFromGame`) and is in `converted.json`).
 
 **The tools** (ADDENDUM A.2) are read like the game: a tool file is named `tools/<file>` in `converted.json` and the
 allow list. In a tool the counter also reads game code handed to a game as text (`R(A, \`FANGLANDS.tp(24, 37)\`)`,
@@ -398,7 +398,7 @@ spread-migrate-check 25 of 25 and the real saves 94 of 94. Fingerprint: only the
 
 ## Stage 4d: THE SERVER (feat/spread)
 
-Built on 4c (85491d1) and master 5bdc8b3 (fix/idle-requests, merged in), 7 Oct 2026. Not deployed, not pushed. The
+Built on 4c (85491d1) with master merged in twice (5bdc8b3, fix/idle-requests; then 8ff3459, the teacher view), 7 Oct 2026. Not deployed, not pushed. The
 contract is docs/ONLINE.md, "The Great Spread on the server".
 
 **What changed.**
@@ -417,6 +417,19 @@ contract is docs/ONLINE.md, "The Great Spread on the server".
 - `online/test/atlas.test.mjs`, `move.test.mjs`: the size, anchors and ports read from atlas.json; no 260, 180, 250 or 170.
 - atlas.json: already regenerated at 4a (400 x 280, `v` 2, `anchors`, `ports`; hash bd8d810602a3fcac, 47.1 KB); 4d and the
   master merge do not change it (atlas-drift matches).
+
+**The teacher view (master 8ff3459, merged in after the first 4d commits).** Its kids' rows and Watch read positions
+through the Atlas: a kid on an older world's page has no dot and "Somewhere in the world" (`online/src/watch.js`), and
+the keeper message names the map his game knows (`online/src/sim/worlds.js` `wireOf`). Its tests and tools read the
+spread's places: `online/test/teacher-kit.mjs` (a kid's hello names this world's Atlas), `watch.test.mjs` (Hollowford's
+square port), `teacher-labels.test.mjs` (the cave mouth and quarry cart, Thistledown's square and the War Shed's door);
+`tools/teacher-browser.mjs` (the crowd's hello names the Atlas). Two fixes in `src/79-teacherscreen.js` layoutLabels: a
+name's own centre is checked on whole pixels (a candidate on the edge of a narrow place rounded onto the next one's tile:
+Wolfwood at 1024x768, zoom 1.5), and a big place's name may be 1.5 times its width (1.1 for the rest). At a 1280 x 650
+window at 125% the whole map cannot hold Thistledown's name clear of a class standing in it (the count circle covers the
+town's middle at 1.15 px a tile); the name gives way and comes back one zoom step in: the test and the browser check say
+so. FOR THE OWNER: if the teacher should always see Thistledown named at the whole map, the knights' dots or the map's
+whole view would have to change (a later decision; the teacher view's own branch).
 
 **The workerd boot.** `node tools/sim-bench.mjs` (a local `wrangler dev --local`, never a live Worker), then
 `node tools/boot-budget.mjs --workerd <bench.json>`: the overworld copy boots in 2,865, 2,895 and 3,017 ms inside workerd

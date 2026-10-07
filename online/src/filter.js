@@ -337,6 +337,8 @@ export function cleanName(s) {
   if (s.length < 2 || s.length > 16) return null;
   if (!/^[A-Za-z0-9]+( [A-Za-z0-9]+)*$/.test(s)) return null;
   if (RESERVED.has(s.toLowerCase().replace(/ /g, ''))) return null;
+  // no kid can pose as a teacher (docs/ONLINE.md, "The teacher view"): "teacher" anywhere, any case, spaces aside
+  if (s.toLowerCase().replace(/ /g, '').includes('teacher')) return null;
   if (nameBad(s)) return null;
   return s;
 }

@@ -349,3 +349,10 @@ test('a short strike word with a look-alike digit in it is never a strike: phone
   }
   assert.ok(n > 10, String(n));
 });
+
+// The teacher view (docs/ONLINE.md, "The teacher view"): no new knight may pose as a teacher. "teacher" anywhere in a name,
+// any case, spaces aside, is refused; names that only look a little like it are left alone.
+test('a new knight name with "teacher" in it is refused, in any case and spaced out', () => {
+  for (const n of ['Teacher', 'teacher', 'TEACHER', 'Mrs Teacher', 'Teacher Bob', 'Teach Er', 'T eacher', 'Teachers Pet', 'Mr Teacher2', 'Theteacher']) assert.equal(cleanName(n), null, n);
+  for (const n of ['Teach', 'Cheater', 'Reacher', 'Peach', 'Tea Chest', 'Mrs Smith', 'Teachr']) assert.equal(cleanName(n), n, n);
+});

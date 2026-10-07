@@ -241,3 +241,18 @@ test('the admin page: the places the world runs, from the same read; a place\'s 
   assert.match(String(Z.els.get('worldline').textContent), /Not running now .*Deepholm \(the dwarves\) is resting: nobody there is playing/);
   assert.equal(String(Z.els.get('worldmaps').children[0].children[1].textContent), 'the world (resting: nobody there is playing)');
 });
+
+// The Teachers section (docs/ONLINE.md, "The teacher view"): one call on opening and one on Refresh (the list, today's
+// actions and the notice switch together), none from the 10 s refresh.
+test('the admin page: the Teachers section is one call on opening and on Refresh, and none on the 10 s refresh', async () => {
+  const P = page();
+  await P.settle();
+  const teacherCalls = t => Object.entries(t.by).filter(([p]) => /\/api\/admin\/teach/.test(p));
+  const open = P.take();
+  assert.deepEqual(teacherCalls(open), [['/api/admin/teachers', 1]]);
+  await P.advance(30000);
+  assert.deepEqual(teacherCalls(P.take()), []);
+  P.els.get('refresh').onclick();
+  await P.settle();
+  assert.deepEqual(teacherCalls(P.take()), [['/api/admin/teachers', 1]]);
+});

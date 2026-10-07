@@ -42,6 +42,8 @@ import { SimBook } from './sim/book.js';
 import { SimHost, WORLDGEN_FREE } from './sim/host.js';
 import { cleanSwitches, WORLD_MAPS, WORLD_READY, WORLD_EMPTY, MODES } from './sim/worlds.js';
 import ATLAS_JSON from './atlas.json' with { type: 'json' };
+import { migrateTeachers, TeacherBook, teacherCall, teacherAdminCall, teacherLogin } from './teachers.js';
+import { Watch } from './watch.js';
 
 // the Atlas the world judges by (docs/ONLINE.md, "The shared world", Stage 1): made by tools/atlas.mjs from the game it ships with
 const ATLAS = readAtlas(ATLAS_JSON);
@@ -80,9 +82,14 @@ export class World {
     this.simBook = new SimBook(this.sql, () => this.now());     // the shared world's map changes and boss rests (sim/book.js)
     this.chatWrites = 0;
     this.wraps = new WeakMap();
+    // the teacher view (docs/ONLINE.md, "The teacher view"): its tables, and the Watch that keeps the teachers' screens
+    migrateTeachers(this.sql);
+    this.teachers = new TeacherBook(this.sql, () => this.now());
+    this.watch = new Watch({ book: this.teachers, store: this.store, sql: this.sql, now: () => this.now(), atlas: ATLAS });
     this.room = new Room({
+      hooks: this.watch.hooks,
       now: () => this.now(),
-      log: (name, text, at) => this.logChat(name, text, at),
+      log: (name, text, at, masked) => this.logChat(name, text, at, masked),
       wake: ms => this.ctx.storage.setAlarm(Date.now() + ms).catch(e => console.error('alarm', e)),
       store: this.store,
       random: cryptoRandom,
@@ -91,6 +98,7 @@ export class World {
       simBook: this.simBook,
       simSave: sw => this.saveSim({ held: sw.held }),   // a map the watchdog handed back is held there (sim/worlds.js)
     });
+    this.watch.room = this.room;
     this.room.setSim(this.simSettings());
     this.loadCopy();
     // pings are answered by the runtime without waking the world (the client sends exactly this text)
@@ -99,11 +107,15 @@ export class World {
     for (const ws of ctx.getWebSockets()) {
       let state = null;
       try { state = ws.deserializeAttachment(); } catch (e) { }
-      if (state && state.name) this.room.restore(this.wrap(ws), state);
+      if (state && state.w) this.watch.restore(this.wrap(ws), state);   // a teacher's screen: never a knight
+      else if (state && state.name) this.room.restore(this.wrap(ws), state);
       else { try { ws.close(4001, 'lost'); } catch (e) { } }
     }
     // a login still open with no socket carrying it (the world was restarted under it) ends when it was last heard from
     try { this.room.settleLogins(); } catch (e) { console.error('logins', e); }
+    // a teacher screen that was watching a kid's view before the nap: tapped again by name now that the knights are back,
+    // or told the view ended (watch.js settle)
+    try { this.watch.settle(); } catch (e) { console.error('watch', e); }
     // when the logins began to be counted: written once, on the first wake of this code
     this.loginsSince = this.store.trackingSince(this.now());
   }
@@ -121,9 +133,10 @@ export class World {
     }
     return w;
   }
-  webSocketMessage(ws, msg) { this.meter.ws(); if (typeof msg === 'string') this.room.message(this.wrap(ws), msg); }
-  webSocketClose(ws, code, reason) { this.room.leave(this.wrap(ws)); try { ws.close(1000, 'bye'); } catch (e) { } this.meter.flush(); this.moveBook.flush(); }
-  webSocketError(ws) { this.room.leave(this.wrap(ws)); this.meter.flush(); this.moveBook.flush(); }
+  // a teacher's screen goes to the Watch first: its frames never reach the Room
+  webSocketMessage(ws, msg) { this.meter.ws(); const w = this.wrap(ws); if (this.watch.has(w)) return this.watch.message(w, msg); if (typeof msg === 'string') this.room.message(w, msg); }
+  webSocketClose(ws, code, reason) { const w = this.wrap(ws); if (this.watch.has(w)) this.watch.leave(w); else this.room.leave(w); try { ws.close(1000, 'bye'); } catch (e) { } this.meter.flush(); this.moveBook.flush(); }
+  webSocketError(ws) { const w = this.wrap(ws); if (this.watch.has(w)) this.watch.leave(w); else this.room.leave(w); this.meter.flush(); this.moveBook.flush(); }
   // Cloudflare bills every alarm invocation as a Durable Object request, so the meter counts it as one (and apart, as an alarm)
   alarm() { this.meter.alarm(); try { this.room.tick(); } catch (e) { console.error('tick', e); } this.moveBook.flush(); }
 
@@ -191,6 +204,8 @@ export class World {
   // Every /api call and the socket, by path and method.
   async route(req, url, path, method) {
     if (path === '/ws') return this.openSocket(req, url);
+    // the teacher view's socket calls (round 2: on every game address, no door; the sign-in is /api/login, teachers.js)
+    if (path.startsWith('/api/teacher/')) return await teacherCall(this, req, url, path, method);
     { const r = await handoffCall(this, req, url, path, method); if (r) return r; }   // two addresses: handoff.js
     if (path === '/api/status' && method === 'GET') return this.status();
     if (path.startsWith('/api/admin/')) return await this.admin(req, url, path.slice('/api/admin/'.length), method);
@@ -220,14 +235,16 @@ export class World {
   // push before the third strike's kick must land, or the next login would load an older save).
   session(token, opts) {
     if (!token) throw oops(401, 'please log in', 'auth');
-    const s = this.row('SELECT s.token, s.expires, a.name_lc, a.name, a.banned, a.created, a.role, a.words_locked_until, a.last_seen FROM sessions s JOIN accounts a ON a.name_lc = s.name_lc WHERE s.token = ?', token);
+    const s = this.row('SELECT s.token, s.expires, a.name_lc, a.name, a.banned, a.created, a.role, a.words_locked_until, a.last_seen, a.sent_off_until FROM sessions s JOIN accounts a ON a.name_lc = s.name_lc WHERE s.token = ?', token);
     if (!s) throw oops(401, 'that login has run out, please log in again', 'auth');
     const now = this.now();
     if (s.expires < now) { this.sql.exec('DELETE FROM sessions WHERE token = ?', token); throw oops(401, 'that login has run out, please log in again', 'auth'); }
     if (s.banned) { this.sql.exec('DELETE FROM sessions WHERE name_lc = ?', s.name_lc); throw oops(403, 'this knight is banned', 'banned'); }
     // kept out for bad words: the session is kept (it works again when the time is up), but nothing goes through until then
     // except a save. No address is written here: only the third strike notes one (Room.wordStrike, from the socket).
-    if (!(opts && opts.saving)) this.refuseIfKeptOut(s.words_locked_until, now);
+    // opts.socket (/ws): a send-off is said by the Room after the upgrade (kicked, why sentoff, close 4005), because a refused
+    // upgrade reaches a game only as close 1006, and the game would try again every 15 s until midnight
+    if (!(opts && opts.saving)) { this.refuseIfKeptOut(s.words_locked_until, now); if (!(opts && opts.socket)) this.refuseIfSentOff(s.sent_off_until, now); }
     // "last heard from", to SEEN_EVERY: a write on every call was about one row per save of a playing knight (6 Oct 2026)
     if (!(now - (Number(s.last_seen) || 0) < SEEN_EVERY)) this.sql.exec('UPDATE accounts SET last_seen = ? WHERE name_lc = ?', now, s.name_lc);
     return s;
@@ -236,6 +253,11 @@ export class World {
   refuseIfKeptOut(until, now) {
     until = Number(until) || 0;
     if (until > now) throw oops(403, wordsText(until, now), 'words', { until });
+  }
+  // sent off for the rest of the day by a teacher: 423 (not 403, so a game already open keeps its token), saving still works
+  refuseIfSentOff(until, now) {
+    until = Number(until) || 0;
+    if (until > now) throw oops(423, 'a teacher sent this knight off for the rest of today', 'sentoff', { until });
   }
   newSession(lc) {
     const token = randomHex(32);
@@ -270,6 +292,8 @@ export class World {
     const b = await readJson(req);
     const name = cleanName(b.name);
     if (!name) throw oops(400, 'that name will not do: 2 to 16 letters, digits or spaces, and nothing rude', 'name');
+    // a teacher's name (the teacher view): a knight called that would read as the teacher in chat
+    if (this.teachers.nameClash(name)) throw oops(409, 'that name is taken', 'taken');
     const pass = typeof b.pass === 'string' ? b.pass : '';
     if (pass.length < PASS_MIN || pass.length > PASS_MAX) throw oops(400, 'the secret word needs at least 4 letters', 'pass');
     const invite = this.invite();
@@ -304,6 +328,15 @@ export class World {
     let a = lc && this.row('SELECT * FROM accounts WHERE name_lc = ?', lc);
     // a knight an admin renamed may still type the old name: it logs in as the new one (the answer carries the new name)
     if (!a && lc) { const moved = this.store.renamedFrom(lc); if (moved) { lc = norm(moved); a = this.row('SELECT * FROM accounts WHERE name_lc = ?', lc); } }
+    // no knight by that name (and none had it before a rename): a teacher's sign-in, but only when a TEACHER has the name
+    // (teachers.find) and only for a card that can take a teacher's answer (teacherOk: 1). An older cached card never sends
+    // it, so it is never handed a teacher token to keep. Any other name is the knight's 404 below: a kid's typo or a new kid
+    // who forgot New knight hears "No knight by that name yet. Tap New knight.", with no PBKDF2 and no teacher wait counted.
+    // Knight and teacher names never clash (nameClash / knightClash), so this order cannot be fooled.
+    if (!a && b && b.teacherOk === 1) {
+      const t = this.teachers.find(typeof b.name === 'string' ? b.name.slice(0, 80) : '');
+      if (t) return json(await teacherLogin(this, { teacher: t, pass: b.pass, addr: addressOf(req.headers.get('cf-connecting-ip')), tab: b.tab }));
+    }
     if (!a) throw oops(404, 'no knight by that name', 'unknown');
     if (a.banned) throw oops(403, 'this knight is banned', 'banned');
     const now = this.now();
@@ -321,6 +354,7 @@ export class World {
     this.sql.exec('UPDATE accounts SET tries = 0, locked_until = 0, last_seen = ? WHERE name_lc = ?', now, lc);
     // the right secret word, but kept out for bad words: said with the time it ends, and no session is made
     this.refuseIfKeptOut(a.words_locked_until, now);
+    this.refuseIfSentOff(a.sent_off_until, now);
     return json({ token: this.newSession(lc), name: a.name });
   }
 
@@ -486,6 +520,7 @@ export class World {
     if (!to) throw oops(400, 'that name will not do: 2 to 16 letters, digits or spaces, and nothing rude', 'name');
     const lc = to.toLowerCase();
     if (lc !== target.lc && this.row('SELECT 1 FROM accounts WHERE name_lc = ?', lc)) throw oops(409, 'that name is taken', 'taken');
+    if (this.teachers.nameClash(to)) throw oops(409, 'that name is taken', 'taken');   // a teacher's name (the teacher view)
     // another knight's old name is taken too (it logs in as that knight); a knight may go back to one of its own
     const was = lc !== target.lc && this.store.renamedFrom(lc);
     if (was && norm(was) !== target.lc) throw oops(409, 'that name is taken', 'taken');
@@ -512,15 +547,18 @@ export class World {
   }
 
   // ---------- the chat log ----------
-  logChat(name, text, at) {
+  // masked: the word filter starred something in it; its id goes in chat_masked (teachers.js) so the teacher view flags it
+  logChat(name, text, at, masked) {
     this.sql.exec('INSERT INTO chat (at, name, text) VALUES (?, ?, ?)', at, name, text);
-    if (++this.chatWrites % 500 === 0) this.sql.exec('DELETE FROM chat WHERE id NOT IN (SELECT id FROM chat ORDER BY id DESC LIMIT ?)', CHAT_KEPT);
+    if (masked) this.sql.exec('INSERT OR IGNORE INTO chat_masked (id) SELECT MAX(id) FROM chat');
+    if (++this.chatWrites % 500 === 0) { this.sql.exec('DELETE FROM chat WHERE id NOT IN (SELECT id FROM chat ORDER BY id DESC LIMIT ?)', CHAT_KEPT); this.sql.exec('DELETE FROM chat_masked WHERE id < (SELECT MIN(id) FROM chat)'); }
   }
 
   // ---------- the socket ----------
   openSocket(req, url) {
     if ((req.headers.get('upgrade') || '').toLowerCase() !== 'websocket') throw oops(426, 'this address is the game socket', 'ws');
-    const s = this.session(url.searchParams.get('token') || '');   // a bad token is a 401 before any upgrade
+    // a bad token is a 401 before any upgrade; a knight sent off for the day is let through to the Room, which says so and closes 4005
+    const s = this.session(url.searchParams.get('token') || '', { socket: true });
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
     this.ctx.acceptWebSocket(server);
@@ -538,6 +576,7 @@ export class World {
     if (!sameString(bearer(req), key)) throw oops(401, 'wrong admin key', 'admin');
     const post = method === 'POST';
     { const r = await backupCall(this, req, url, call, method); if (r) return r; }
+    { const r = await teacherAdminCall(this, req, url, call, method); if (r) return r; }   // Teachers (teachers.js)
     if (call === 'accounts' && method === 'GET') return json(this.accountsView());
     // the Great Spread's deploy step (spec §11; tools/spread-deploy-step.mjs, run only inside the owner-approved deploy):
     // GET lists the live drop parties on the overworld, POST ends them (their unlit crackers lie at the old world's places;

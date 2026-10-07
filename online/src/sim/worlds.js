@@ -51,7 +51,9 @@ export const STALE = 3000;           // ms: a world-run map whose copy has not t
 export const SILENT = 3000;          // ms without a knight's presence before the copy takes him for fallen (73-players sends one a second)
 export const REALM_EVERY = 50;       // ticks between realm_state checks (5 s)
 export const virtualName = map => '@world:' + map;
-const wireOf = map => typeof map === 'string' && map.startsWith('house') ? 'house' : map;
+// the map's name as a game knows it: his own island is 'house', and an older world's page's keyed-apart map ('<map>@stale',
+// room.js mapKey) is '<map>' to it
+const wireOf = map => typeof map === 'string' && map.startsWith('house') ? 'house' : (typeof map === 'string' && map.endsWith('@stale') ? map.slice(0, -6) : map);
 const num = v => typeof v === 'number' && Number.isFinite(v) ? v : null;
 const PRES = ['fx', 'fy', 'def', 'lv', 'hp', 'mhp', 'att', 'mh', 'law', 'spd'];
 const TO_KNIGHT = { kill: ['nid', 'type', 'x', 'y'], hurt: ['dmg', 'x', 'y'], boss_wait: ['id', 'left'] };

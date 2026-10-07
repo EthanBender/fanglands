@@ -818,6 +818,7 @@
   {"file": "75-coop.js", "literal": "8 * TILE", "context": "dist(player.x, player.y, gob.home.x, gob.home.y) > 8 * TILE", "reason": "the check asks that the keeper stands more than 8 tiles from the goblin's home: a distance"},
   {"file": "75-coop.js", "literal": "3 * TILE", "decl": "make", "reason": "the boss test makes its boss 3 tiles east of the knight: an offset, not a position"},
   {"file": "75-coop.js", "literal": "2 * TILE", "context": "remote('Ann', 'over', player.x + 2 * TILE", "reason": "the boss test stands Ann and Bo 2 tiles east of the knight: an offset, not a position"},
+  {"file": "75-coop.js", "literal": "3 * TILE", "context": "player.x = gob.x - 3 * TILE; player.y = gob.y;", "reason": "the teacher view's watched-game self-test stands the knight 3 tiles west of a goblin: an offset, not a position"},
   {"file": "tools/mmo-sim.js", "decl": "CAPS", "reason": "not a place: the contract's rate caps, [rate per second, burst] per message (p [8, 16], hit [20, 40], claim [10, 50] ...)"},
   {"file": "tools/mmo-sim.js", "literal": "p.x - 40", "decl": "standByPuppet", "reason": "pixels: Ben stands 40 px (one fist-reach) west of the goblin's puppet, wherever it is: an offset"},
   {"file": "tools/mmo-sim.js", "literal": "p.x - 40", "decl": "standBy", "reason": "pixels: Ben stands 40 px (one fist-reach) west of the spawned goblin's puppet, wherever it is: an offset"},
@@ -898,5 +899,13 @@
   {"file": "83-townsart.js", "literal": "hy - 11", "decl": "dth_draw", "reason": "townsfolk sprite drawing in sprite units, no map coordinates"},
   {"file": "83-townsart.js", "literal": "{ x: 11, y: 5 }", "decl": "hand", "reason": "townsfolk sprite drawing in sprite units, no map coordinates"},
   {"file": "83-townsart.js", "literal": "hy - 11", "decl": "td_feltHat", "reason": "townsfolk sprite drawing in sprite units, no map coordinates"},
-  {"file": "61-maplabels.js", "literal": "50", "context": "const u = 50, item", "reason": "the label layout's own test: screen pixels in a 200 x 100 box (u = 50 px), not a place on the map"}
+  {"file": "61-maplabels.js", "literal": "50", "context": "const u = 50, item", "reason": "the label layout's own test: screen pixels in a 200 x 100 box (u = 50 px), not a place on the map"},
+  {"file": "79-teacherscreen.js", "literal": "d.setHours(23, 59, 59, 999)", "context": "const dayEndLocal = t => { const d = new Date(t); d.setHours(23, 59, 59, 999);", "reason": "a clock time (the last millisecond of the teacher's local day), not a map coordinate"},
+  {"file": "79-teacherscreen.js", "literal": "best.y - 20", "context": "ui.pick.style.top = Math.max(8, Math.min(box.h - 120, best.y - 20)) + 'px'", "reason": "CSS pixels: the map's pick list opens 20 px above the tapped knight on the teacher's screen, not a map coordinate"},
+  {"file": "79-teacherscreen.js", "literal": "{ t: 'p', n: 'Sam', map: 'over', x: 1, y: 2 }", "context": "P.ws().recv({ t: 'w_v', v: 7, m: { t: 'p', n: 'Sam', map: 'over', x: 1, y: 2 } })", "reason": "a stand-in Watch frame in the self-test: it checks only that an older frame (v 6) is dropped, never where Sam stands"},
+  {"file": "79-teacherscreen.js", "literal": "{ t: 'p', n: 'Sam', map: 'over', x: 9, y: 9 }", "context": "P.ws().recv({ t: 'w_v', v: 6, m: { t: 'p', n: 'Sam', map: 'over', x: 9, y: 9 } })", "reason": "a stand-in Watch frame in the self-test: it checks only that an older frame (v 6) is dropped, never where Sam stands"},
+  {"file": "tools/teacher-browser.mjs", "literal": "px >= 13", "context": "line('the knights\\' names in Watch at 1280x800 are ' + px.toFixed(1) + ' CSS px tall (13 at the least)', px >= 13, px);", "reason": "a font size in CSS pixels (Watch's name tags at 13 px at the least), not a map coordinate"},
+  {"file": "tools/teacher-browser.mjs", "literal": "px >= 13", "context": "box.share >= 0.45 && px >= 13 && box.bar <= 49.5", "reason": "a font size in CSS pixels (Watch's name tags at 13 px at the least), not a map coordinate"},
+  {"file": "tools/teacher-browser.mjs", "literal": "px >= 13", "context": "line('watching on an iPad sideways ' + w + 'x' + h + ': names ' + px.toFixed(1) + ' CSS px (13 at the least)', px >= 13, px);", "reason": "a font size in CSS pixels (Watch's name tags at 13 px at the least), not a map coordinate"},
+  {"file": "tools/teacher-browser.mjs", "literal": "m.x - 40", "context": "player.x = m.x - 40; player.y = m.y; player.facing = { x: 1, y: 0 };", "reason": "the proof stands Sam 40 pixels west of a living monster to fight it: an offset, not a position"}
 ]
