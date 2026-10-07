@@ -6,6 +6,7 @@
 //
 //   const watch = new Watch({ room, book, store, sql, now, atlas })   book: teachers.js's TeacherBook; store: the Room's store
 //   watch.open(sock, att) / restore(sock, att) / has(sock) / message(sock, str) / leave(sock)
+//   w_say (owner, 7 Oct): a teacher may type in the game chat; the line goes out under the teacher's own name (doSay)
 //   watch.closeTeacher(id, code) / closeSession(sh, code) / countFor(id) / setNotice(on) / undo(actId, teacher|null, how, ownerBy) / actsView(now)
 //   watch.hooks                       what the Room calls (room.js opts.hooks): welcomed(k, acc), presence(k, m), left(k),
 //                                     chatGate(k, acc, now), chat(line), event(e), sentOff(lc), changed(), mon(k, out)
@@ -40,6 +41,9 @@ export const AWAY_MS = 30000;        // no presence for this long: "Away from th
 export const FIGHT_MS = 3000;        // a swing this recent: "Fighting"
 export const SOCK_RATE = 1, SOCK_BURST = 5, SOCK_DROP = 30;   // a teacher socket's messages a second, its burst, and how many over before 4008
 export const PING = '{"t":"ping"}', PONG = '{"t":"pong"}';
+// a teacher's chat line (w_say, owner 7 Oct): at most one every 1.5 s per teacher (a kid's own pace), 20 a minute; the
+// text as a kid's line (the word filter, 120 letters) and never a strike
+export const SAY_EVERY = 1500, SAY_PER_MIN = 20, SAY_RAW_MAX = 400;
 export const MUTE_SPANS = { '10m': 600000, '1h': 3600000, today: null };
 export const PAUSE_SPANS = { '5m': 300000, '15m': 900000, '1h': 3600000 };
 const TILE = 48;
@@ -122,6 +126,7 @@ export class Watch {
     this.watchLog = new Map();  // teacher id + '|' + lc -> when that teacher's last 'watch' row was written
     this.day = { start: -1, msgs: 0, full: false };   // the alone streams' incoming messages today (memory; a nap forgets)
     this.viewStats = { starts: 0, stops: 0, forwarded: 0 };
+    this.said = new Map();      // teacher id -> the times of their chat lines in the last minute (memory; a nap forgets)
     this.hooks = {
       welcomed: (k, acc) => this.welcomed(k, acc),
       presence: (k, m) => this.presence(k, m),
@@ -218,6 +223,8 @@ export class Watch {
     // Watch: not a knight action (no teacher_acts row, not in the 10-in-10-minutes count)
     if (m.t === 'w_view') return this.doView(s, me, m, req, now);
     if (m.t === 'w_unview') { this.unview(s); return this.send(sock, { t: 'w_ok', req, text: '' }); }
+    // a chat line from the teacher (not a knight action either: no teacher_acts row, no mod_log row; the chat log keeps it)
+    if (m.t === 'w_say') return this.doSay(s, me, m, req, now);
     let out = null;
     switch (m.t) {
       case 'w_mute': out = this.doMute(me, m, now); break;
@@ -228,6 +235,22 @@ export class Watch {
       default: return;   // anything else is ignored
     }
     this.send(sock, out.ok ? { t: 'w_ok', req, text: out.text } : NO(req, out.code, out.text));
+  }
+
+  // w_say {req, text}: the teacher's own line in the game chat, under the name of the session (never a name the page sends),
+  // to every knight as an admin's line (room.js teacherSay). A pause does not stop it (as an admin's); the answer is w_ok
+  // with no text (the line itself comes back as w_chat) or w_no: empty, long (over SAY_RAW_MAX letters as sent), slow.
+  doSay(s, me, m, req, now) {
+    const raw = typeof m.text === 'string' ? m.text : '';
+    if (raw.length > SAY_RAW_MAX) return this.send(s.sock, NO(req, 'long', 'That line is too long. Make it shorter.'));
+    if (!raw.trim()) return this.send(s.sock, NO(req, 'empty', 'Type something to say first.'));
+    const times = (this.said.get(me.id) || []).filter(t => now - t < 60000 && t <= now);
+    if (times.length && now - times[times.length - 1] < SAY_EVERY) return this.send(s.sock, NO(req, 'slow', 'Wait a moment before the next line.'));
+    if (times.length >= SAY_PER_MIN) return this.send(s.sock, NO(req, 'slow', "That's a lot of lines at once. Wait a minute."));
+    const r = this.room ? this.room.teacherSay(me.name, raw) : null;
+    if (!r) return this.send(s.sock, NO(req, 'empty', 'Type something to say first.'));
+    times.push(now); this.said.set(me.id, times);
+    this.send(s.sock, { t: 'w_ok', req, text: '' });
   }
 
   // 3-5: the teacher's rate, the day's send-offs, and the knight (online or just left, an account, not an admin)
@@ -387,7 +410,7 @@ export class Watch {
     const part = this.actsPart(now);
     for (const g of this.book.goneSince(now - RECENT_LEFT_MS)) { const lc = norm(g.n), had = this.gone.get(lc); if (!had || had.at < g.at) this.gone.set(lc, g); }
     const admins = this.book.admins();
-    const chat = this.book.chatSince(now - CHAT_BACK_MS, CHAT_BACK_LINES).map(r => ({ at: r.at, n: r.name, text: r.text, role: admins.has(r.name) ? 'admin' : 'player', masked: !!r.masked }));
+    const chat = this.book.chatSince(now - CHAT_BACK_MS, CHAT_BACK_LINES).map(r => r.teacher ? { at: r.at, n: r.name, text: r.text, role: 'admin', masked: !!r.masked, teacher: true } : { at: r.at, n: r.name, text: r.text, role: admins.has(r.name) ? 'admin' : 'player', masked: !!r.masked });
     const body = this.knightsBody(now);
     return Object.assign({ t: 'w_all', at: now }, body, part, { chat });
   }
@@ -680,7 +703,9 @@ export class Watch {
   }
   chat(line) {
     if (!this.screens.size) return;
-    this.toAll({ t: 'w_chat', at: line.at, n: line.n, text: line.text, role: line.role === 'admin' ? 'admin' : 'player', masked: !!line.masked });
+    const out = { t: 'w_chat', at: line.at, n: line.n, text: line.text, role: line.role === 'admin' ? 'admin' : 'player', masked: !!line.masked };
+    if (line.teacher) out.teacher = true;   // a teacher's line (w_say): the screens draw it as the teacher's
+    this.toAll(out);
   }
   // what the world did that a teacher should see: the word filter, an admin sending a knight out, an admin's mute
   event(e) {

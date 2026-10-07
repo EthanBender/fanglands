@@ -1,6 +1,6 @@
 // Backups of the world, for the parent page and for deploys. Admin-key only (world.js checks the key before calling in).
 // GET  /api/admin/export    everything needed to rebuild the world: accounts (with their hashes, roles and mutes), every
-//                           save version, the chat log, the settings, and the admins' tables: the moderation log, the
+//                           save version, the chat log (with the ids of its starred lines and its teachers' lines), the settings, and the admins' tables: the moderation log, the
 //                           pinned backups, the drop parties and their crackers (who lit each, the prize, claimed or
 //                           not), the logins (when each knight's sockets opened and closed), every finished trade, the request
 //                           meter (one row per UTC day, with its admin, alarm and rows-written columns), the movement check's counts and violations (move_day, move_log), and the shared world's
@@ -21,6 +21,8 @@ export async function backupCall(world, req, url, call, method) {
       accounts: rows('SELECT * FROM accounts ORDER BY name_lc'),
       saves: rows('SELECT * FROM saves ORDER BY name_lc, ver'),
       chat: rows('SELECT * FROM chat ORDER BY id'),
+      chat_masked: rows('SELECT * FROM chat_masked ORDER BY id'),     // the chat ids the word filter starred something in
+      chat_teacher: rows('SELECT * FROM chat_teacher ORDER BY id'),   // the chat ids a teacher said from the teacher view
       settings: rows('SELECT * FROM settings ORDER BY key'),
       mod_log: rows('SELECT * FROM mod_log ORDER BY id'),
       save_pins: rows('SELECT * FROM save_pins ORDER BY name_lc'),

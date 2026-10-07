@@ -527,6 +527,23 @@ export class Room {
     if (strike === true && acc) this.wordStrike(k, acc, now, typeof m.text === 'string' ? m.text : '');
   }
 
+  // A teacher's line (the teacher view's chat box, watch.js doSay; owner, 7 Oct). The same word filter and 120-letter cap as a
+  // kid's line, but never a strike, and never stopped by a pause (like an admin's). Logged under the teacher's own name (the
+  // chat log, with teacher set: world.js logChat), and sent to every knight as an admin's line with teacher: true, so every
+  // page draws it in the admin's gold under that name (an older page, which does not know the mark, still shows the name and
+  // the line). A knight's socket can never reach this: only the Watch calls it, with the name from the teacher's session.
+  teacherSay(name, said) {
+    if (typeof name !== 'string' || !name) return null;
+    const { text, masked } = this.check(typeof said === 'string' ? said : '');
+    if (!text) return null;
+    const at = this.now();
+    this.log(name, text, at, !!masked, true);
+    const out = JSON.stringify({ t: 'chat', n: name, text, at, role: 'admin', teacher: true });
+    for (const o of this.knights.values()) if (o.hello) this.raw(o.sock, out);
+    this.hooks.chat({ at, n: name, text, role: 'admin', masked: !!masked, teacher: true });
+    return { at, text, masked: !!masked };
+  }
+
   // One more word strike on this knight's account: a warning, a last warning, then out for 24 hours. One mod_log row each,
   // with the line as it was typed after the count ("2: what the shit"), so the parent page can tell whether it was fair (only
   // the parent page reads mod_log; the chat log keeps the starred line).

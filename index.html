@@ -51886,6 +51886,7 @@ window.DEATHS = DEATHS;
   const WSPLIT_DEF = 0.7, WSPLIT_MAX = 0.82;
   const TIGHT = 700;   // under this the bar may take a second row
   const ZOOM_MIN = 0.6, ZOOM_MAX = 2, ZOOM_STEP = 1.25;
+  const SAY_MAX = 120;   // a teacher's chat line: the game chat's own cap (74-chat MAX, filter.js checkChat)
   const divW = coarse => coarse ? 20 : 12;
   const BYE = {
     4010: 'You signed out.',
@@ -52149,6 +52150,11 @@ html.tv-on,html.tv-on body{background:${PAL.bg}}
 #tv .ln.masked{border-left-color:${PAL.amber}}
 #tv .ln .hid{display:inline-block;color:${PAL.amber};font-size:.87rem;margin-left:6px}
 #tv .ln.ev{color:${PAL.dim}}
+#tv-say{flex:none;display:flex;gap:8px;align-items:center;padding:8px 10px;border-top:1px solid ${PAL.line}}
+#tv-say input{flex:1 1 0;min-width:0;min-height:44px;box-sizing:border-box;font:inherit;font-size:16px;padding:0 .7rem;color:${PAL.text};background:#101216;border:1px solid #3a3f4b;border-radius:8px;-webkit-appearance:none;appearance:none}
+#tv-say input::placeholder{color:${PAL.dim}}
+#tv-say input:focus{outline:2px solid ${PAL.name};outline-offset:1px}
+#tv-say button{flex:none}
 #tv .ln.ev.filter{border-left-color:${PAL.red}}
 #tv .ln.div0{color:${PAL.dim};font-size:.87rem;text-align:center;padding:8px;border-left:0}
 #tv .ln.tap{cursor:pointer}
@@ -52269,8 +52275,17 @@ html.tv-on,html.tv-on body{background:${PAL.bg}}
       ui.chatScroll.addEventListener('scroll', () => { const s = ui.chatScroll; const atEnd = s.scrollTop + s.clientHeight >= s.scrollHeight - 24; if (atEnd !== S.follow) { S.follow = atEnd; if (atEnd) { S.newLines = 0; renderNewLines(); } } });
       ui.newLines = btn('0 new lines', () => { S.follow = true; S.newLines = 0; scrollChatEnd(); renderNewLines(); }, 'blue'); ui.newLines.id = 'tv-newlines'; ui.newLines.hidden = true;
       box.append(ui.chatScroll, ui.newLines);
+      // the teacher's own line in the game chat (owner, 7 Oct): under her own name, in the admins' gold, to everyone; always
+      // shown under the chat (wide or narrow, folded or not). Enter or Send; the text waits in the box if the world says no.
+      ui.say = el('div'); ui.say.id = 'tv-say';
+      ui.sayInput = el('input'); ui.sayInput.type = 'text'; ui.sayInput.maxLength = SAY_MAX; ui.sayInput.autocomplete = 'off';
+      ui.sayInput.setAttribute('autocapitalize', 'sentences'); ui.sayInput.setAttribute('enterkeyhint', 'send'); ui.sayInput.setAttribute('aria-label', 'Say something in the game chat');
+      ui.sayInput.placeholder = sayHint();
+      ui.sayInput.addEventListener('keydown', sayKey);
+      ui.sayBtn = btn('Send', () => sayLine(), 'blue');
+      ui.say.append(ui.sayInput, ui.sayBtn);
       ui.chatFoot = el('div', 'foot'); ui.chatFoot.id = 'tv-chatfoot';
-      chat.append(ch, box, ui.chatFoot);
+      chat.append(ch, box, ui.say, ui.chatFoot);
       // the middle: the map, or the kid being watched
       const midp = el('section', 'pane'); midp.id = 'tv-mid'; ui.mid = midp;
       ui.mapPane = el('div', 'box'); ui.mapPane.id = 'tv-mappane';
@@ -52483,7 +52498,7 @@ html.tv-on,html.tv-on body{background:${PAL.bg}}
       if (!m || typeof m.t !== 'string') return;
       S.lastArrive = now();
       switch (m.t) {
-        case 'w_hello': S.me = String(m.me || ''); S.expires = +m.expires || 0; S.notice = m.notice !== false; setStatus('live'); if (S.hiddenView && !D.hidden) { const n = S.hiddenView; S.hiddenView = null; watch(n); } break;
+        case 'w_hello': S.me = String(m.me || ''); if (ui.sayInput) ui.sayInput.placeholder = sayHint(); S.expires = +m.expires || 0; S.notice = m.notice !== false; setStatus('live'); if (S.hiddenView && !D.hidden) { const n = S.hiddenView; S.hiddenView = null; watch(n); } break;
         case 'w_all': {
           S.lines = [];
           const backlog = Array.isArray(m.chat) ? m.chat : [];
@@ -52512,6 +52527,8 @@ html.tv-on,html.tv-on body{background:${PAL.bg}}
         case 'w_no': {
           const asked = S.pending[m.req]; delete S.pending[m.req];
           if (asked && asked.t === 'w_view' && S.watchWant === asked.n) S.watchWant = null;
+          // a line the world did not take (too fast, nothing in it): back in the box to send again
+          if (asked && asked.t === 'w_say' && ui.sayInput && !ui.sayInput.value) ui.sayInput.value = asked.text;
           say(m.text || 'That did not go through.', true);
           break;
         }
@@ -52524,7 +52541,22 @@ html.tv-on,html.tv-on body{background:${PAL.bg}}
         default: break;
       }
     }
-    const lineOf = c => ({ kind: 'line', at: +c.at || now(), n: String(c.n || '?'), text: String(c.text || ''), role: c.role === 'admin' ? 'admin' : 'player', masked: !!c.masked });
+    const lineOf = c => ({ kind: 'line', at: +c.at || now(), n: String(c.n || '?'), text: String(c.text || ''), role: c.role === 'admin' || c.teacher === true ? 'admin' : 'player', masked: !!c.masked, teacher: c.teacher === true });
+    // ---------- the teacher's own line ----------
+    // Enter in the box sends. Heard on the window in the capture phase too (start()): the card's own guard (71-login) stops
+    // every key typed in a text box there, so the box itself never hears it on the real page; each press is taken once
+    function sayKey(ev) {
+      if (!ev || ev.key !== 'Enter' || ev._said || !ui.sayInput || ev.target !== ui.sayInput) return;
+      ev._said = true; if (ev.preventDefault) ev.preventDefault();
+      sayLine();
+    }
+    function sayHint() { return S.me ? 'Say to all, as ' + S.me : 'Say to all'; }
+    function sayLine() {
+      if (!ui.sayInput) return;
+      const text = String(ui.sayInput.value || '').replace(/\s+/g, ' ').trim().slice(0, SAY_MAX);
+      if (!text) { ui.sayInput.value = ''; return; }
+      if (send({ t: 'w_say', text })) ui.sayInput.value = '';
+    }
     function takeKnights(m) { S.knights = Array.isArray(m.knights) ? m.knights : []; S.inside = Array.isArray(m.inside) ? m.inside : []; S.gone = Array.isArray(m.gone) ? m.gone : []; S.frameAt = now(); }
     function takeActs(m) {
       if (Array.isArray(m.acts)) S.acts = m.acts;
@@ -52574,7 +52606,7 @@ html.tv-on,html.tv-on body{background:${PAL.bg}}
       m.appendChild(el('div', 'lbl', 'Pause chat for everyone:'));
       for (const [span, label] of [['5m', '5 minutes'], ['15m', '15 minutes'], ['1h', '1 hour']]) m.appendChild(btn(label, () => { S.pauseMenu = false; m.hidden = true; send({ t: 'w_pause', span }); }));
       m.appendChild(btn('Cancel', () => { S.pauseMenu = false; m.hidden = true; }));
-      m.appendChild(el('div', 'dim small', 'Admins can still talk while chat is paused.'));
+      m.appendChild(el('div', 'dim small', 'Admins and teachers can still talk while chat is paused.'));
       // narrow: the flagged lines live here (the bar has no room for them)
       if (S.narrow) { const n = flaggedCount(); m.appendChild(btn(n + ' to look at', () => { S.pauseMenu = false; m.hidden = true; S.filter = 'flagged'; S.tab = 'chat'; S.unread = 0; renderChat(); renderTabs(); scrollChatEnd(); })); }
       const r = rect(ui.pauseBtn), rr = rect(ui.root);
@@ -52607,10 +52639,10 @@ html.tv-on,html.tv-on body{background:${PAL.bg}}
       if (l.kind === 'div') return el('div', 'ln div0', l.text);
       const d = el('div', 'ln' + (l.kind === 'ev' ? ' ev' + (l.filter ? ' filter' : '') : '') + (l.kind === 'line' && l.masked ? ' masked' : ''));
       d.appendChild(el('span', 't', hm(l.at)));
-      if (l.n) { d._n = lc(l.n); if (S.selected && d._n === lc(S.selected)) d.className += ' sel'; d.className += ' tap'; d.setAttribute('role', 'button'); d.tabIndex = 0; d.addEventListener('click', () => select(l.n)); }
+      if (l.n && !l.teacher) { d._n = lc(l.n); if (S.selected && d._n === lc(S.selected)) d.className += ' sel'; d.className += ' tap'; d.setAttribute('role', 'button'); d.tabIndex = 0; d.addEventListener('click', () => select(l.n)); }
       if (l.kind === 'ev') { d.appendChild(el('span', '', l.text)); return d; }
       d.appendChild(el('span', 'n' + (l.role === 'admin' ? ' admin' : ''), l.n));
-      if (l.role === 'admin') d.appendChild(el('span', 'pill', 'ADMIN'));
+      if (l.role === 'admin') d.appendChild(el('span', 'pill', l.teacher ? 'TEACHER' : 'ADMIN'));
       d.appendChild(el('span', '', ': ' + l.text));
       if (l.masked) d.appendChild(el('span', 'hid', 'Words hidden'));
       return d;
@@ -52635,7 +52667,7 @@ html.tv-on,html.tv-on body{background:${PAL.bg}}
       const p = pauseNow();
       if (p) { c.appendChild(el('div', 'lbl', 'Chat is paused until ' + clock(p.until) + '.')); const b = el('div', 'btns'); b.appendChild(btn('Turn chat back on', chatOn, 'amber')); c.appendChild(b); }
       else { c.appendChild(el('div', 'lbl', 'Pause chat for everyone:')); const b = el('div', 'btns'); for (const [span, label] of [['5m', '5 minutes'], ['15m', '15 minutes'], ['1h', '1 hour']]) b.appendChild(btn(label, () => send({ t: 'w_pause', span }))); c.appendChild(b); }
-      c.appendChild(el('div', 'dim small', 'Admins can still talk while chat is paused.'));
+      c.appendChild(el('div', 'dim small', 'Admins and teachers can still talk while chat is paused.'));
       if (ui.pauseBtn) ui.pauseBtn.hidden = !(S.narrow || S.folded);
     }
 
@@ -53159,6 +53191,7 @@ html.tv-on,html.tv-on body{background:${PAL.bg}}
       W.addEventListener('resize', () => layout());
       // every key: Esc goes back to the map; none reaches the game (05-input would take arrows, space and Tab)
       W.addEventListener('keydown', ev => {
+        sayKey(ev);
         if (ev.key === 'Escape' && S.watch) { back(); if (ev.preventDefault) ev.preventDefault(); if (ev.stopPropagation) ev.stopPropagation(); return; }
         const t = ev.target; if (!(t && ui.root && ui.root.contains && ui.root.contains(t))) { if (ev.stopPropagation) ev.stopPropagation(); }
       }, true);
@@ -53353,6 +53386,32 @@ html.tv-on,html.tv-on body{background:${PAL.bg}}
       const folded = s4.S.folded === true && s4.ui.chatFoot.hidden === true && s4.ui.pauseBtn.hidden === false;
       const unfolded = s.S.folded === false && s.ui.chatFoot.hidden === false && s.ui.pauseBtn.hidden === true;
       check(P0 + 'the chat\'s pause controls fold into the bar\'s Pause chat menu when the chat pane is under 420 px tall', folded && unfolded, { folded, unfolded });
+    }
+    // the teacher's own line (owner, 7 Oct): the box under the chat sends w_say on Send and on Enter, is there wide, narrow
+    // and folded, keeps a refused line, sends nothing blank, and draws the world's line as the teacher's (gold, TEACHER, no tap)
+    {
+      const Ps = fakePage(); const ss = live(Ps);
+      ss.ui.sayInput.value = '  Hello   everyone  '; Ps.click(ss.ui.sayBtn);
+      const sent1 = Ps.sent('w_say'), one = sent1.length === 1 && sent1[0].text === 'Hello everyone' && ss.ui.sayInput.value === '';
+      ss.ui.sayInput.value = 'Time to pack up'; ss.ui.sayInput.fire('keydown', { key: 'Enter' });
+      const sent2 = Ps.sent('w_say'), enter = sent2.length === 2 && sent2[1].text === 'Time to pack up' && ss.ui.sayInput.value === '';
+      Ps.ws().recv({ t: 'w_no', req: sent2[1].req, code: 'slow', text: 'Wait a moment before the next line.' });
+      const kept = ss.ui.sayInput.value === 'Time to pack up';
+      ss.ui.sayInput.value = '   '; Ps.click(ss.ui.sayBtn); const blank = Ps.sent('w_say').length === 2;
+      // on the real page the card's guard stops a key typed in a text box at the window: Enter is heard there, and taken once
+      ss.ui.sayInput.value = 'Line up at the door';
+      const kev = { type: 'keydown', key: 'Enter', target: ss.ui.sayInput, preventDefault() { }, stopPropagation() { } };
+      for (const f of Ps.winL.keydown || []) f(kev); ss.ui.sayInput.fire('keydown', kev);
+      const winEnter = Ps.sent('w_say').length === 3 && Ps.sent('w_say')[2].text === 'Line up at the door';
+      Ps.ws().recv({ t: 'w_chat', at: Ps.clock.t, n: 'Mrs Smith', text: 'Hello everyone', role: 'admin', masked: false, teacher: true });
+      const row = ss.ui.chatList.children[ss.ui.chatList.children.length - 1];
+      const drawn = !!row && /Mrs Smith/.test(row.textContent) && /TEACHER/.test(row.textContent) && row.children.some(c => c.className === 'n admin') && row._n === undefined;
+      const shown = ss.ui.say.visible && ss.ui.sayInput.maxLength === 120 && ss.ui.sayInput.placeholder === 'Say to all, as Mrs Smith';
+      const Pn = fakePage({ width: 768, height: 1024 }); const sn = live(Pn);
+      const narrow = sn.S.narrow === true && sn.ui.say.visible;
+      const Pf = fakePage({ chatH: 380 }); const sf = live(Pf);
+      const folded = sf.S.folded === true && sf.ui.say.visible;
+      check(P0 + "the teacher's chat box: Send and Enter (heard on the window too, taken once) send w_say (trimmed, at most 120), a refused line stays in the box, a blank one sends nothing, the world's line shows as hers in gold with TEACHER; there wide, narrow and folded", one && enter && kept && blank && winEnter && drawn && shown && narrow && folded, { one, enter, kept, blank, winEnter, drawn, shown, narrow, folded, row: row && row.textContent });
     }
     // the two-tap send-off, back by itself after 5 s; a toast for every w_no
     {

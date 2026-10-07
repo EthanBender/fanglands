@@ -76,10 +76,13 @@ CREATE TABLE IF NOT EXISTS teacher_sessions (hash TEXT PRIMARY KEY, teacher_id I
 CREATE INDEX IF NOT EXISTS teacher_sessions_by_teacher ON teacher_sessions (teacher_id);
 CREATE TABLE IF NOT EXISTS teacher_acts (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, teacher_id INTEGER NOT NULL, teacher TEXT NOT NULL, act TEXT NOT NULL, target TEXT, target_lc TEXT, until INTEGER NOT NULL DEFAULT 0, prev INTEGER NOT NULL DEFAULT 0, undone_at INTEGER NOT NULL DEFAULT 0, undone_by TEXT);
 CREATE INDEX IF NOT EXISTS teacher_acts_by_teacher ON teacher_acts (teacher_id, at);
-CREATE TABLE IF NOT EXISTS chat_masked (id INTEGER PRIMARY KEY)
+CREATE TABLE IF NOT EXISTS chat_masked (id INTEGER PRIMARY KEY);
+CREATE TABLE IF NOT EXISTS chat_teacher (id INTEGER PRIMARY KEY)
 `;
 // chat_masked: the ids of chat rows the word filter starred something in (one row per such line, none for the rest), so a
 // screen opened later still flags them. A table of its own: the chat table itself is never altered.
+// chat_teacher: the ids of chat rows a teacher said from the teacher view's chat box (owner, 7 Oct), so the teacher view and
+// /admin's chat log draw them as the teacher's. The same: a table of its own, pruned with the chat.
 // Columns added to tables that already exist, only when missing:
 //   accounts: the send-off;  teachers: tried_at, when `tries` (wrong passwords today, for the owner's list; never a lock) was last counted.
 const ADDED_COLUMNS = [
@@ -255,7 +258,7 @@ export class TeacherBook {
   // logins that ended since then, by knight (the newest end): [{n, at}]
   goneSince(since) { return this.rows('SELECT a.name AS n, MAX(l.ended) AS at FROM logins l JOIN accounts a ON a.name_lc = l.name_lc WHERE l.ended > ? GROUP BY l.name_lc', since).map(r => ({ n: r.n, at: Number(r.at) })); }
   admins() { return new Set(this.rows("SELECT name FROM accounts WHERE role = 'admin'").map(r => r.name)); }
-  chatSince(since, limit) { return this.rows('SELECT c.at, c.name, c.text, (m.id IS NOT NULL) AS masked FROM chat c LEFT JOIN chat_masked m ON m.id = c.id WHERE c.at > ? ORDER BY c.id DESC LIMIT ?', since, limit).reverse(); }
+  chatSince(since, limit) { return this.rows('SELECT c.at, c.name, c.text, (m.id IS NOT NULL) AS masked, (t.id IS NOT NULL) AS teacher FROM chat c LEFT JOIN chat_masked m ON m.id = c.id LEFT JOIN chat_teacher t ON t.id = c.id WHERE c.at > ? ORDER BY c.id DESC LIMIT ?', since, limit).reverse(); }
 
   // ---------- settings: the pause and the notice (one read a wake) ----------
   settings() {
