@@ -25,7 +25,9 @@ function run(sc) {
     room.message(s, JSON.stringify({ t: 'hello', v: 1, caps: [], atlas: null }));
     room.message(s, JSON.stringify({ t: 'p', map: sc.map, region: 'Somewhere', x: 100 + 40 * i, y: 100, lv: 3 }));
   }
-  // each knight: 'paused' sends nothing more; 'playing' sends presence and (if keeper) an empty mon every second
+  // each knight: 'paused' sends nothing more (a page in the menu with nobody near it, a locked phone, a hidden tab: a paused
+  // keeper WITH a knight near streams its frozen monsters, which this Room-only clock leaves out); 'playing' sends presence
+  // and (with --beat, if keeper) an empty mon every second
   const nextSend = socks.map(() => now + 1000);
   const step = (until) => {
     let counted = 0;
@@ -59,7 +61,7 @@ const SC = [
   { name: 'two knights, in an instance, both paused', map: 'goblin_cave', knights: ['paused', 'paused'] },
   { name: 'two knights, overworld, keeper playing, other paused', map: 'over', knights: ['playing', 'paused'] },
   { name: 'two knights, overworld, both playing', map: 'over', knights: ['playing', 'playing'] },
-  { name: 'two knights, overworld, keeper paused, other playing (one hand-over)', map: 'over', knights: ['paused', 'playing'] },
+  { name: 'two knights, overworld, keeper silent (locked, hidden), other playing (one hand-over)', map: 'over', knights: ['paused', 'playing'] },
   { name: 'three knights, overworld, all paused', map: 'over', knights: ['paused', 'paused', 'paused'] },
 ];
 for (const sc of SC) console.log(JSON.stringify(run(sc)));

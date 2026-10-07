@@ -1573,25 +1573,35 @@ background (measured with real pages under wrangler dev). It now pushes a save o
 holds: the same string never again (a page in the background: nothing moves), a save that differs only in the world clock
 `time` (a paused page) at most every 10 minutes, and anything else as before (the 12 s hold). Leaving the page (hidden,
 `pagehide`) still pushes whatever differs, the clock included. A keeper's game no longer sends an empty `mon` once a second
-when nobody is near it (its presence says it is alive), which halves a lone open page's socket messages, and a paused keeper
-sends no snapshots (`75-coop`).
+when nobody is near it (its presence says it is alive), which halves a lone open page's socket messages (`75-coop`). A
+paused keeper (or one on the title screen) with a knight near is as it always was: it streams its frozen monsters to him 8
+times a second and keeps the map, so a named boss's fight, its count and its death stay on one game. (Round 1 of this work
+made a paused keeper go quiet and hand its map to a friend who played; that lost boss credit at the hand-over, and the repairs
+for it, a count on the row and a 'hand' message, then paid twice and stood dead bosses up again, so it was taken out on
+7 Oct 2026. The shared world's later stages move monsters onto the server, which ends keeper hand-overs for good.)
 
-Measured 4 Oct 2026 with real headless pages against two local `wrangler dev` worlds side by side, master 3b6d6b4 and this
-change (`tools/idle-pages.cjs`, 120 s a situation unless said; billed = the pages' calls counted at the page, each `/api`
-call and each socket opening (`/ws`, billed as a request too; only the iPad row opens sockets inside the window) + alarms +
-socket messages / 20, per hour; "hidden" is an emulated background tab whose timers are not throttled):
+Measured 7 Oct 2026 with real headless pages against two local `wrangler dev` worlds side by side, master d523504 and this
+change (`tools/idle-pages.cjs`, 120 s a situation; each World's alarms and socket messages counted by a `console.log` in
+`alarm()` and `webSocketMessage()`, since master's meter has no alarm column; billed = the pages' calls counted at the page,
+each `/api` call and each socket opening (`/ws`, billed as a request too; only the iPad row opens sockets inside the window) +
+alarms + socket messages / 20, per hour; "hidden" is an emulated background tab whose timers are not throttled):
 
 | Situation (per hour) | before: alarms, page calls, messages, billed | after: alarms, page calls, messages, billed |
 |---|---|---|
-| two knights on one map, both paused | 1,198, 449, 0, **1,647** | 0, 0, 0, **0** (12 min: 1 save each, the 10-minute clock push) |
-| the same in an instance | 1,167, 449, 0, **1,616** | 0, 0, 0, **0** |
-| one paused, one in the background | 1,198, 479, 0, **1,677** | 0, 30, 0, **30** (1 save in the window) |
-| both playing, standing still | 1,228, 449, 35,184, **3,436** | 0, 449, 35,224, **2,210** |
-| keeper paused, the other playing | 1,228, 449, 30,852, **3,220** (the paused keeper kept the map) | 0, 210, 3,593, **389** (the one playing keeps it) |
+| two knights on one map, both paused | 1,197, 449, 0, **1,646** | 0, 0, 0, **0** (the World napped) |
+| the same in an instance | 1,198, 449, 0, **1,647** | 0, 0, 0, **0** (napped) |
+| one paused, one in the background | 1,198, 479, 0, **1,677** | 0, 30, 0, **30** (1 save in the window; napped) |
+| both playing, standing still | 1,228, 449, 35,251, **3,440** | 0, 449, 35,221, **2,210** |
+| keeper paused, the other playing | 1,198, 449, 30,938, **3,194** | 0, 210, 30,998, **1,760** (the paused keeper streams and keeps the map, on both) |
 | one knight paused | 0, 210, 0, **210** | 0, 0, 0, **0** |
-| one knight in the background | 0, 240, 0, **240** | 0, 30, 0, **30** (5 min: still that 1 save) |
-| one knight playing, standing still | 0, 210, 7,157, **567** | 0, 210, 3,593, **389** |
-| an iPad put down and picked up, 5 times in 120 s (6 Oct, both counted) | 149, 448, 4,839, **839** | 149, 448, 2,539, **724** |
+| one knight in the background | 0, 239, 0, **239** | 0, 30, 0, **30** |
+| one knight playing, standing still | 0, 210, 7,158, **568** | 0, 210, 3,594, **389** |
+| an iPad put down and picked up, 5 times in 120 s | 150, 450, 4,856, **842** | 150, 450, 2,548, **727** |
+
+Two paused knights cost nothing: the keeper streams to a friend only while the friend is near and heard (a paused page sends
+no presence, so after a few seconds the keeper's game no longer counts him near and sends nothing), no alarm watches a quiet
+keeper, and the World naps. The keeper-paused row is the one the taken-out round-1 rule had brought to 389: a paused keeper
+beside a friend who plays still streams 8 snapshots a second, as on master, and that is now the largest idle cost left.
 
 The iPad row was first written as 449 alarms an hour before (963 billed) and 150 after (577): the "before" alarms were the
 World's game calls minus the pages' own, and that subtraction counted the 5 socket openings and the harness's own 5
@@ -1602,9 +1612,10 @@ and 5 socket openings on each. The whole difference is the keeper's empty `mon` 
 messages in the window).
 
 The fake clock agrees (`node tools/idle-alarms.mjs`, and `--src <master>/online/src --beat` for before): two or three idle
-knights on one map 1,180 to 1,200 alarms an hour before, 0 after (only the roster's one after the first presence); a paused
-keeper beside a knight who plays, one alarm for the hand-over. Not changed: a page left unpaused saves (and so pushes) every
-15 s, because its play time moves (210 an hour), and two unpaused knights side by side still stream 8 snapshots a second.
+knights on one map 1,180 to 1,200 alarms an hour before, 0 after (only the roster's one after the first presence); a silent
+keeper (a locked phone, a hidden tab) beside a knight who plays, one alarm for the hand-over. Not changed: a page left unpaused saves (and so pushes) every
+15 s, because its play time moves (210 an hour), and a keeper with a knight near and heard, paused or not, still streams 8
+snapshots a second.
 
 **The parent page's own traffic.** Its 10 s refresh reads who is online, the chat, the moderation log and the trades:
 24 calls a minute while the page is in view. It reads the meter only when it opens and when Refresh is pressed, never
