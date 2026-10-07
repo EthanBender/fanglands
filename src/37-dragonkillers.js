@@ -97,6 +97,8 @@
     if (!quiet) { burst(tc(DK_WD.x(60)), tc(DK_WD.y(96)), '#8a6a3a', 24, 120); sfx('open'); }
     const q = DK(); if (!q.gate) { q.gate = true; if (!quiet) say("Hollowford avenged? Then the Duke's order is lifted. The road south is yours, knight. It goes to Dunstan's farm, and past that, to the dragons.", warden.name); save(); }
   }
+  // the Great Spread's save migration (97-spread): the warden's gate stands open on the new map once it was opened
+  HOOKS.remake.push(Object.assign(() => { if (DK().gate) for (const [x, y] of GATE_T) if (tileAt(x, y) === WARDEN_GATE) changeTile(x, y, T.DIRT); }, { remakeOf: '37-dragonkillers' }));
   function closeGate() { for (const [x, y] of GATE_T) if (tileAt(x, y) !== WARDEN_GATE) changeTile(x, y, WARDEN_GATE); }
   function placeWarden() {
     const want = gateClosed() ? WARDEN_POST : WARDEN_ASIDE, px = tc(want.x), py = tc(want.y);

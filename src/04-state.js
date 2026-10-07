@@ -224,7 +224,7 @@ function save() {
   if (SAVE_LOCK) return;   // this page refused a save from a newer world: it writes nothing until it is reloaded
   try {
     // tiles go out by NAME (see tileId in 03-textures): numeric ids shift when feature files come and go
-    const data = { player, quest, swordTaken, deathKeep, mapDiffs: [...mapDiffs.entries()].map(([i, t]) => [i, tileName(t)]), regrow: regrow.map(r => ({ ...r, t: tileName(r.t) })), crops, fires: fires.map(f => ({ ...f, under: f.under === undefined ? undefined : tileName(f.under) })), time, mapW: MAP_W, worldV: WORLD_V };
+    const data = { player, quest, swordTaken, deathKeep, mapDiffs: [...mapDiffs.entries()].map(([i, t]) => [i, tileName(t)]), regrow: regrow.map(r => ({ ...r, t: tileName(r.t) })), crops, fires: fires.map(f => ({ ...f, under: f.under === undefined ? undefined : tileName(f.under) })), time, mapW: MAP_W, worldV: WORLD_V, worldRev: WORLD_REV };
     localStorage.setItem(SAVE_KEY, JSON.stringify(data));
   } catch (e) { /* storage unavailable: play on without saving */ }
 }
@@ -238,10 +238,10 @@ function load() {
     SAVE_LOCK = false;
     // a knight from a newer world (this page is older than the save: a rollback): load nothing, write nothing, say so
     if ((d.worldV | 0) > WORLD_V) { SAVE_LOCK = true; saveLockSay = NEWER_WORLD; notify(NEWER_WORLD); return false; }
-    // a knight from an older world: the spread's migration prepares the save first (no hook registers at world 1).
-    // A preparation that throws must never let the caller fall through to a fresh knight's save() over the real one:
-    // refuse it like a newer world's (nothing loaded, nothing written, here or to the cloud) and say so
-    if ((d.worldV | 0) < WORLD_V) {
+    // a knight from an older world (or an older worldRev of this one): the spread's migration prepares the save first
+    // (97-spread's SPREAD.prepare). A preparation that throws must never let the caller fall through to a fresh knight's
+    // save() over the real one: refuse it like a newer world's (nothing loaded, nothing written, here or to the cloud) and say so
+    if ((d.worldV | 0) < WORLD_V || ((d.worldV | 0) === WORLD_V && (d.worldRev | 0) < WORLD_REV)) {
       try { for (const f of HOOKS.saveIn) f(d); }
       catch (e) { SAVE_LOCK = true; saveLockSay = SAVE_KEPT; notify(SAVE_KEPT); window.__saveInError = String(e && e.stack || e); return false; }
     }

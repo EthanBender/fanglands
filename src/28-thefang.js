@@ -160,6 +160,8 @@
     if (!quiet) { burst(tc(GATE.x), tc(GATE.y), '#ff6a1a', 40, 200); burst(tc(GATE.x), tc(GATE.y), '#3a3a42', 20, 120); say('The gate grinds open. Heat rolls out like a wall. Somewhere below, something enormous breathes.', 'The Voice'); }
     save();
   };
+  // the Great Spread's save migration (97-spread): the lair gate stands open on the new map once it was opened
+  HOOKS.remake.push(Object.assign(() => { if (FQ().gateOpen) for (let x = GATE.x0; x <= GATE.x1; x++) if (tileAt(x, GATE.y) === LAIR_GATE) changeTile(x, GATE.y, T.CAVE); }, { remakeOf: '28-thefang' }));
   const heatDamage = () => {
     if (player.mech) { player.mech.hp -= 2; floatText(player.x, player.y - 24, '-2 heat (walker)', '#ff8a5a'); if (player.mech.hp <= 0) wreckMech(); return; }
     player.hp -= 2; player.sinceHurt = 0; floatText(player.x, player.y - 24, '-2 heat', '#ff8a5a');

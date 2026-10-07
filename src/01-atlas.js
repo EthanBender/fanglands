@@ -765,8 +765,13 @@
     if (problems.length) console.error('ATLAS frames: ' + problems.join('; '));
   }
 
+  // the worldRev footprints (§10 "worldRev sweeps"): a later stage that changes ground a knight may have built on (Stage 5's
+  // places, Stage 6's roads) adds REVS[n] = { boxes: [[x0, y0, x1, y1], ...] } (the new map's coordinates) and bumps
+  // WORLD_REV to n; a save with an older worldRev is swept in those boxes only (97-spread's SPREAD.sweep). None yet.
+  const REVS = {};
+
   Object.assign(A, {
-    ANCHORS, PORTS, PORT_REL, TRACKS, WORLD, PINS, NESTED, OWNERS, PLAN: { W: PLAN_W, H: PLAN_H },
+    ANCHORS, PORTS, PORT_REL, TRACKS, WORLD, PINS, NESTED, OWNERS, REVS, PLAN: { W: PLAN_W, H: PLAN_H },
     frame, world: W, port, box, track, guards, anchorOf, oldToNew, oldToNewWorld,
     MAIN_ROADS, ROAD_IDS, SIGNPOSTS, GROUNDS, pointOf, reserved, reservedAt, onMainRoad, signText, signLegs, signArms,
     frameProblems: () => problems.slice(), strict: () => [...STRICT.values()].map(e => e.slice()),

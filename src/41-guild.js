@@ -104,6 +104,8 @@
     if (SOLID.has(tileAt(b.x + b.door, b.y + b.h))) changeTile(b.x + b.door, b.y + b.h, T.DIRT);
     burst(tc(b.x + b.w / 2), tc(b.y + b.h / 2), '#d8a95e', 30, 140);
   };
+  // the Great Spread's save migration (97-spread): a founded guild's hall stands again on the new map (its rank changes no tile)
+  HOOKS.remake.push(Object.assign(() => { if (G().founded) build(HALL); }, { remakeOf: '41-guild' }));
   const found = () => {
     const g = G(); g.founded = true; build(HALL);
     levelBanner = { text: 'THE HOLLOWFORD GUILD', sub: 'Founded by Old Tam', t: 4.5 }; sfx('quest'); burst(tc(DOOR_POS.x), tc(DOOR_POS.y), '#7a2e2e', 40, 180);

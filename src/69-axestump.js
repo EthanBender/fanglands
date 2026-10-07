@@ -21,6 +21,8 @@
 const AXE_T = (([x, y]) => ({ x, y }))(ATLAS.port('cave.axe_stump'));   // 02-world puts the axe stump here, by the cave mouth (the Atlas port)
 const AXE = { T: AXE_T, drawn: 0 };                    // drawn: frames the axe was drawn (the self-test reads it)
 window.AXE = AXE;
+// the Great Spread's save migration (97-spread): the axe he took leaves the plain stump on the new map
+HOOKS.remake.push(Object.assign(() => { if (player.tookAxe && tileAt(AXE_T.x, AXE_T.y) === T.AXESTUMP) changeTile(AXE_T.x, AXE_T.y, T.STUMP); }, { remakeOf: '69-axestump' }));
 function axeWaiting() { return !player.tookAxe && !window.__instance && tileAt(AXE_T.x, AXE_T.y) === T.AXESTUMP; }
 AXE.waiting = axeWaiting;
 

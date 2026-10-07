@@ -3432,6 +3432,8 @@
   HOOKS.world.push(snap);
   window.CAPITAL = {
     PLAN, TILES, KIND, KIND_NAMES, base, STATS, CLOCK, WARD, migrate, paint, snap, Q, MIG, SNAP, kindAt, baseAt, pristineAt, keepClear,
+    // the Great Spread's save migration (97-spread) parks machines and the mare with these rings, and refunds by this lookup
+    parkSpot: (cx, cy, R) => parkSpot(cx, cy, R, OPEN(), keepClear()), placedItemFor,
     timeLine, spanWords, dialAngle, lineFor, tapName, useThing, heroName, TALK, BELLST, BARK, CAT, KIDS, kidAt, swanAt, smallFolk,
     CHUNKS, get chunkMax() { return chunkMax; }, drawHook, TOWERS, TORCHES, LAMP_TOP, TREE_R, GCODE, drawTownBuilding, rimFor, TOWN_GATE_CELLS,
   };

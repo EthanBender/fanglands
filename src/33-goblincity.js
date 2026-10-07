@@ -269,6 +269,9 @@
     say("It's ALIVE. It's alive! It's... it's not stopping. Why is it not stopping? Knight! Away from my shelves!", n.name);
     if (inLab()) callGnasher(); levelBanner = { text: 'THE GNASHER WAKES', sub: 'Bring it down', t: 4 }; save();
   }
+  // the Great Spread's save migration (97-spread): the lever stands once the Gnasher was beaten (the lab's own, in the
+  // instance; on the overworld only in a build without instances)
+  HOOKS.remake.push(Object.assign(() => { if (!HAS_INST && TQ().stage >= 3 && tileAt(LEVER_T.x, LEVER_T.y) !== GC_LEVER) changeTile(LEVER_T.x, LEVER_T.y, GC_LEVER); }, { remakeOf: '33-goblincity' }));
   HOOKS.hit.push(m => { if (m.type === 'gnasher') burst(m.x, m.y - 8, '#8f96a3', 5, 70); });
   HOOKS.kill.push(m => {
     if (m.type !== 'gnasher') return;

@@ -225,6 +225,8 @@
     api.setTile(CRYPT_T.x, CRYPT_T.y, T.DIRT); api.setTile(STEP_T.x, STEP_T.y, T.DIRT); // the disturbed earth, and the step
   });
   // the core answers E on any grave itself (before HOOKS.use), so the last knight's grave is taken over here
+  // the Great Spread's save migration (97-spread): an opened crypt's door stands at the crypt port on the new map
+  HOOKS.remake.push(Object.assign(() => { if (N().crypt && tileAt(CRYPT_T.x, CRYPT_T.y) !== T_CRYPT) changeTile(CRYPT_T.x, CRYPT_T.y, T_CRYPT); }, { remakeOf: '35-night' }));
   const _useAction = useAction;
   useAction = function () {
     if (!player.dead && !player.mech && !window.__instance) {

@@ -552,6 +552,18 @@
     } else if (hf.freed) say(pick(["We're in the square most of the day now. I come down for what we saved, and for the quiet.", 'A guild, knight. When there is a roof to put it under. Folk who do things, and a board to say what.', "Pip counted your hammer blows. He tells everyone. Three, he says. Three and the bars went.", 'The crew that ran is building another beast in their War Shed, on the road below their camp. If you ever want another go at it.']), n.name);
     else { say("We're digging out the well, once we're past these bars. When Hollowford has a roof again, there'll be a chair in it for you, knight.", n.name); say('The crew that ran is building another beast in their War Shed, on the road below their camp. If you ever want another go at it.', n.name); }
   };
+  // the Great Spread's save migration (97-spread), from quest state: freed survivors leave the bars down; the Barrelbeast's
+  // wreck lies where it lay (quest.hollowford.wreck, already moved onto the new map by the migration), or on the first
+  // free spot by the War Shed, while it still lay there on the old map (SPREAD.remaking.wreckLies; a rebuilt beast is a
+  // machine, which the migration parks at the Dozer Bay). Outside a migration it only keeps a wreck that stands.
+  HOOKS.remake.push(Object.assign(() => {
+    const hf = HF(), WT = T.BEAST_WRECK ?? T.WRECK;
+    if (hf.freed) for (const [x, y] of BAR_TILES) if (tileAt(x, y) === T_BARS) changeTile(x, y, T.FLOOR);
+    const w = hf.wreck, lies = window.SPREAD && SPREAD.remaking ? !!SPREAD.remaking.wreckLies : false;
+    if (!Array.isArray(w) || !lies || tileAt(w[0], w[1]) === WT) return;
+    const spot = PLACEABLE_ON.has(tileAt(w[0], w[1])) && !insideBuilding(w[0], w[1]) ? w : WRECK_SPOTS.find(([x, y]) => PLACEABLE_ON.has(tileAt(x, y)));
+    if (spot) { changeTile(spot[0], spot[1], WT); hf.wreck = [spot[0], spot[1]]; }
+  }, { remakeOf: '20-hollowford' }));
   // the bars: locked while the beast walks; three hammer blows once it is dead
   const breakBars = () => {
     const hf = HF();
