@@ -112,7 +112,7 @@
       if (guardsNearCage().length) { notify('The guards would hear. Clear the camp first.'); return true; }
       freeSera(); return true;
     }
-    if (c.id && c.downT <= 0) {
+    if (c.id && c.downT <= 0 && !(window.MOUNTS && MOUNTS.tiles && t === MOUNTS.tiles.HORSE)) {   // (a mare in front is hers to answer, not the hero's: a hero just past her took E, 7 Oct)
       const d = dist(player.x, player.y, c.x, c.y);
       const dot = d > 0 ? ((c.x - player.x) * player.facing.x + (c.y - player.y) * player.facing.y) / d : 1;
       if (d < 72 && dot > 0.5) { live.facing = { x: -player.facing.x, y: -player.facing.y }; openPanel('companion'); return true; }

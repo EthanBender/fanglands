@@ -47,28 +47,6 @@
   },
   {
    "file": "06-systems.js",
-   "match": "THISTLEDOWN, east",
-   "from": "signpost.sign",
-   "to": "thistledown.west_gate",
-   "dir": "east",
-   "note": "the story signpost; its '1 mile' is the signpost's own figure"
-  },
-  {
-   "file": "06-systems.js",
-   "match": "GREY QUARRY, north",
-   "from": "signpost.sign",
-   "to": "quarry",
-   "dir": "north"
-  },
-  {
-   "file": "06-systems.js",
-   "match": "south-east over the Old Bridge",
-   "from": "signpost.sign",
-   "to": "hollowford",
-   "dir": "south-east"
-  },
-  {
-   "file": "06-systems.js",
    "match": "East, past the gate, follow the road",
    "from": "thistledown.duke",
    "to": "camp",

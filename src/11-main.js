@@ -334,7 +334,8 @@ window.FANGLANDS = {
     { // the signpost shows the struck-out name, not a note saying it was crossed out
       dialog.queue.length = 0; dialog.cur = null; F.tp(SIGN_TILE.x - 1, SIGN_TILE.y); F.face(SIGN_TILE.x, SIGN_TILE.y); F.press('KeyE'); F.sim(2, []);
       const txt = (dialog.cur && dialog.cur.text) || ''; const struck = 'HOLLOWFORD'.split('').map(c => c + '̶').join('');
-      check('signpost: HOLLOWFORD is struck through (U+0336 after every letter) and scorched, never "crossed out"', txt.includes('̶') && txt.includes(struck) && /scorched/.test(txt) && !/crossed out/.test(txt) && /THISTLEDOWN, east, 1 mile/.test(txt), { txt });
+      check('signpost: HOLLOWFORD is struck through (U+0336 after every letter) and scorched, never "crossed out"; every arm (the cave, Thistledown, Grey Quarry, Hollowford by the Long Road) names its way and the walk (Stage 6), never "1 mile"', txt.includes('̶') && txt.includes(struck) && /scorched/.test(txt) && !/crossed out/.test(txt) && !/mile/.test(txt)
+        && ['THE CAVE', 'THISTLEDOWN', 'GREY QUARRY'].every(w => new RegExp('→ ' + w + ', [a-z-]+, \\d+ (seconds|minutes?|and a half minutes) on foot\\.').test(txt)) && /\(scorched\), east through Thistledown, then the Long Road, [^.]* on foot\./.test(txt), { txt });
       dialog.queue.length = 0; dialog.cur = null; }
     { // gear tiers: every new item exists with the stated stats, colour, shape, stack 1, id; recipes at the stated level; bronze in the shops; sappers can drop bombs
       const A = { bronze_helm: ['helm', 3, '#b8863a'], bronze_body: ['body', 7, '#b8863a'], bronze_legs: ['legs', 5, '#b8863a'], bronze_shield: ['shield', 4, '#b8863a'], steel_legs: ['legs', 14, '#d5d9e0'], steel_shield: ['shield', 12, '#d5d9e0'] };

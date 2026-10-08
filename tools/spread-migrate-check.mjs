@@ -263,7 +263,10 @@ if (revInfo) {
         if (c) stumps.push(c); }
       return JSON.stringify({ mid, far, W: MAP_W, stumps }); })()`));
     const d = JSON.parse(fx.save), seen = new Set((d.mapDiffs || []).map(e => e[0]));
-    for (const [x, y] of plan.mid.concat([plan.far])) { const i = y * plan.W + x; if (!seen.has(i)) (d.mapDiffs = d.mapDiffs || []).push([i, 'PLANK']); }
+    // (a box whose middle already holds one of the fixture's own diffs gets no plank: the sweep owes the knight only the planks
+    // he was given, so the count back is held to the planks placed, not to the boxes; Stage 6's 660 row runs met 2 of them)
+    plan.placed = 0;
+    for (const [k, [x, y]] of plan.mid.concat([plan.far]).entries()) { const i = y * plan.W + x; if (seen.has(i)) continue; (d.mapDiffs = d.mapDiffs || []).push([i, 'PLANK']); if (k < plan.mid.length) plan.placed++; }
     d.regrow = d.regrow || []; d.fires = d.fires || [];
     plan.stumps.forEach(([x, y], k) => { const i = y * plan.W + x; if (seen.has(i)) return;
       if (k === 0) { d.mapDiffs.push([i, 'FIRE']); d.fires.push({ i, timer: 2, under: 'TREE' }); } else { d.mapDiffs.push([i, 'STUMP']); d.regrow.push({ i, t: 'TREE', timer: 2 }); } });
@@ -281,8 +284,8 @@ for (const s of saves) {
   if (s.planks) {
     const pl = JSON.parse(ev(`JSON.stringify({ mids: ${JSON.stringify(s.planks.mid)}.map(([x, y]) => tileName(map[idx(x, y)])), far: tileName(map[idx(${s.planks.far[0]}, ${s.planks.far[1]})]), list: (SPREAD.last && SPREAD.last.list || []).filter(e => e[2] === 'PLANK').length, kind: SPREAD.last && SPREAD.last.kind })`));
     const back = (r.rep && r.rep.refunds) ? Object.values(r.rep.refunds).reduce((n, o) => n + (o.plank || 0), 0) : 0;
-    r.planks = Object.assign(pl, { back });
-    if (pl.mids.some(t => t === 'PLANK') || pl.far !== 'PLANK' || back !== s.planks.mid.length) { r.ok = false; r.fail = (r.fail || []).concat(['the footprint planks: ' + JSON.stringify(r.planks)]); }
+    r.planks = Object.assign(pl, { back, placed: s.planks.placed, boxes: s.planks.mid.length });
+    if (pl.mids.some(t => t === 'PLANK') || pl.far !== 'PLANK' || back !== s.planks.placed || s.planks.placed < s.planks.mid.length - 8) { r.ok = false; r.fail = (r.fail || []).concat(['the footprint planks: ' + JSON.stringify(r.planks)]); }
     // the stumps' regrowth and the fire: the world runs 8 s past their timers, the knight far off; each tile is still the
     // new world's own
     const rg = JSON.parse(ev(`(() => { const cells = ${JSON.stringify(s.planks.stumps)}, t0 = cells.map(([x, y]) => tileName(tileAt(x, y)));
@@ -301,7 +304,7 @@ const refundWords = rf => rf ? [['bank', rf.bank], ['pack', rf.pack], ['owed', r
 let src = null;
 for (const r of results) {
   if (r.src !== src) { src = r.src; console.log(`\n== ${src === 'real' ? 'the real saves' : src === 'matrix' ? 'the synthetic matrix (proof 1)' : src === 'rev' ? 'the worldRev sweep: planks on the footprint' : 'the end-of-story save (proof 2)'}${revInfo ? ` (each moved first by ${path.basename(revInfo.file)}, WORLD_REV ${revInfo.baseRev})` : ''} ==`); }
-  if (r.planks) console.log(`      planks: ${r.planks.back} back to the knight, the footprint tiles now ${[...new Set(r.planks.mids)].join('/')}, the far one ${r.planks.far}; ${r.planks.regrow ? r.planks.regrow.n + ' stumps and fires with their timers run out, ' + r.planks.regrow.grew.length + ' grew back' : ''}`);
+  if (r.planks) console.log(`      planks: ${r.planks.back} back to the knight (of ${r.planks.placed} placed on ${r.planks.boxes} boxes; a box whose middle held one of the save's own diffs got none), the footprint tiles now ${[...new Set(r.planks.mids)].join('/')}, the far one ${r.planks.far}; ${r.planks.regrow ? r.planks.regrow.n + ' stumps and fires with their timers run out, ' + r.planks.regrow.grew.length + ' grew back' : ''}`);
   const rep = r.rep || {};
   console.log(`${r.ok ? 'PASS' : 'FAIL'}  ${String(r.name).padEnd(20)}${r.ver !== undefined ? (' v' + r.ver).padEnd(7) : ''} stage ${r.stageBefore} -> ${r.stageAfter}, wakes ${rep.town ? 'in Thistledown' : 'in the cave'} at ${rep.wake}`);
   console.log(`      refunds ${refundWords(rep.refunds)}; machines parked ${words(rep.parked)}${rep.far ? ` (within ${rep.far} of the Bulldozer bay)` : ''}; mare ${rep.mare ? `tied at ${rep.mare} (${rep.mareRing} from her rail)` : '-'}; remakes ${words(rep.remade)}; dropped ${words(Object.fromEntries(Object.entries(rep.dropped || {}).filter(([, v]) => v)))}`);

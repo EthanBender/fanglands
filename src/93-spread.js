@@ -231,6 +231,7 @@
       let runs = 0; for (let k = 0; k < 8; k++) if (o[k] && !o[(k + 7) % 8]) runs++;
       return runs === 1 || (runs === 0 && o.every(Boolean)); };
     for (const q of A.SIGNPOSTS) {
+      if (q.stage === 6) continue;   // a fork Stage 6's roads found without a post: 93-roads stands it on the finished land
       const [nx, ny] = A.pointOf(q.at).map(Math.round);
       if (nx === SIGN_TILE.x && ny === SIGN_TILE.y) continue;   // the story's own signpost (02-world)
       let best = null;
@@ -263,7 +264,8 @@
     if (sign) { const legs = A.signArms(tx, ty), seen = new Set(); arms = [];
       // (a built place may show four arms at its own crossroads: markBuilt's `arms`, 84-crossroads' four-way signpost)
       const four = [...A.BUILT].some(([id, info]) => info.arms === 4 && A.builtAt(sign[2], sign[3]) === id), max = four ? 4 : 3, step = four ? 14 : 16, top = four ? -44 : -42;
-      for (const l of legs) { const w0 = l.to.replace(/\s*\(.*\)$/, '').replace(/^the /i, '').toUpperCase(), word = SHORT[w0] || w0.slice(0, 12); if (seen.has(word) || arms.length >= max) continue; seen.add(word);
+      // (each arm names its next stop, Stage 6: the place the road reaches first; the far end is in the words)
+      for (const l of legs) { const w0 = (l.next || l.to).replace(/\s*\(.*\)$/, '').replace(/^the /i, '').toUpperCase(), word = SHORT[w0] || w0.slice(0, 12); if (seen.has(word) || arms.length >= max) continue; seen.add(word);
         arms.push([top + arms.length * step, word, false, /west/.test(l.dir)]); }
       if (!arms.length) arms = null; }
     ARMS.set(i, arms); return arms;
@@ -375,8 +377,10 @@
     // a signpost by every road node, readable from the road; its words name the roads' places
     { const want = A.SIGNPOSTS.filter(q => { const p = A.pointOf(q.at); return !(Math.round(p[0]) === SIGN_TILE.x && Math.round(p[1]) === SIGN_TILE.y); }).length, bad = SP.signs.filter(([x, y]) => tileAt(x, y) !== T.SIGN), fork = SP.signs.find(([, , nx, ny]) => { const p = A.pointOf(A.SIGNPOSTS[0].at); return nx === p[0] && ny === p[1]; });
       const words = fork ? A.signText(fork[0], fork[1]) : null;
-      check(P + "a signpost stands beside every road node (" + want + " besides the story's), and the Mill Lane fork's names Millbrook, Thistledown and the cave, and says the way to Thistledown goes past the old signpost (chapter 4's sign)",
-        SP.signs.length === want && !bad.length && !!words && /Millbrook/.test(words) && /Thistledown, south-east, past the old signpost\./.test(words) && /cave/.test(words), { signs: SP.signs.length, want, bad, words, skipped: S.skipped }); }
+      // (Stage 6: each arm names the next stop and the walk to it, and the road's far end after it: chapter 4's way to
+      // Thistledown is "→ The old signpost, south-east, ... on foot, then Thistledown.")
+      check(P + "a signpost stands beside every road node (" + want + " besides the story's), and the Mill Lane fork's names Millbrook, the cave and the old signpost with the walk to each, and says Thistledown lies past the old signpost (chapter 4's sign)",
+        SP.signs.length === want && !bad.length && !!words && /Millbrook, south[\w-]*, [^.]*on foot\./.test(words) && /The old signpost, south-east, [^.]*on foot, then Thistledown\./.test(words) && /cave/.test(words), { signs: SP.signs.length, want, bad, words, skipped: S.skipped }); }
     // the road network is laid whole: each main road's centre line is open ground (a bridge, a gate or a door counts) from
     // end to end, bar the story signpost, the gates' own tiles and Hollowford's ruins. A machine, a wreck or the mare left
     // on the road by the play before this check is not the world's (a knight walks round it, and the save migration parks

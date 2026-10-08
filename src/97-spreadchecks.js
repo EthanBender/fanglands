@@ -202,7 +202,13 @@
     const res = [];
     for (const s of seams()) {
       const runs = [];
-      for (const L0 of s.lines) {
+      const RV = new Set(['ROAD', 'VERGE'].map(Tn).filter(v => v >= 0)), along = (x0, y0, dx, dy) => { let n = 0; for (let t = -16; t <= 16; t++) { const x = x0 + dx * t, y = y0 + dy * t; if (inMap(x, y) && RV.has(map[y * MAP_W + x])) n++; } return n; };
+      for (const L1 of s.lines) {
+        // (a line that runs along a main road (Stage 6: the Long Road comes into Hollowford along the burn's lines) reads the
+        // road's own straight edge, not the seam: it is stepped off the road, up to 6 tiles either side, to the nearest line
+        // that only crosses it)
+        let L0 = L1;
+        if (along(L1.x, L1.y, L1.dx, L1.dy) >= 8) for (let o = 1; o <= 6 && L0 === L1; o++) for (const sg of [1, -1]) { const x = L1.x + L1.dy * o * sg, y = L1.y + L1.dx * o * sg; if (L0 === L1 && along(x, y, L1.dx, L1.dy) < 3) L0 = { x, y, dx: L1.dx, dy: L1.dy }; }
         // the border on this line: the first tile (from A's side) that is B's region, within 12 of the seam's line
         let L = L0; if (s.bRegion) for (let t = -12; t <= 12; t++) { const x = L0.x + L0.dx * t, y = L0.y + L0.dy * t; if (inMap(x, y) && s.bRegion.includes(regionAt(x, y).name)) { L = { x, y, dx: L0.dx, dy: L0.dy }; break; } }
         // how far B (or the fade) reaches onto A's side of the border, plus how far A (or the fade) reaches onto B's
@@ -271,7 +277,9 @@
       targets.push({ what: r.id + ' rail', x: p.x, y: p.y, t: tileAt(p.x, p.y) });
       for (const [dx, dy] of N8) { const x = p.x + dx, y = p.y + dy; if (inMap(x, y) && PLACEABLE_ON.has(tileAt(x, y)) && !insideBuilding(x, y)) targets.push({ what: r.id + ' mare', x, y, t: HORSE }); } }
     const signs = new Set();
-    for (let r = 2; r <= WORLD_REV; r++) for (const b of ((A.REVS || {})[r] || {}).boxes || []) for (let y = b[1]; y <= b[3]; y++) for (let x = b[0]; x <= b[2]; x++) if (inMap(x, y) && tileAt(x, y) === T.SIGN && !signs.has(idx(x, y))) { signs.add(idx(x, y)); targets.push({ what: 'signpost', x, y, t: T.SIGN }); }
+    // (Stage 5's boxes: Stage 6's footprint runs the length of every road, and its own check keeps the traders off the posts)
+    for (let r = 2; r <= WORLD_REV; r++) { const R = (A.REVS || {})[r]; if (!R || !/^5/.test(R.stage || '')) continue;
+      for (const b of R.boxes || []) for (let y = b[1]; y <= b[3]; y++) for (let x = b[0]; x <= b[2]; x++) if (inMap(x, y) && tileAt(x, y) === T.SIGN && !signs.has(idx(x, y))) { signs.add(idx(x, y)); targets.push({ what: 'signpost', x, y, t: T.SIGN }); } }
     const keep = { x: player.x, y: player.y, f: player.facing }, homes = NPCS.map(n => [n, n.px, n.py]);
     try {
       for (const n of NPCS) if (n.home) { n.px = n.home.x; n.py = n.home.y; }
@@ -336,7 +344,8 @@
   // monster's spawn, a signpost, a built place's box, a shop or quest marker); a GLANCE is a landmark on screen (a stop,
   // a building, a reserved place's stakes, the river or the sea, a bridge, a wall). Reports the longest gap of each.
   // the roads Stage 5 brings under the limits (§13 STAGE 5: "after 5f, the beat-gap limits hold on R1, R2 and R3")
-  const BEAT_HELD = ['r1_cave', 'r2_sea', 'r3_long'], BEAT_LIMIT = { stop: 73, glance: 36 };
+  // (Stage 6 holds every main road: §13 STAGE 6, "stop gap <= 73 and glance gap <= 36 on every main road")
+  const BEAT_HELD = A.MAIN_ROADS.slice(), BEAT_LIMIT = { stop: 73, glance: 36 };
   function beatGaps() {
     const segs = [], beats = [];
     const BRIDGE = Tn('BRIDGE'), WALLISH = new Set([T.TOWN_WALL, Tn('CLIFF'), Tn('PALISADE')].filter(v => v >= 0));
@@ -347,6 +356,10 @@
     for (const id of Object.keys(A.ANCHORS)) { const b = A.box(id); if (!b) continue; const kind = A.ANCHORS[id].kind === 'place' || A.isBuilt(id) ? 'stop' : 'glance';
       for (let y = b[1]; y <= b[3]; y += 2) for (let x = b[0]; x <= b[2]; x += 2) beats.push([x, y, kind, id]); }
     for (const b of BUILDINGS) beats.push([b.x, b.y, 'glance', 'building']);
+    // the roads' own (93-roads, Stage 6): a place to stop for is a stop (a wreck to search, a shrine, a cache, a named beast,
+    // a trader); a milestone, a lantern post and a cairn are glances
+    if (window.ROADS) { for (const p of ROADS.pois || []) if (p.at) beats.push([p.at[0], p.at[1], 'stop', 'poi ' + p.id]);
+      for (const id in ROADS.roads) for (const m of ROADS.roads[id].marks || []) beats.push([m.x, m.y, 'glance', m.kind]); }
     for (let y = 0; y < MAP_H; y += 2) for (let x = 0; x < MAP_W; x += 2) { const t = map[y * MAP_W + x]; if (t === T.WATER || t === BRIDGE || WALLISH.has(t) || (window.DECO && DECO.isBridge(y * MAP_W + x))) beats.push([x, y, 'glance', tileName(t)]); }
     const out = [];
     for (const id of A.MAIN_ROADS) {
@@ -389,7 +402,7 @@
         check(PF + "the scarp seal: from the cave mouth the Wolfwood is reached by exactly the Old Bridge, the goblin-road bridge and the Agility 18 steps (all three shut: none of it; each one alone: all of it)",
           r.none.length === 0 && Object.values(r.each).every(n => n === 5) && Object.values(r.tiles).every(n => n > 0), r); }
       { const r = transects();
-        check(PF + "the land seams blend over 8 tiles or more: 20 lines across each (the Wolfwood / Jungle giants, the Ashfields' fade into the Jungle, the Jungle's edge on the Wilds, the burn round Hollowford, the quarry's edge), the median line's mixed run 8+ and no more than 5 lines nearly ruled (under 3: a road or a ford crossing); cliffs, water and story gates are exempt (SEAM_EXEMPT)",
+        check(PF + "the land seams blend over 8 tiles or more: 20 lines across each (the Wolfwood / Jungle giants, the Ashfields' fade into the Jungle, the Jungle's edge on the Wilds, the burn round Hollowford, the quarry's edge), the median line's mixed run 8+ and no more than 5 lines nearly ruled (under 3: a road or a ford crossing; a line along a main road is stepped off it); cliffs, water and story gates are exempt (SEAM_EXEMPT)",
           r.length === 5 && r.every(s => s.median >= 8 && s.runs.filter(v => v < 3).length <= 5), { seams: r.map(s => ({ id: s.id, median: s.median, min: s.min, ruled: s.runs.filter(v => v < 3).length, runs: s.runs.join(' ') })), exempt: SEAM_EXEMPT }); }
       { const bad = roadsClear();
         check(PF + "the main roads are clear surface: no solid tile and no builders' prop on either lane of the six main roads (gates, doors, the story signpost and Hollowford's ruins aside)", bad.length === 0, { bad: bad.slice(0, 10), more: Math.max(0, bad.length - 10) }); }
@@ -405,7 +418,7 @@
       // (Stage 5 is built: the Cave, Sea and Long Roads hold the limits, a stop at most every 73 tiles and a glance at most every
       // 36, each beat within 10 tiles of the road; the other main roads are reported, and Stage 6 holds them all)
       { const r = beatGaps(), held = r.filter(q => BEAT_HELD.includes(q.road)), bad = held.filter(q => q.stopGap > BEAT_LIMIT.stop || q.glanceGap > BEAT_LIMIT.glance);
-        check(PF + 'the beat gaps (section 6): on the Cave Road, the Sea Road and the Long Road a stop comes at most every 73 tiles and a glance at most every 36, each within 10 tiles of the road (the other main roads are reported until Stage 6)',
+        check(PF + 'the beat gaps (section 6): on every main road (the Cave, Sea, Long, Goblin, Wolfwood and Ash Roads) a stop comes at most every 73 tiles and a glance at most every 36, each within 10 tiles of the road',
           r.length === A.MAIN_ROADS.length && r.every(q => q.length > 0) && held.length === BEAT_HELD.length && !bad.length, { r, bad }); }
       // regionAt asks the outlines directly (section 12): no bisect through REGIONS.find on the way
       { const nf = Object.getOwnPropertyDescriptor(REGIONS, 'find'); let calls = 0;

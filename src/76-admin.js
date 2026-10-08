@@ -1083,13 +1083,16 @@
         const others = monsters.filter(m => !isSpawn(m)).length; feed({ t: 'spawn_clear', by: 'MudGoll' });
         const cleared = spawns().length === 0 && monsters.filter(m => !isSpawn(m)).length === others;
         check(P + "the keeper makes an admin spawn exactly as asked: count monsters with nids '!<sid>.<k>' on free ground within 3 tiles; unknown types, bad sids and non-keepers make nothing; at most 60 living; a dead one keeps its kill credit, never respawns and is gone 2 s later; spawn_clear takes only '!' monsters", keeperNow && made && ignored && notKeeper && back && capped && full && credit && held && gone && never && cleared, { keeperNow, made, ignored, notKeeper, back, capped, full, credit, held, gone, never, cleared });
-        // every MONSTER_DEFS type, bosses included, spawned at once and run for 10 simulated seconds
-        const types = Object.keys(MONSTER_DEFS); types.forEach((t, i) => feed({ t: 'spawn', by: 'MudGoll', type: t, count: 1, x, y, sid: 'all' + i }));
-        const allMade = types.every((t, i) => monsters.some(m => m.nid === '!all' + i + '.0' && m.type === t));
-        let err = null; S.god = true;
-        try { for (let i = 0; i < 60 && !err; i++) { player.hp = player.maxHp; player.dead = false; F.sim(10, []); } } catch (e) { err = String(e && e.message); }
+        // every MONSTER_DEFS type, bosses included, spawned and run for 10 simulated seconds; in batches of 30, under the
+        // keeper's cap of 60 living (the game has 62 types since the roads' named beasts, Stage 6)
+        const types = Object.keys(MONSTER_DEFS); let allMade = true, err = null, allGone = true; S.god = true;
+        for (let c = 0; c < types.length && !err; c += 30) {
+          const batch = types.slice(c, c + 30); batch.forEach((t, j) => feed({ t: 'spawn', by: 'MudGoll', type: t, count: 1, x, y, sid: 'all' + (c + j) }));
+          allMade = allMade && batch.every((t, j) => monsters.some(m => m.nid === '!all' + (c + j) + '.0' && m.type === t));
+          try { for (let i = 0; i < 60 && !err; i++) { player.hp = player.maxHp; player.dead = false; F.sim(10, []); } } catch (e) { err = String(e && e.message); }
+          feed({ t: 'spawn_clear', by: 'MudGoll' }); allGone = allGone && spawns().length === 0;
+        }
         S.god = false;
-        feed({ t: 'spawn_clear', by: 'MudGoll' }); const allGone = spawns().length === 0;
         check(P + `every MONSTER_DEFS type (${types.length}, bosses included) can be spawned on a keeper and runs 10 simulated seconds without an exception`, types.length >= 36 && allMade && err === null && allGone, { types: types.length, allMade, err, allGone }); }
 
       // ---- Unlock everything: a failed pin changes nothing at all ----
