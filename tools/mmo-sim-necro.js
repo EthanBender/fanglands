@@ -188,7 +188,7 @@ async function main() {
   tick(60 * 10);
   R(A, `INSTANCES.enter('barrow_deep')`); tick(30);
   put(A, D.throne[0], D.throne[1] + 1, 0, -1); put(B, D.throne[0] + 2, D.throne[1] + 3); tick(30);
-  press(A, 'KeyE'); tick(120, () => !!R(B, `OLD_BARROW.live('barrow_king')`));
+  press(A, 'KeyE'); tick(120, () => !!R(B, `OLD_BARROW.live('barrow_king')`)); tick(20);
   const kingB = R(B, `!!OLD_BARROW.live('barrow_king')`), kingA = R(A, `!!monsters.find(m => m.type === 'barrow_king' && m.remote && !m.dead)`), court = R(B, `OLD_BARROW.courtiers().length`);
   const shield = R(B, `(() => { const k = OLD_BARROW.live('barrow_king'); const h = k.hp; hitMonster(k, 20, 0); return k.hp === h; })()`);
   line('5. Ann calls the Barrow King from his throne (a boss_call): Ben, the keeper now, wakes him and his court, both see him, and the court shields him on the keeper',
@@ -205,9 +205,9 @@ async function main() {
   // ---- 7. the Hollow fades on the keeper, and Ann's Ghostlight (her presence) pulls it out ----
   put(A, D.circle[0] - 1, D.circle[1] - 3); put(B, D.circle[0] + 6, D.circle[1]); tick(30);
   R(A, `NECRO.N().gl = false`); R(B, `NECRO.N().gl = false`); tick(10);
-  R(B, `(() => { const h = OLD_BARROW.spawnBoss(OLD_BARROW.BOSS.hollow); h.state = 'fade'; h.nw.t = 0; })()`); tick(4);
+  R(B, `(() => { const h = OLD_BARROW.spawnBoss(OLD_BARROW.BOSS.hollow); h.state = 'fade'; h.nw.t = 0; })()`); tick(20, () => R(A, `!!monsters.find(m => m.type === 'the_hollow')`));
   const faded = R(B, `OLD_BARROW.live('the_hollow').state`) === 'fade';
-  R(A, `const LAMP = -70; for (const k in NECRO.CD) delete NECRO.CD[k]; NECRO.cast('light'); player.x = monsters.find(m => m.type === 'the_hollow').x + LAMP; player.y = monsters.find(m => m.type === 'the_hollow').y;`); tick(30);
+  R(A, `(() => { const LAMP = -70, h = monsters.find(m => m.type === 'the_hollow'); for (const k in NECRO.CD) delete NECRO.CD[k]; NECRO.cast('light'); if (h) { player.x = h.x + LAMP; player.y = h.y; } })()`); tick(30);
   const out = R(B, `(() => { const h = OLD_BARROW.live('the_hollow'); return h ? h.state : null; })()`);
   line('7. the Hollow fades on the keeper (Ben) and Ann\'s Ghostlight within 4 tiles, read from her presence, pulls it out',
     faded && out !== 'fade' && out !== null, { faded, out });

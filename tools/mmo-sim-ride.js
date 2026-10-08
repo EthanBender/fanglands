@@ -134,6 +134,9 @@ async function main() {
   };
   const press = (g, code) => { g.FANGLANDS.press(code); wire.flush(); };
   const login = async (g, name) => { const r = await g.NET.post('/api/login', { name, pass: 'secret' }); g.NET.setToken(r.token); g.NET.connect(); wire.flush(); return r; };
+  // the old page says this build's Atlas hash in its hello: a build that adds a place or an instance (89-oldbarrow's Barrow
+  // Deep) changes the Atlas, and the world keys a page of another Atlas apart; what check 13 proves is the seats, not the Atlas
+  if (O) { const h = R(M, 'ATLAS.hash()'); R(O, `ATLAS.hash = () => ${JSON.stringify(h)};`); }
   await login(M, 'Mudtech'); await login(B, 'Ben'); await login(A, 'Ann'); await login(C, 'Cy'); if (O) await login(O, 'Old');
   tick(4);
 
