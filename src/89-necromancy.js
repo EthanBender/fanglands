@@ -590,10 +590,18 @@ const NECRO = (() => {
   });
   hudSeatFace('swing', { id: 'bolt', prio: 5, when: () => focusInHand() && !player.mech && !player.dead && !ridingAlong(), emblem: 'bolt', ribbon: 'BOLT', key: 'Space', name: 'Soul Bolt',
     lit: () => !!boltTarget(), cool: () => { const l = coolLeft(SPELL.bolt); return l > 0 ? { frac: l / SPELL.bolt.cd, text: '' } : null; }, action: () => touch.taps.push('attack') });
-  hudSeatFace('ctx', { id: 'cast', prio: 8, when: () => !player.mech && !player.dead && !ridingAlong() && SPELLS.some(canKnow), emblem: () => (SPELL[N().ready] || SPELL.bolt).em, ribbon: 'CAST', key: 'Z',
+  const CAST_FACE = { emblem: () => (SPELL[N().ready] || SPELL.bolt).em, ribbon: 'CAST', key: 'Z',
     name: () => 'Cast ' + (SPELL[N().ready] || SPELL.bolt).name, on: () => N().ready === 'light' && !!N().gl,
     cool: () => { const s = SPELL[N().ready] || SPELL.bolt, l = coolLeft(s); return l > 0 ? { frac: Math.min(1, l / (s.rest || s.cd || 1)), text: l >= 1 ? String(Math.ceil(l)) : '' } : null; },
-    action: () => castReady() });
+    action: () => castReady() };
+  const castable = () => !player.mech && !player.dead && !ridingAlong() && SPELLS.some(canKnow);
+  hudSeatFace('ctx', Object.assign({ id: 'cast', prio: 8, when: castable }, CAST_FACE));
+  // Necromancy's own places are instances, where LEAVE (prio 30) always holds the ctx seat: there CAST sits above it, and LEAVE
+  // comes back within CAST_LEAVE_NEAR tiles of the way out (the L key and E on the exit leave from anywhere, as before)
+  const CAST_OVER_LEAVE = new Set(['barrow_deep', 'afterlands']), CAST_LEAVE_NEAR = 3;
+  const nearWayOut = () => { const id = mapNow(), inst = window.INSTANCES && INSTANCES.get(id), e = inst && (inst.exit || inst.entry); if (!e) return true;   // (the Afterlands has no exit tile: its steps up are by its entry)
+    return Math.max(Math.abs(Math.floor(player.x / TILE) - e[0]), Math.abs(Math.floor(player.y / TILE) - e[1])) <= CAST_LEAVE_NEAR; };
+  hudSeatFace('ctx', Object.assign({ id: 'cast_in', prio: 31, when: () => CAST_OVER_LEAVE.has(mapNow()) && castable() && !nearWayOut() }, CAST_FACE));
   hudControl({ id: 'spells', emblem: 'skull', key: 'U', label: () => 'SPELLS', on: () => panel === 'spells', action: () => { if (panel === 'spells') closePanel(); else openPanel('spells'); } });
 
   HOOKS.panel.spells = g => {
@@ -947,6 +955,34 @@ const NECRO = (() => {
           resize(); window.__forceTouch = kw.t; if (window.SETTINGS && text0) SETTINGS.set('text', text0);
         }
         check(P + 'N16 the spellbook and the Bone Altar keep the panel contract at every size, touch and mouse, Large text: on screen, 44 px on touch and 8 px apart, every string fits', problems.length === 0, { problems: problems.slice(0, 8), n: problems.length });
+      }
+      // ---- N16b CAST inside Necromancy's own places: on touch, away from the way out the ctx seat is CAST (not LEAVE), on screen
+      // and 44 px at every size; within CAST_LEAVE_NEAR tiles of the exit it is LEAVE again ----
+      if (typeof HK !== 'undefined' && HK.audit && HK.audit.SIZES && window.INSTANCES) {
+        const own = k => Object.getOwnPropertyDescriptor(window, k), kw = { w: own('innerWidth'), h: own('innerHeight'), t: window.__forceTouch };
+        const bad = [], seen = []; const back = { x: player.x, y: player.y };
+        setLv(99); for (const s of SPELLS) N().known[s.id] = true; N().ready = 'light'; wear('bone_stave');
+        try {
+          for (const id of CAST_OVER_LEAVE) {
+            if (INSTANCES.active()) INSTANCES.leave();
+            INSTANCES.enter(id); const inst = INSTANCES.get(id), e = inst.exit || inst.entry;
+            if (INSTANCES.active() !== id || !e) { bad.push(id + ': not entered'); continue; }
+            let far = null; for (let y = 1; y < inst.h - 1 && !far; y++) for (let x = 1; x < inst.w - 1 && !far; x++) if (!SOLID.has(inst.tiles[y * inst.w + x]) && Math.max(Math.abs(x - e[0]), Math.abs(y - e[1])) >= 8) far = [x, y];
+            for (const [where, at, want] of [['far', far, /^Cast /], ['near', inst.entry, /^Leave$/]]) for (const [w, hh] of HK.audit.SIZES) {
+              window.innerWidth = w; window.innerHeight = hh; resize(); window.__forceTouch = true; closePanel();
+              player.x = tc(at[0]); player.y = tc(at[1]); drawHud(HK.audit.fitCtx());
+              const b = buttons.find(q => q.seat === 'ctx' && !q.offscreen), nm = b ? String(b.name || '') : '';
+              seen.push(`${id} ${where} ${w}x${hh}: ${nm}`);
+              if (!b || !want.test(nm)) bad.push(`${id} ${where} ${w}x${hh}: ctx seat is ${nm || 'empty'}`);
+              else if (b.x < 0 || b.y < 0 || b.x + b.w > w || b.y + b.h > hh || b.w < 44 || b.h < 44) bad.push(`${id} ${where} ${w}x${hh}: ${nm} off screen or small`);
+            }
+          }
+        } finally {
+          if (INSTANCES.active()) INSTANCES.leave(); player.x = back.x; player.y = back.y; N().ready = 'bolt';
+          if (kw.w) Object.defineProperty(window, 'innerWidth', kw.w); if (kw.h) Object.defineProperty(window, 'innerHeight', kw.h);
+          resize(); window.__forceTouch = kw.t;
+        }
+        check(P + 'N16b in the Barrow Deep and the Afterlands, on touch at every size, the ctx seat is CAST away from the way out (LEAVE would hide it) and LEAVE within 3 tiles of the exit; on screen and 44 px', bad.length === 0, { bad: bad.slice(0, 8), n: bad.length, seen: seen.length });
       }
       // ---- N17 the teacher view: a friend's necromancy is drawn from presence alone, with no update run ----
       { const R = PLAYERS.remote; R.__view = { n: '__view', map: PLAYERS.mapId(), x: player.x + 40, y: player.y, shown: { x: player.x + 40, y: player.y }, facing: { x: 1, y: 0 }, look: { necro: { c: 2, s: 'bolt', tx: 's1', gl: 1, w: 5, h: [['sq', 20, 10, 1, 9], ['bb', -30, 10, -1, 4]] } }, lastAt: nowMs(), hp: 10, mhp: 10 };
