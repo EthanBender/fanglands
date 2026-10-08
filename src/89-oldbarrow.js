@@ -1346,9 +1346,11 @@ const OLD_BARROW = (() => {
           const file = part.slice(0, part.indexOf(' ')); if (!/^(89-oldbarrow|89-necromancy|89-necroart|44-wiki)\.js$/.test(file)) continue;
           part.split('\n').forEach((ln, i) => { const code = ln.replace(/^\s*\/\/.*$/, '').replace(/\s\/\/\s.*$/, '');
             if (/TEACHERS: \{|check\(P2? \+/.test(code)) return; if (HAND_RE.test(code)) hand.push(file + ':' + i + ' ' + code.trim().slice(0, 80)); }); }
+        // (the server's stripped copy has only a stub for the book: there the two wiki parts are not asked)
+        const wikiOn = !!(window.WIKI && typeof WIKI.get === 'function' && typeof (WIKI.get('quests', 'main') || {}).name === 'string');
         const comma = String(C.ALL_GHOSTS.xp).replace(/\B(?=(\d{3})+(?!\d))/g, ','), gh = WIKI.get('quests', 'nec_ghosts') || {}, q1 = WIKI.get('quests', 'nec_bramble') || {};
-        const shelf = AFTER.some(l => l.includes(C.SHARD_PRICE + ' coins each')), ghosts = String(gh.reward).includes(comma + ' xp') && String(gh.reward).includes(RATTLE_STORY);
-        const giver = String(q1.giver).startsWith(GRANNY + ',') && q1.name === QUEST_DEFS.nec_bramble.name;
+        const shelf = AFTER.some(l => l.includes(C.SHARD_PRICE + ' coins each')), ghosts = GHOSTS_REWARD().includes(comma + ' xp') && (!wikiOn || (String(gh.reward).includes(comma + ' xp') && String(gh.reward).includes(RATTLE_STORY)));
+        const giver = !wikiOn || (String(q1.giver).startsWith(GRANNY + ',') && q1.name === QUEST_DEFS.nec_bramble.name);
         check(P2 + 'N21 every choice is one line: no teacher name typed by hand in 89-oldbarrow, 89-necromancy, 89-necroart or 44-wiki (only the TEACHERS line), her shelf line reads SHARD_PRICE, the ghosts\' wiki reward reads ALL_GHOSTS.xp and the quests\' givers read TEACHERS',
           src.length > 0 && hand.length === 0 && shelf && ghosts && giver, { hand: hand.slice(0, 8), n: hand.length, shelf, ghosts, giver, reward: gh.reward }); }
       // ---- N20 the words on a touch screen: the first lesson names the BOLT button (a wand in hand turns SWING into BOLT), the
