@@ -506,6 +506,8 @@ const OLD_BARROW = (() => {
   if (window.LIGHTS) LIGHTS.addSource((out, sc) => {
     if (!sc || sc.id !== DEEP_ID) return;
     for (const m of monsters) if (m.type === 'watch_candle' && !m.dead && m.hp > 0) out.push({ kind: 'point', name: 'watch candle', x: m.x, y: m.y - LIFT.candle, r: 110, lift: 0.85, tint: 0.18, color: '#ffcf7a', rgb: [255, 207, 122] });
+    // a boss's blow is lit while it winds up, so the gold ring and the purple crescent show in the dark
+    for (const m of monsters) if (!m.dead && ((m.type === 'barrow_king' && m.state === 'sweep') || (m.type === 'the_hollow' && m.state === 'reap'))) out.push({ kind: 'point', name: 'a boss\'s blow', x: m.x, y: m.y, r: tiles(4), lift: 0.7, tint: 0.2, color: m.type === 'barrow_king' ? '#ffcf7a' : '#a06aff', rgb: m.type === 'barrow_king' ? [255, 207, 122] : [160, 106, 255] });
   });
   // the doors: the bone hand opens for Bramble's collar, the vault for the King's seal (each knight's own game; once open on
   // a visit it stays open, so it never shuts on anyone); a friend standing at a door holds it open for you
@@ -546,6 +548,10 @@ const OLD_BARROW = (() => {
     // the names on the vault's walls: spirit marks, seen in a Ghostlight
     for (let x = DEEP.vault[0]; x <= DEEP.vault[2]; x += 2) for (const y of [DEEP.vault[1] - 1, DEEP.vault[3] + 1]) if (NECRO.seesGhost(tc(x), tc(y))) items.push({ y: -1e9 + 5, draw: () => a.wallNames(g, x * TILE, y * TILE, x + y) });
     { const [cx, cy] = DEEP.circle; items.push({ y: -1e9 + 3, draw: () => a.hollowCircle(g, tc(cx), tc(cy), time) }); }
+    // the bosses' blows on the ground (from the streamed state: every knight sees the same telegraph)
+    for (const m of monsters) { if (m.dead) continue;
+      if (m.type === 'barrow_king' && m.state === 'sweep') { const p = clamp(1 - ((m.nw && m.nw.wind) || 0) / BOSS.king.wind, 0, 1); items.push({ y: -1e9 + 6, draw: () => a.sweepRing(g, m.x, m.y, tiles(BOSS.king.ring), p) }); }
+      if (m.type === 'the_hollow' && m.state === 'reap') { const p = clamp(1 - ((m.nw && m.nw.wind) || 0) / BOSS.hollow.wind, 0, 1); items.push({ y: -1e9 + 6, draw: () => a.reapArc(g, m.x, m.y, m.facing || { x: 0, y: 1 }, tiles(BOSS.hollow.arc), p) }); } }
     // the Ossuary's shelves hold neat bones and skulls (the core's shelf tile, dressed over)
     for (let y = DEEP.ossuary[1]; y <= DEEP.ossuary[3]; y++) for (const x of [DEEP.ossuary[0], DEEP.ossuary[2]]) if (map[idx(x, y)] === T.SHELF) items.push({ y: (y + 1) * TILE - 6, draw: () => a.boneShelf(g, x * TILE, y * TILE, x + y) });
   });

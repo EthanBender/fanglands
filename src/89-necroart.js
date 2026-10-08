@@ -392,7 +392,6 @@ const NECRO_ART = (() => {
   const drawBrute = (g, v) => { shadow(g, 0, 28, 26); skeleton(g, v, { hurt: hurtOf(v), scale: 2.1, weapon: g2 => { g2.fillStyle = C.boneSh; g2.fillRect(-2, -16, 4, 16); ell(g2, 0, -17, 4, 4); g2.fill(); }, eye: '#3a0a0a', sh: '#a8a290' }); };
   function drawKing(g, v) {
     shadow(g, 0, 22, 18);
-    if (String(v.state) === 'sweep') { g.strokeStyle = `rgba(${GOLD},0.75)`; g.lineWidth = 3; ell(g, 0, 18, 3 * TILE, 3 * TILE * 0.45); g.stroke(); g.fillStyle = `rgba(${GOLD},0.12)`; g.fill(); }
     skeleton(g, v, { hurt: hurtOf(v), scale: 1.45, weapon: stoneSword, sh: '#bdb59a', eyeGlow: '#ffcf7a',
       hat: (g2) => { g2.fillStyle = 'rgba(255,215,130,0.85)'; g2.beginPath(); g2.moveTo(-6.5, -19); g2.lineTo(-6.5, -25); g2.lineTo(-3, -21.5); g2.lineTo(0, -26.5); g2.lineTo(3, -21.5); g2.lineTo(6.5, -25); g2.lineTo(6.5, -19); g2.closePath(); g2.fill(); glow(g2, 0, -23, 9, GOLD, 0.35); } });
     g.fillStyle = 'rgba(120,20,30,0.55)'; g.beginPath(); g.moveTo(-10, -10); g.lineTo(10, -10); g.lineTo(13, 14); g.lineTo(-13, 14); g.closePath(); g.fill();   // a royal mantle, faded
@@ -401,7 +400,6 @@ const NECRO_ART = (() => {
     const st = String(v.state || ''), fade = st === 'fade', f = v.facing || { x: 0, y: 1 }, dir = f.x < 0 ? -1 : 1;
     g.save(); if (fade) g.globalAlpha *= 0.22;
     shadow(g, 0, 24, 16);
-    if (st === 'reap') { const a = Math.atan2(f.y, f.x); g.fillStyle = `rgba(${VIOLET},0.25)`; g.beginPath(); g.moveTo(0, 10); g.arc(0, 10, 3 * TILE, a - 0.9, a + 0.9); g.closePath(); g.fill(); g.strokeStyle = `rgba(${VIOLET},0.8)`; g.lineWidth = 2.5; g.beginPath(); g.arc(0, 10, 3 * TILE, a - 0.9, a + 0.9); g.stroke(); }
     // a tall hooded shade in dark robes, tendrils at its hem
     g.fillStyle = hurtOf(v) ? '#5a3040' : '#17131f';
     g.beginPath(); g.moveTo(-15, 22); g.quadraticCurveTo(-17, -10, -9, -30); g.quadraticCurveTo(0, -42, 9, -30); g.quadraticCurveTo(17, -10, 15, 22);
@@ -418,6 +416,10 @@ const NECRO_ART = (() => {
     g.restore();
     g.restore();
   }
+  // the bosses' blows, telegraphed on the ground (89-oldbarrow draws them under everything, from the streamed state): the
+  // King's gold ring and the Hollow's purple crescent, filling as the blow comes
+  function sweepRing(g, x, y, r, p) { g.save(); g.strokeStyle = `rgba(${GOLD},0.85)`; g.lineWidth = 3; ell(g, x, y + 18, r, r * 0.45); g.stroke(); g.fillStyle = `rgba(${GOLD},${(0.1 + 0.25 * p).toFixed(3)})`; ell(g, x, y + 18, r * (0.3 + 0.7 * p), r * 0.45 * (0.3 + 0.7 * p)); g.fill(); g.restore(); }
+  function reapArc(g, x, y, f, r, p) { const a = Math.atan2(f.y, f.x); g.save(); g.fillStyle = `rgba(${VIOLET},${(0.15 + 0.3 * p).toFixed(3)})`; g.beginPath(); g.moveTo(x, y + 10); g.arc(x, y + 10, r, a - 0.9, a + 0.9); g.closePath(); g.fill(); g.strokeStyle = `rgba(${VIOLET},0.9)`; g.lineWidth = 2.5; g.beginPath(); g.arc(x, y + 10, r, a - 0.9, a + 0.9); g.stroke(); g.restore(); }
   function drawNameWisp(g, v) {
     const hov = Math.sin(time * 5 + (v.x || 0)) * 2;
     glow(g, 0, -6 + hov, 14, '232,246,255', 0.6);
@@ -442,8 +444,8 @@ const NECRO_ART = (() => {
     barrow_bones: { draw: drawBones, r: 12, pic: true, box: [-17, -23, 16, 21, -22, -23, 22, 21] },
     barrow_guard: { draw: drawGuard, r: 13, pic: true, box: [-21, -27, 21, 22, -23, -27, 23, 22] },
     barrow_brute: { draw: drawBrute, r: 30, pic: false, box: [-42, -45, 41, 40, -42, -45, 41, 40] },
-    barrow_king: { draw: drawKing, r: 20, pic: false, box: [-29, -48, 29, 31, -149, -52, 149, 87] },
-    the_hollow: { draw: drawHollow, r: 22, pic: false, box: [-43, -43, 42, 33, -149, -139, 148, 153] },
+    barrow_king: { draw: drawKing, r: 20, pic: false, box: [-29, -48, 29, 31, -32, -48, 32, 31] },
+    the_hollow: { draw: drawHollow, r: 22, pic: false, box: [-43, -43, 42, 32, -51, -43, 50, 32] },
     name_wisp: { draw: drawNameWisp, r: 10, pic: false, box: [-21, -24, 16, 9, -21, -24, 16, 9] },
   };
   if (window.MONSTER_LOOK && MONSTER_LOOK.addType) for (const t in LOOKS) MONSTER_LOOK.addType(t, LOOKS[t]);
@@ -528,6 +530,6 @@ const NECRO_ART = (() => {
   // ---------- the cast's sound: a soft rising chime ----------
   if (typeof SFX === 'object' && SFX && !SFX.necro && typeof tone === 'function') SFX.necro = () => { tone('sine', 660, 990, 0.25, 0.04); tone('triangle', 330, 495, 0.3, 0.02); };
 
-  return { C, helper, bolt, flash, shard, thing, boneShelf, memorialBoard, mound, moundWisps, lychGate, candleCell, oldGrave, tobiasStone, spoil, pawPrints, nameLight, deepThing, wallNames, hollowCircle, ghost, wayLantern, tinyLantern, moths, skeleton, LOOKS };
+  return { C, helper, bolt, flash, shard, thing, boneShelf, memorialBoard, sweepRing, reapArc, mound, moundWisps, lychGate, candleCell, oldGrave, tobiasStone, spoil, pawPrints, nameLight, deepThing, wallNames, hollowCircle, ghost, wayLantern, tinyLantern, moths, skeleton, LOOKS };
 })();
 window.NECRO_ART = NECRO_ART;
