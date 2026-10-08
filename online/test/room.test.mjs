@@ -360,7 +360,7 @@ test('caps match the contract table', () => {
   assert.equal(CAPS.p.rate, 8); assert.equal(CAPS.mon.rate, 8); assert.equal(CAPS.hit.rate, 20); assert.equal(CAPS.gift.rate, 1);
   assert.equal(CAPS.chat.rate, 1 / 1.5); assert.equal(CAPS.hello.burst, 1);
   // admins and drop parties (docs/ONLINE.md, "Caps and validation, all new messages"): rate per second / burst
-  const want = { mute: [1, 3], unmute: [1, 3], kick: [1, 3], ban: [1, 3], unban: [1, 3], modlist: [1, 2], spawn: [1, 3], spawn_clear: [1, 2], party: [0.2, 2], party_end: [1, 2], light: [4, 8], claim: [10, 50] };
+  const want = { mute: [1, 3], unmute: [1, 3], kick: [1, 3], ban: [1, 3], unban: [1, 3], modlist: [1, 2], spawn: [1, 3], spawn_clear: [1, 2], summon: [1, 3], party: [0.2, 2], party_end: [1, 2], light: [4, 8], claim: [10, 50] };
   for (const [t, [rate, burst]] of Object.entries(want)) { assert.equal(CAPS[t].rate, rate, t + ' rate'); assert.equal(CAPS[t].burst, burst, t + ' burst'); }
 });
 

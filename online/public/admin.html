@@ -308,6 +308,8 @@
   // One plain sentence per row of mod_log.
   const SPANS = { '5m': 'for 5 minutes', '10m': 'for 10 minutes', '15m': 'for 15 minutes', '1h': 'for 1 hour', '1d': 'for 1 day', today: 'for the rest of today', always: 'until unmuted' };
   const plainTeacher = n => String(n).replace(/ \(teacher\)$/, '');
+  // what an admin summoned beside him (mod_log detail: room.js SUMMON_KINDS)
+  const SUMMONED = { horse: 'Cinder the mare', walker: 'a goblin walker', dozer: 'a bulldozer', beast: 'a Barrelbeast' };
   function sentence(r) {
     switch (r.act) {
       // the teacher view (docs/ONLINE.md, "The teacher view")
@@ -330,6 +332,7 @@
       case 'ban': return r.by + ' banned ' + r.n;
       case 'unban': return r.by + ' unbanned ' + r.n;
       case 'party': return r.by + ' threw a drop party: ' + r.detail;
+      case 'summon': return r.by + ' summoned ' + (SUMMONED[r.detail] || r.detail);
       case 'hat': return r.n + ' found a ' + r.detail + ' party hat (' + r.by + "'s party)";
       case 'reset': return r.by + ' gave ' + r.n + ' a new secret word';
       // detail: the count, then what was typed ("3, kept out 24 hours: what the shit"); older rows have the count alone

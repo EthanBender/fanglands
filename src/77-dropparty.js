@@ -174,6 +174,8 @@
     let left = r.qty - inPack, where = 'pack';
     if (left > 0 && bankAdd(r.id, left)) { left = 0; where = 'bank'; }
     if (left > 0) { drops.push({ x: player.x + rint(-10, 10), y: player.y + rint(-10, 10), id: r.id, qty: left, t: 0 }); where = 'feet'; }
+    // a mega rare (54-megarare) as the prize: its MEGA RARE banner, flash and chime for the knight who lit it, and a log line
+    if (window.MEGA_RARE) MEGA_RARE.received(r.id, r.qty, 'party');
     pr.claimed.push(id);
     while (pr.claimed.length > KEEP) pr.claimed.shift();
     if (how === 'prize') note('From a cracker you lit: ' + prizeWords(r) + '.');
@@ -1065,6 +1067,16 @@
         const hat = countItem('party_hat_purple') === 1 && said('You found a purple party hat! Open your pack to wear it.') && !!levelBanner && levelBanner.text === 'Purple party hat!';
         player.inv = empty(); levelBanner = null;
         check(P + 'a prize this game does not know is not added and not claimed (the reload sentence), nor is one that comes while the title screen is up; a full pack sends it to the bank, in words; a party hat lands in the pack with its sentence and a gold banner', unknown && later && banked && hat, { unknown, later, banked, hat }); }
+      // a mega rare as the prize (54-megarare): the knight who lit it gets its MEGA RARE banner and a log line, once
+      if (window.MEGA_RARE) { quiet(); player.inv = empty(); levelBanner = null; const l0 = MEGA_RARE.LOG.length, f0 = MEGA_RARE.FLASH.n;
+        feed({ t: 'prize', id: 'p8.8', reward: { id: 'void_scythe', qty: 1 } });
+        const lb = levelBanner, line = MEGA_RARE.LOG[l0];
+        const mega = countItem('void_scythe') === 1 && !!lb && lb.style === 'mega' && lb.text === 'MEGA RARE' && lb.sub === 'Void Scythe' && MEGA_RARE.FLASH.n === f0 + 1
+          && MEGA_RARE.LOG.length === l0 + 1 && !!line && line.how === 'party' && line.id === 'void_scythe';
+        levelBanner = null; feed({ t: 'prize', id: 'p8.8', reward: { id: 'void_scythe', qty: 1 } });
+        const onceOnly = countItem('void_scythe') === 1 && !levelBanner && MEGA_RARE.LOG.length === l0 + 1;
+        MEGA_RARE.LOG.length = l0; player.inv = empty(); levelBanner = null; quiet();
+        check(P + 'a Void Scythe won from a cracker raises the MEGA RARE banner (with its name) on the lighter\'s own screen and writes a "party" line in its log; the same prize again gives nothing and no second banner', mega && onceOnly, { mega, onceOnly, banner: lb && lb.text, sub: lb && lb.sub, how: line && line.how }); }
 
       // 10. with the cloud save on, the claim waits for a push that holds the cracker id
       if (LG && window.CLOUD) {

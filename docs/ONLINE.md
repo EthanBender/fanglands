@@ -669,8 +669,8 @@ This section is the contract between `online/` and the game files `src/76-admin.
   Nobody can mute, kick or ban an admin from inside the game; the parent page can.
 - Admin powers act on the admin's **own** knight, in the admin's own client (the save is the client's; see *The model,
   honestly*): *Unlock everything* (only after a pinned server-side backup that the three-version history can never
-  push out), *Put my knight back*, *Can't be hurt*, *Teleport*, *Give me an item*. None of them sends anything to
-  another knight or touches another account.
+  push out), *Put my knight back*, *Can't be hurt*, *Teleport*, *Give me an item*, *Summon a ride* (the world allows and
+  logs each summon; see *Summoning a ride*). None of them sends anything to another knight or touches another account.
 - Spawning: the admin asks, the server checks and relays to the map's **keeper**, the keeper makes the monsters and
   streams them like any other. They never respawn; their drops are normal.
 - Drop parties: the admin's client chooses the ground, the **server** makes and stores every cracker, decides the one
@@ -688,6 +688,8 @@ This section is the contract between `online/` and the game files `src/76-admin.
 | who lit a cracker first, and the prize | the server (SQLite) | exactly one winner per cracker, ever |
 | the unlocks, can't be hurt, teleport, give item | the admin's own client | saves are client-authoritative; the server keeps the pinned backup |
 | where spawned monsters stand and what they do | the map's keeper | the keeper model: only the keeper runs real monsters |
+| whether a ride may be summoned, and the log of it | the server (`accounts.role`, the knight's map, `mod_log`) | a kid's game can be edited; the ride is put down only on the world's yes |
+| where a summoned ride stands | the admin's own client | the map is the client's; the world keeps none |
 
 ### The database: migrations that keep everything
 
@@ -803,7 +805,7 @@ Server → client:
   `POST /api/admin/ban` now also writes `mod_log`; `GET /api/admin/modlog?limit=200` → `[{at, by, act, n, detail}]`
   newest first (limit 1 to 2,000); `GET /api/admin/accounts` rows gain `role` and `mutedUntil`;
   `GET /api/admin/online` rows gain `role`. Parent-page actions are logged with `by: 'parent page'`.
-- `mod_log.act` is one of `role`, `mute`, `unmute`, `kick`, `ban`, `unban`, `party`, `hat`, `reset` (*Accounts*). The parent page shows the
+- `mod_log.act` is one of `role`, `mute`, `unmute`, `kick`, `ban`, `unban`, `party`, `hat`, `summon` (*Summoning a ride*), `reset` (*Accounts*). The parent page shows the
   log newest first, one line each ("3:41 pm — MudGoll muted Sam for 5 minutes").
 
 ### Admin powers (the admin's own knight)
@@ -860,6 +862,63 @@ connection turns them off and closes the panel):
   quest counters are normal. A spawned machine leaves its wreck like any other.
 - `spawn_clear` on the keeper removes every `!` monster from its current map; the puppets go when the next snapshot
   no longer lists them. Every `MONSTER_DEFS` type can be spawned, bosses included.
+
+### Summoning a ride
+
+Owner (7 Oct 2026): *"can you add to the admin powers that I can summon any mountable thing to my location to use"*
+
+`src/76-summon.js` adds a **Summon a ride** row to the Powers tab (76's `ADMIN.addPower`; 76 draws the row and hands its
+view over). The row opens a view with one button per ride the build has, two to a row on a phone and four on a wider panel,
+44 px on touch, and Back:
+
+| Button | Kind (`kind`) | What stands beside him |
+|---|---|---|
+| Cinder the mare | `horse` | the `HORSE` tile (51-mounts). If he owns her she comes to him from wherever she is standing; if he does not, the summoned mare **is his** (`player.horse.owned = true`, rested), exactly as if he had bought her from Fennick, and Fennick's rail stands empty from then on |
+| Goblin Walker | `walker` | a parked walker (`T.MECH`) |
+| Bulldozer | `dozer` | a parked bulldozer (`T.DOZER`) |
+| Barrelbeast | `beast` | a parked Barrelbeast (`BEAST.tiles.BEAST`) |
+
+The scrap yard's twins (33-goblincity's yard walker and yard dozer) are not rides of their own: their wrecks repair into the
+plain walker and bulldozer tiles, so those two buttons are theirs.
+
+| Direction | `t` | Fields | Cap | Meaning |
+|---|---|---|---|---|
+| admin → server | `summon` | `kind, req` | 1/s, burst 3 | `kind` one of `horse`, `walker`, `dozer`, `beast` (`room.js SUMMON_KINDS`); `req` a whole number 0 to 1,000,000,000 the game picks, echoed back |
+| server → admin | `summon` | `kind, req?, ok, code?` | — | to the admin alone. `ok: true`: one `mod_log` row was written (`by` and `target` the admin, `act: 'summon'`, `detail` the kind) and the game may put the ride down. `ok: false`: `code` `bad` (not a kind the world knows; `kind` is `null`) or `place` (the world has him in a place, his island included); nothing written |
+
+- The role is read from the store for every `summon` (a player, or an admin demoted a moment ago, is answered `error`
+  `admin` and nothing is written). The cap runs first.
+- The ride is put down **only on the world's `ok`**, and only for a `req` this game asked for and has not heard back about
+  (forgotten after 10 s, on `welcome`, `role` and going offline). So a kid's game never puts one down: it sends nothing
+  (the button is an admin's only and Summon refuses "Only an admin can do that."), the world answers his own raw `summon`
+  `error` `admin`, and a `summon` answer nobody asked for is ignored.
+- Out in the world only. Inside a place (an instance) the Powers row is dead with "Only out in the world." under it, every
+  ride button in the view reads "Only out in the world." and does nothing, and Summon sends nothing; the world's `place`
+  says the same words.
+- Where: the nearest free tile round him that he can walk to, within 4 tiles (straight-line distance from his middle, then
+  north to south, then west to east). He can walk to it: a straight-step path on foot from his own tile that never leaves
+  the square 4 tiles round him (so never past a wall, rocks or water; walled in on all eight sides there is no room).
+  Free: in the map, plain ground (`PLACEABLE_ON`: never water, a wall, a fence, a gate or a door),
+  not inside a building, no knight on it (his own body or a friend's on this map), no villager, no living monster, nothing
+  lying on it, not beside a door, and never where it would close a gate: within two tiles of a gate the tile is tried as
+  the ride first and is taken only when every mount that could cross that opening before (94-mountgates `routes`) still
+  can. No such tile: "No room for it here. Stand somewhere more open." and nothing is sent (or, when the ground filled up
+  while the world answered, nothing is put down).
+- What he gets: "Summoned a bulldozer beside you. Press E to ride." ("Summoned Cinder ...", "a goblin walker", "a
+  Barrelbeast"; on touch the core's words say tap USE). The ride is whole and ready: a machine is boarded full (the core's
+  `enterMech`, 22's `enterDozer`, 32's `enterBeast`), the mare is rested.
+- A summoned machine is his like a repaired one: a map tile written with `changeTile` (so in `mapDiffs` and every save, and
+  moved round the Dozer Bay by a world migration like any parked machine), boarded with E, parked with X, wrecked the core's
+  way. **At most one of each kind he summoned stands unused**: `player.summoned[kind] = { i, under, w }` (the map index,
+  the ground's tile name under it, the world it was put down in) remembers the last one, and summoning that kind again
+  gives its tile back to the ground under it before the new one comes (from anywhere on the map). Once he climbs on it, it
+  wrecks or is stripped (its tile is no longer that ride), or the world changes (`w`), it is forgotten: a machine he has
+  used is his to keep. A visit to a place forgets nothing (inside, the map holds the place's tiles, so the record is
+  left alone until he is back out on the overworld). The mare is one mare: summoning her moves her. Riding her, "You are on Cinder already."
+- Nothing reaches another knight: the ride stands in the admin's own game, as a repaired machine does (the world keeps no
+  map). Nothing changes for a player: no row, no button, nothing on his `player`.
+- The parent page reads the row in What admins did as "MudGoll summoned a bulldozer" ("Cinder the mare", "a goblin walker",
+  "a Barrelbeast").
 
 ### Drop parties
 
@@ -952,6 +1011,7 @@ crackers locally when `left` runs out.
 | `modlist` | 1 | 2 | admin |
 | `spawn` | 1 | 3 | admin; `type`, `count`, `x`, `y` as above |
 | `spawn_clear` | 1 | 2 | admin |
+| `summon` | 1 | 3 | admin; `kind` one of the four, `req` as above; out in the world only |
 | `party` | 0.2 | 2 | admin; see *The server's checks on `party`* |
 | `party_end` | 1 | 2 | admin |
 | `light` | 4 | 8 | `id` matches `^p\d+\.\d+$`; `x`, `y` finite when sent |
@@ -997,6 +1057,14 @@ The cap runs before the role check, so a knight hammering admin messages is drop
   the **same** cracker in the same frame and exactly one gets the prize; a scripted roll gives a hat and both hear the
   announcement; a prize that survives a disconnect mid-fuse; crackers that survive a rebuilt Room; expiry. Plus
   self-tests in 77 and 81.
+- **Summon** (`node --test online/test/`: a summon answered to the admin alone with his `req`, one `mod_log` row each,
+  a player and a demoted admin answered `error admin` with nothing written, a bad kind `bad`, a place or the island
+  `place`, the cap; the parent page's sentence. `tools/mmo-sim-admin.js`, two games against the real Room: MudGoll taps
+  each ride in the Powers tab and it stands beside him in his game only, logged once each; summoning again replaces the
+  unused one; inside a place nothing is sent; Sam's Summon, his raw `summon` and a forged answer do nothing. The
+  self-test in 76-summon: every kind summoned, ridden, parked, wrecked and summoned again; the mare owned and not owned;
+  a crowded spot, walled in on eight sides (no room) and a one-tile pocket, a place visited between two summons (still
+  one), the city gate, water, a place, a world that says no, a player; the view at five sizes, touch on and off.)
 - The three simulations are required as modules (`require('./mmo-sim.js')` exports `Wire`, `makeContext`,
   `loadRoom(now, opts)`, `FakeWorld` and `FakeStore`, `mulberry32` and `contractRoll`); `MMO_ROOM=<path to room.js>`
   points them at another checkout. `deploy.sh` runs all three before every deploy. The `Wire` delivers a close the
@@ -1018,6 +1086,7 @@ The cap runs before the role check, so a knight hammering admin messages is drop
 | server | everything under `online/` (`src/room.js`, `src/world.js`, new `src/store.js` and `src/party.js`, `public/admin.html`, `test/*`, `README.md`, `deploy.sh`) |
 | admin | new `src/76-admin.js` and `tools/mmo-sim-admin.js`; edits to `src/70-net.js`, `src/71-login.js`, `src/73-players.js` (ADMIN tag, `role`, `hat` in `lookOf`), `src/74-chat.js` (mute, admin names, `CHAT.system`) |
 | party | new `src/77-dropparty.js`, `src/81-partyhats.js`, `tools/mmo-sim-party.js` |
+| summon (7 Oct 2026) | new `src/76-summon.js`; `ADMIN.addPower` in `src/76-admin.js`; `summon` in `online/src/room.js`, `online/src/watch.js` (VIEW_DROP) and `online/public/admin.html` (the sentence); its tests in `online/test/admin.test.mjs`, `admin-page.test.mjs` and `tools/mmo-sim-admin.js` |
 
 `index.html` is generated: each branch rebuilds and commits it, and the integration rebuilds it again.
 

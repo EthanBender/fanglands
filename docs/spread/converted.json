@@ -80,6 +80,7 @@
 "72-savelock.js",
 "73-players.js",
 "76-admin.js",
+"76-summon.js",
 "77-dropparty.js",
 "78-accounts.js",
 "78-trade.js",
@@ -110,6 +111,8 @@
 "86-outposts.js",
 "86-bandits.js",
 "86-banditart.js",
+"54-megarare.js",
+"54-megarareart.js",
 "84-ridetogether.js",
 "tools/mmo-sim-ride.js",
 "tools/ride-browser.mjs"

@@ -63,6 +63,8 @@ export const STRIP_FILES = [
   '87-critterart',
   // the bandits' look (the Great Spread, Stage 5f: drawHuman through MONSTER_LOOK.addType, book words): pictures only, no rules
   '86-banditart',
+  // the mega rares' look (the Void Scythe's icon and its look on the ground, the MEGA RARE flash, the pack's and the book's words, its chime): pictures only, no rules
+  '54-megarareart',
 ];
 // What a stripped name reads before anything is written to it (the rest reads as the no-op stand-in).
 const STUB_SEED = { title: { active: false, bootActive: false } };

@@ -16,6 +16,12 @@ Everything a feature needs is reachable through globals and the `HOOKS` registry
   Shapes available to `drawItemIcon`: coins log rock bar plank door bed lodestone bench trap scrap
   powder silk wool pelt tusk seed potato meat fish bread pie rod sword dagger axe battleaxe
   warhammer pickaxe hoe hammer bow arrow bomb helm body legs shield. Unknown shapes draw a disc.
+- **Mega rare** (`src/54-megarare.js`, pictures in `54-megarareart.js`): a rarity above the rare drop. An ITEMS row with
+  `rarity: 'mega'` gets the gold-and-purple MEGA RARE banner (`levelBanner = { text, sub, t, style: 'mega' }`, drawn by
+  59-hudkit, which also draws `HK.rarityTag`), the icon's 'mega' halo (80-icons), "Mega rare." in the pack and the book's
+  tag (44-wiki). Where one comes from is ONE table, `MEGA_RARE.SOURCES[id]`: a row `{ monster, chance }` rolls 1 kill in
+  `chance` after that monster's own drops (the book lists it under "Mega rare"); empty, it draws no random number. The
+  admin's Give me an item announces one; `MEGA_RARE.announce(id, how, x, y)` is the moment for any other way in.
 - `MONSTER_DEFS.my_monster = { name, level, r, hp, att, maxHit, def, speed, aggro, sight, respawn, drops, human?, harmless?, thrower?, mech?, roam? }`
   (`roam`: the tiles from home it idles within, and it turns for home the moment it is past them; default 4, a person 6)
   and a sprite via `HOOKS.drawMonster.my_monster = (g, e, hurt) => {...}` (g is already translated to the monster's position; draw around 0,0; `e.facing`, `e.walkT`, `e.moving`, `e.attackT`).
