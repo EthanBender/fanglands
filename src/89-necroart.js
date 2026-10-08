@@ -291,6 +291,15 @@ const NECRO_ART = (() => {
       if ((j + r + k) % 3 === 0) { g.fillStyle = C.bone; g.fillRect(sx - 5, sy - 2, 12, 3); }
       else { g.fillStyle = C.bone; ell(g, sx, sy - 3, 4.2, 4); g.fill(); g.fillStyle = C.ink; ell(g, sx - 1.5, sy - 3.5, 1, 1.2); g.fill(); ell(g, sx + 1.5, sy - 3.5, 1, 1.2); g.fill(); } }
   }
+  // Hollowford's memorial board: a little roofed board of names; one of them scraped off (Ambrose's), or written fresh
+  function memorialBoard(g, px, py, mended) {
+    const cx = px + TILE / 2, base = py + TILE - 6;
+    shadow(g, cx, base + 2, 12); g.fillStyle = '#5a3c22'; g.fillRect(cx - 12, base - 30, 3, 32); g.fillRect(cx + 9, base - 30, 3, 32);
+    g.fillStyle = '#8a8680'; g.fillRect(cx - 14, base - 34, 28, 22); g.fillStyle = '#4a3220'; g.fillRect(cx - 16, base - 37, 32, 4);
+    g.fillStyle = '#3a3630'; for (let k = 0; k < 4; k++) g.fillRect(cx - 10, base - 30 + k * 5, k === 2 ? 10 : 18, 2);
+    if (mended) { g.fillStyle = C.gold; g.fillRect(cx - 10, base - 20, 18, 2); }
+    else { g.strokeStyle = '#5a5650'; g.lineWidth = 1.4; g.beginPath(); g.moveTo(cx - 9, base - 18); g.quadraticCurveTo(cx - 1, base - 23, cx + 8, base - 19); g.stroke(); }
+  }
   function wallNames(g, px, py, k) { g.fillStyle = `rgba(232,246,255,${0.3 + 0.15 * Math.sin(time * 1.5 + k)})`; for (let j = 0; j < 4; j++) g.fillRect(px + 6 + j * 9, py + 18 + (j % 2) * 6, 6, 2); }
   function hollowCircle(g, x, y, t) { g.strokeStyle = `rgba(${VIOLET},${0.35 + 0.1 * Math.sin(t * 2)})`; g.lineWidth = 2; ell(g, x, y, 56, 24); g.stroke(); ell(g, x, y, 44, 18); g.stroke(); for (let k = 0; k < 8; k++) { const a = k * TAU / 8 + t * 0.2; g.fillStyle = `rgba(${VIOLET},0.5)`; ell(g, x + Math.cos(a) * 50, y + Math.sin(a) * 21, 2.5, 2); g.fill(); } }
 
@@ -519,6 +528,6 @@ const NECRO_ART = (() => {
   // ---------- the cast's sound: a soft rising chime ----------
   if (typeof SFX === 'object' && SFX && !SFX.necro && typeof tone === 'function') SFX.necro = () => { tone('sine', 660, 990, 0.25, 0.04); tone('triangle', 330, 495, 0.3, 0.02); };
 
-  return { C, helper, bolt, flash, shard, thing, boneShelf, mound, moundWisps, lychGate, candleCell, oldGrave, tobiasStone, spoil, pawPrints, nameLight, deepThing, wallNames, hollowCircle, ghost, wayLantern, tinyLantern, moths, skeleton, LOOKS };
+  return { C, helper, bolt, flash, shard, thing, boneShelf, memorialBoard, mound, moundWisps, lychGate, candleCell, oldGrave, tobiasStone, spoil, pawPrints, nameLight, deepThing, wallNames, hollowCircle, ghost, wayLantern, tinyLantern, moths, skeleton, LOOKS };
 })();
 window.NECRO_ART = NECRO_ART;

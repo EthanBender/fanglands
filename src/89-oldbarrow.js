@@ -491,6 +491,8 @@ const OLD_BARROW = (() => {
     for (const [[x, y], k] of kinds) { deepInst.tiles[y * DEEP.w + x] = SOLID_T(); DPROP.set(y * DEEP.w + x, k); }
   });
   const inDeep = () => window.__instance === DEEP_ID;
+  // the Candle Hall's candles double spirit's refill too, while one burns within 2 tiles of the knight (spec 1.2)
+  NECRO.circles.push(() => inDeep() && monsters.some(m => m.type === 'watch_candle' && !m.dead && m.hp > 0 && dist(m.x, m.y, player.x, player.y) <= tiles(2)));
   const dIdx = (x, y) => y * DEEP.w + x;
   if (window.LIGHTS) LIGHTS.scene(DEEP_ID, {
     ambient: { color: '#03100f', alpha: 0.78 }, player: { r: 150, lift: 0.8 },
@@ -1059,6 +1061,8 @@ const OLD_BARROW = (() => {
       if (q.q3 >= DONE) for (const m of monsters) if (!m.dead && (m.type === 'zombie_calm' || m.type === 'grave_zombie_calm')) items.push({ y: 1e8 - 3, draw: () => a.tinyLantern(g, m.x, m.y - LIFT.lamp, time + m.x * 0.01) });
     }
     for (const n of NAMES) if (n.t > 0) items.push({ y: 1e8 - 1, draw: () => a.nameLight(g, n.x + Math.sin(n.t * 3 + n.x) * 8, n.y - n.t * 90, n.t * 2) });
+    // Hollowford's memorial board by the chapel: Ambrose's name scraped off until his walk home (Q2), written again after
+    if (!window.__instance && B().q2 >= 1) { const [mx, my] = chapelAt(); items.push({ y: (my + 1) * TILE - 4, draw: () => a.memorialBoard(g, (mx + 1) * TILE, my * TILE, B().q2 >= DONE) }); }
     // the Hollow's moths as it unravels (79-deaths plays the undead crumble; the moths rise over it)
     for (const m of monsters) if (m.type === 'the_hollow' && m.dead && window.DEATHS && DEATHS.of(m)) { const r = DEATHS.remains(m); items.push({ y: 1e8 - 2, draw: () => a.moths(g, m.x, m.y, r) }); }
   });

@@ -72131,7 +72131,7 @@ const NECRO_ART = (() => {
       g.fillStyle = 'rgba(80,110,160,0.8)'; g.fillRect(cx - 12, base - 26, 6, 10);
     }
   }
-  function mound(g, b, night, t) {
+  function mound(g, b, night, t, door) {
     const x0 = b[0] * TILE, y0 = b[1] * TILE, x1 = (b[2] + 1) * TILE, y1 = (b[3] + 1) * TILE, cx = (x0 + x1) / 2, w = x1 - x0, h = y1 - y0;
     shadow(g, cx, y1 - 4, w * 0.5);
     g.fillStyle = '#3e6a2c'; ell(g, cx, y1 - h * 0.45, w * 0.52, h * 0.58); g.fill();
@@ -72139,9 +72139,11 @@ const NECRO_ART = (() => {
     g.fillStyle = 'rgba(255,255,255,0.06)'; ell(g, cx - w * 0.12, y1 - h * 0.7, w * 0.2, h * 0.16); g.fill();
     // the kerb stones round its foot
     for (let k = 0; k <= 12; k++) { const a = Math.PI * (0.05 + 0.9 * k / 12), sx = cx - Math.cos(a) * w * 0.5, sy = y1 - h * 0.45 + Math.sin(a) * h * 0.55; g.fillStyle = k % 2 ? '#8a8680' : '#77736c'; g.fillRect(sx - 6, sy - 6, 12, 9); }
-    // the stair's arch in its face (16-instances draws the door tile; this is the stone frame round it)
-    const dx = cx - TILE / 2 + TILE * 0.5 - TILE / 2, dy = y1 - TILE;
-    g.fillStyle = '#5f5b54'; g.fillRect(dx - 6, dy - 10, TILE + 12, 10); g.fillRect(dx - 6, dy - 10, 8, TILE + 4); g.fillRect(dx + TILE - 2, dy - 10, 8, TILE + 4);
+    // the stair down in its face: a dark doorway with steps going down, in a stone frame carved with runes
+    const dx = door ? door[0] * TILE : cx - TILE / 2, dy = door ? door[1] * TILE : y1 - TILE;
+    g.fillStyle = '#16120e'; g.fillRect(dx + 2, dy + 2, TILE - 4, TILE - 2);
+    g.fillStyle = '#3a342c'; for (let k = 0; k < 4; k++) g.fillRect(dx + 6 + k * 2, dy + 12 + k * 9, TILE - 12 - k * 4, 4);
+    g.fillStyle = '#5f5b54'; g.fillRect(dx - 6, dy - 10, TILE + 12, 10); g.fillRect(dx - 6, dy - 10, 8, TILE + 10); g.fillRect(dx + TILE - 2, dy - 10, 8, TILE + 10);
     g.strokeStyle = C.teal; g.lineWidth = 1.4; for (let k = 0; k < 5; k++) { const rx = dx + 2 + k * 9; g.beginPath(); g.moveTo(rx, dy - 7); g.lineTo(rx + 3, dy - 3); g.lineTo(rx + 6, dy - 7); g.stroke(); }
     if (night) glow(g, cx, dy - 5, 30, TEAL, 0.2 + 0.06 * Math.sin(t * 2));
   }
@@ -72219,6 +72221,23 @@ const NECRO_ART = (() => {
       g.fillStyle = '#5a5664'; g.beginPath(); g.moveTo(cx - 14, base); g.lineTo(cx - 12, base - 38); g.quadraticCurveTo(cx, base - 46, cx + 12, base - 38); g.lineTo(cx + 14, base); g.closePath(); g.fill();
       g.strokeStyle = 'rgba(30,26,40,0.8)'; g.lineWidth = 1.2; for (let k = 0; k < 6; k++) { g.beginPath(); g.moveTo(cx - 9, base - 32 + k * 5); g.quadraticCurveTo(cx, base - 35 + k * 5, cx + 9, base - 30 + k * 5); g.stroke(); }
     }
+  }
+  // an Ossuary shelf: a stone niche of neat skulls and long bones, row on row (tidy, never gory)
+  function boneShelf(g, px, py, k) {
+    g.fillStyle = '#3a3630'; g.fillRect(px + 2, py - 14, TILE - 4, TILE + 10);
+    g.fillStyle = '#2a2622'; for (let r = 0; r < 3; r++) g.fillRect(px + 5, py - 10 + r * 18, TILE - 10, 14);
+    for (let r = 0; r < 3; r++) for (let j = 0; j < 3; j++) { const sx = px + 12 + j * 12, sy = py - 2 + r * 18;
+      if ((j + r + k) % 3 === 0) { g.fillStyle = C.bone; g.fillRect(sx - 5, sy - 2, 12, 3); }
+      else { g.fillStyle = C.bone; ell(g, sx, sy - 3, 4.2, 4); g.fill(); g.fillStyle = C.ink; ell(g, sx - 1.5, sy - 3.5, 1, 1.2); g.fill(); ell(g, sx + 1.5, sy - 3.5, 1, 1.2); g.fill(); } }
+  }
+  // Hollowford's memorial board: a little roofed board of names; one of them scraped off (Ambrose's), or written fresh
+  function memorialBoard(g, px, py, mended) {
+    const cx = px + TILE / 2, base = py + TILE - 6;
+    shadow(g, cx, base + 2, 12); g.fillStyle = '#5a3c22'; g.fillRect(cx - 12, base - 30, 3, 32); g.fillRect(cx + 9, base - 30, 3, 32);
+    g.fillStyle = '#8a8680'; g.fillRect(cx - 14, base - 34, 28, 22); g.fillStyle = '#4a3220'; g.fillRect(cx - 16, base - 37, 32, 4);
+    g.fillStyle = '#3a3630'; for (let k = 0; k < 4; k++) g.fillRect(cx - 10, base - 30 + k * 5, k === 2 ? 10 : 18, 2);
+    if (mended) { g.fillStyle = C.gold; g.fillRect(cx - 10, base - 20, 18, 2); }
+    else { g.strokeStyle = '#5a5650'; g.lineWidth = 1.4; g.beginPath(); g.moveTo(cx - 9, base - 18); g.quadraticCurveTo(cx - 1, base - 23, cx + 8, base - 19); g.stroke(); }
   }
   function wallNames(g, px, py, k) { g.fillStyle = `rgba(232,246,255,${0.3 + 0.15 * Math.sin(time * 1.5 + k)})`; for (let j = 0; j < 4; j++) g.fillRect(px + 6 + j * 9, py + 18 + (j % 2) * 6, 6, 2); }
   function hollowCircle(g, x, y, t) { g.strokeStyle = `rgba(${VIOLET},${0.35 + 0.1 * Math.sin(t * 2)})`; g.lineWidth = 2; ell(g, x, y, 56, 24); g.stroke(); ell(g, x, y, 44, 18); g.stroke(); for (let k = 0; k < 8; k++) { const a = k * TAU / 8 + t * 0.2; g.fillStyle = `rgba(${VIOLET},0.5)`; ell(g, x + Math.cos(a) * 50, y + Math.sin(a) * 21, 2.5, 2); g.fill(); } }
@@ -72448,7 +72467,7 @@ const NECRO_ART = (() => {
   // ---------- the cast's sound: a soft rising chime ----------
   if (typeof SFX === 'object' && SFX && !SFX.necro && typeof tone === 'function') SFX.necro = () => { tone('sine', 660, 990, 0.25, 0.04); tone('triangle', 330, 495, 0.3, 0.02); };
 
-  return { C, helper, bolt, flash, shard, thing, mound, moundWisps, lychGate, candleCell, oldGrave, tobiasStone, spoil, pawPrints, nameLight, deepThing, wallNames, hollowCircle, ghost, wayLantern, tinyLantern, moths, skeleton, LOOKS };
+  return { C, helper, bolt, flash, shard, thing, boneShelf, memorialBoard, mound, moundWisps, lychGate, candleCell, oldGrave, tobiasStone, spoil, pawPrints, nameLight, deepThing, wallNames, hollowCircle, ghost, wayLantern, tinyLantern, moths, skeleton, LOOKS };
 })();
 window.NECRO_ART = NECRO_ART;
 
@@ -72505,7 +72524,8 @@ const NECRO = (() => {
   };
 
   // ---------- small helpers ----------
-  const L = () => skillLv('necromancy');
+  // (the knight 04-state made at load, before this file added the skill, has no row yet: level 1 until a new game or a load)
+  const L = () => player && player.skills && player.skills.necromancy ? skillLv('necromancy') : 1;
   const px = n => n * TILE;                       // tiles to pixels (a size, never a place)
   const MAX_DMG = 500;
   const HAND = 18, GLOW = 12;      // pixels above the feet: where a bolt leaves the hand, where the Ghostlight sits
@@ -72528,6 +72548,7 @@ const NECRO = (() => {
   // 1. THE SKILL
   // ======================================================================================================================
   SKILL_DEFS.push({ key: 'necromancy', name: 'Necromancy' });   // no `needs`: 10-hud's skillLocked would read it as "a hoe"
+  if (typeof player !== 'undefined' && player && player.skills && !player.skills.necromancy) player.skills.necromancy = { xp: 0 };   // the knight 04-state already made
   // the cape: made here the way 38-agility's ensureCapes makes the others (this file loads after it); 38's tables hold its
   // colour and ability; it is bought at the Master of Skills for 999 coins, like every cape
   ITEMS.cape_necromancy = Object.assign(ITEMS.cape_necromancy || { id: 'cape_necromancy', name: 'Necromancy cape', value: 999, color: '#4fd1b5', shape: 'cape', stack: 1, armour: { slot: 'cape', def: 5 }, capeSkill: 'necromancy' }, { necro: { power: 3 } });
@@ -73428,7 +73449,7 @@ const NECRO = (() => {
   // ======================================================================================================================
   const API = {
     CHOICES, SPELLS, SPELL, HELPER, HELPERS, BOLTS, FLASHES, WARD, CD, STATS, SUPPLIES, KIT, UNDEAD, XP, SPIRIT, MAX_DMG, GRAVE_XP,
-    power, spiritMax, spirit, addSpirit, refillRate, inCircle, circles, boltMax, attRoll, cast, castReady, canKnow, lockedWhy, costOf, coolLeft,
+    level: () => L(), power, spiritMax, spirit, addSpirit, refillRate, inCircle, circles, boltMax, attRoll, cast, castReady, canKnow, lockedWhy, costOf, coolLeft,
     isUndead, addUndead, fair, boltTarget, focusInHand, castFocus, fullSet, wearing, capOf, helperLoad, lifeMul, makeHelper, helpersHere, raise, ownGrave,
     ITEM_USE, itemUse: (id, fn, label) => { fn.label = label; ITEM_USE[id] = fn; },
     ROLL, seesGhost, lightsNear, remotes, readLook, lookNecro, lookKey, gates, landing, dummies, N, Q, HIT, mapNow,
@@ -73671,7 +73692,7 @@ const OLD_BARROW = (() => {
       if (map[i] !== SOLID_T() || !vis(px + TILE / 2, py + TILE / 2, tiles(6))) continue;
       const v = variant[i] % 3;
       items.push({ y: -1e9 + 1, draw: () => { const img = tex[TEX_NAME[c.under] + v]; if (img) g.drawImage(img, px, py, TILE, TILE); } });
-      if (c.kind === 'mound') { if (moundDone) continue; moundDone = true; const m = moundBox(); items.push({ y: (m[3] + 1) * TILE - 4, draw: () => a.mound(g, m, nightNow(), time) }); continue; }
+      if (c.kind === 'mound') { if (moundDone) continue; moundDone = true; const m = moundBox(); items.push({ y: (m[3] + 1) * TILE - 4, draw: () => a.mound(g, m, nightNow(), time, P('door')) }); continue; }
       items.push({ y: py + TILE - 4, draw: () => a.thing(g, c.kind, px, py, { tx, ty, night: nightNow(), rattleTalk: RT.at > time - 3 }) });
     }
     // the lych-gate over the path, drawn in front of anyone under it
@@ -73711,7 +73732,7 @@ const OLD_BARROW = (() => {
   // THE PEOPLE: Granny Wick (an NPCS row, the townsfolk look) and Rattle (a skull on a post: a prop, not a person)
   // =====================================================================================================================
   const say2 = (lines, who) => { for (const l of lines) say(l, who); };
-  const L = () => skillLv('necromancy');
+  const L = () => NECRO.level();
   SHOPS.barrow_candles = { name: "Granny Wick's shelf", stock: [['soul_shard', C.SHARD_PRICE]], buys: [], rate: 1, buysWords: 'Granny Wick buys nothing. "I have more bones than I know what to do with, dear."' };
   const AFTER = [
     'Most of them only want someone to remember them. Remember that, and you will be a good keeper.',
@@ -73925,6 +73946,8 @@ const OLD_BARROW = (() => {
     voice: 'The Barrow Deep. Candles, bones and a bell. Somewhere below, a king is waiting.',
     build: buildDeep,
   }) : null;
+  // the Deep has its own plaque (the Watch's): 16-instances' "n left" would count the Watch's candles and the court
+  if (deepInst) deepInst.plaque = false;
   // the props become TD_PROP once every file has loaded (a world pass: every game builds its world before it plays)
   HOOKS.world.push(() => {
     if (!deepInst || SOLID_T() < 0) return;
@@ -73933,6 +73956,8 @@ const OLD_BARROW = (() => {
     for (const [[x, y], k] of kinds) { deepInst.tiles[y * DEEP.w + x] = SOLID_T(); DPROP.set(y * DEEP.w + x, k); }
   });
   const inDeep = () => window.__instance === DEEP_ID;
+  // the Candle Hall's candles double spirit's refill too, while one burns within 2 tiles of the knight (spec 1.2)
+  NECRO.circles.push(() => inDeep() && monsters.some(m => m.type === 'watch_candle' && !m.dead && m.hp > 0 && dist(m.x, m.y, player.x, player.y) <= tiles(2)));
   const dIdx = (x, y) => y * DEEP.w + x;
   if (window.LIGHTS) LIGHTS.scene(DEEP_ID, {
     ambient: { color: '#03100f', alpha: 0.78 }, player: { r: 150, lift: 0.8 },
@@ -73986,6 +74011,8 @@ const OLD_BARROW = (() => {
     // the names on the vault's walls: spirit marks, seen in a Ghostlight
     for (let x = DEEP.vault[0]; x <= DEEP.vault[2]; x += 2) for (const y of [DEEP.vault[1] - 1, DEEP.vault[3] + 1]) if (NECRO.seesGhost(tc(x), tc(y))) items.push({ y: -1e9 + 5, draw: () => a.wallNames(g, x * TILE, y * TILE, x + y) });
     { const [cx, cy] = DEEP.circle; items.push({ y: -1e9 + 3, draw: () => a.hollowCircle(g, tc(cx), tc(cy), time) }); }
+    // the Ossuary's shelves hold neat bones and skulls (the core's shelf tile, dressed over)
+    for (let y = DEEP.ossuary[1]; y <= DEEP.ossuary[3]; y++) for (const x of [DEEP.ossuary[0], DEEP.ossuary[2]]) if (map[idx(x, y)] === T.SHELF) items.push({ y: (y + 1) * TILE - 6, draw: () => a.boneShelf(g, x * TILE, y * TILE, x + y) });
   });
 
   // =====================================================================================================================
@@ -74499,6 +74526,8 @@ const OLD_BARROW = (() => {
       if (q.q3 >= DONE) for (const m of monsters) if (!m.dead && (m.type === 'zombie_calm' || m.type === 'grave_zombie_calm')) items.push({ y: 1e8 - 3, draw: () => a.tinyLantern(g, m.x, m.y - LIFT.lamp, time + m.x * 0.01) });
     }
     for (const n of NAMES) if (n.t > 0) items.push({ y: 1e8 - 1, draw: () => a.nameLight(g, n.x + Math.sin(n.t * 3 + n.x) * 8, n.y - n.t * 90, n.t * 2) });
+    // Hollowford's memorial board by the chapel: Ambrose's name scraped off until his walk home (Q2), written again after
+    if (!window.__instance && B().q2 >= 1) { const [mx, my] = chapelAt(); items.push({ y: (my + 1) * TILE - 4, draw: () => a.memorialBoard(g, (mx + 1) * TILE, my * TILE, B().q2 >= DONE) }); }
     // the Hollow's moths as it unravels (79-deaths plays the undead crumble; the moths rise over it)
     for (const m of monsters) if (m.type === 'the_hollow' && m.dead && window.DEATHS && DEATHS.of(m)) { const r = DEATHS.remains(m); items.push({ y: 1e8 - 2, draw: () => a.moths(g, m.x, m.y, r) }); }
   });
@@ -74508,7 +74537,7 @@ const OLD_BARROW = (() => {
     const SP = NECRO.SPELLS;
     const skillLines = () => {
       const out = ['Necromancy is listening to the dead. You ask old bones and lost ghosts for help; they help, and then they go back to rest.', `Start: ${GRANNY} at the Old Barrow (combat level 5).`, { t: 'SPELLS', c: '#d9b25c' }];
-      for (const s of SP) out.push(`Lv ${s.lv} · ${s.name}: ${s.what}${s.spirit ? ' ' + s.spirit + ' spirit.' : ''}${s.rest ? ' Rests ' + Math.round(s.rest / 60) + ' minutes.' : s.cd ? ' Every ' + s.cd + ' s.' : ''}`);
+      for (const s of SP) out.push(`Lv ${s.lv} · ${s.name}: ${s.what}${s.spirit ? ' ' + s.spirit + ' spirit.' : ''}${s.rest ? ' Rests ' + Math.round(s.rest / 60) + ' minutes.' : s.cd >= 1 ? ' Every ' + s.cd + ' s.' : ''}`);
       out.push({ t: 'SPIRIT AND POWER', c: '#d9b25c' }, 'Spirit = 20 + your level + your power, and it refills by itself: twice as fast out of a fight, twice again in a lit candle circle. The Bone Altar fills it; a soul shard gives 15.',
         'Power is what your necromancer gear adds: the wand 2, the Gravewood stave 6, the Bone stave 10, the Void Scythe 15, the hood 4, the robe 8, the wraps 5, the Soul lantern 6, the cape 3, and +5 for the whole Barrow-bound set.',
         { t: 'SUPPLIES', c: '#d9b25c' }, 'Bones, grave dust, soul shards, brute bones and dragon bones. Granny Wick sells soul shards for ' + C.SHARD_PRICE + ' coins.',
