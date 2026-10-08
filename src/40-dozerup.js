@@ -5,8 +5,11 @@
 // easier. You have to work for and build all the upgrades. Also upgrades so you can ram harder. Unlock them by getting
 // blueprints as rare drops from the machines' owners."
 // Four blueprints drop from the goblins who own the machines. Each one, plus materials and a Crafting level, is fitted at
-// the bulldozer bay: a mechanic's pit in the smithy yard behind Brakka's. Upgrades live on the knight (player.dozerUp)
-// and ride with him onto any bulldozer he drives; 22-bulldozer.js reads them (plow, Space, climb-on, sprite).
+// the bulldozer bay. This file owns the parts (the blueprints, the drops, the upgrades and the fitting rules, and the
+// Bulldozer bay panel that fits them) and the bay's cell in the smithy yard. The bay itself, the tunnel you drive a machine
+// into, Sprocket's workshop under it with its four stalls and benches, and the arch drawn on that cell, is 96-dozerbay.js:
+// E on the cell opens its door, and the workshop's parts bench opens this file's panel. Upgrades live on the knight
+// (player.dozerUp) and ride with him onto any bulldozer he drives; 22-bulldozer.js reads them (plow, Space, climb-on, sprite).
 // Registers through HOOKS only; touches no core file. window.DOZERUP exposes the tables for other features and the self-test.
 // ============================================================================
 {
@@ -90,7 +93,8 @@
     if (!s) { bayPos = null; return; }
     api.setTile(s[0], s[1], T_BAY); bayPos = { x: s[0], y: s[1] };
   });
-  HOOKS.use.push((t, tx, ty) => { if (t !== T_BAY) return false; openPanel('dozerup'); return true; });
+  // E on it: the bay's door (96-dozerbay: go inside, take a machine out); without that file, this file's panel as before
+  HOOKS.use.push((t, tx, ty) => { if (t !== T_BAY) return false; if (window.DOZERBAY) DOZERBAY.door(); else openPanel('dozerup'); return true; });
 
   // ---------- fitting ----------
   // Returns { ok, why } without touching anything; fitUpgrade() does the work and reports through notify/say.
@@ -113,7 +117,9 @@
     gainXp('crafting', u.xp);
     burst(player.x, player.y, '#ffb347', 24, 120); burst(player.x, player.y, BLUE, 12, 90); sfx('levelup');
     levelBanner = { text: 'UPGRADE FITTED', sub: u.name, t: 3 };
-    say(u.line + (player.mech && player.mech.kind === 'dozer' ? '' : ' It goes on the next bulldozer you climb onto.'), 'The Voice');
+    // in the bay with a bulldozer in its stall the part goes straight on it (96-dozerbay); anywhere else it waits for the next one
+    const onIt = (player.mech && player.mech.kind === 'dozer') || !!(window.DOZERBAY && DOZERBAY.inside() && DOZERBAY.stalls().some(s => s && s.kind === 'dozer'));
+    say(u.line + (onIt ? '' : ' It goes on the next bulldozer you climb onto.'), 'The Voice');
     save();
     return true;
   }
@@ -191,35 +197,7 @@
     variants: [{ name: 'first page', open: () => { openPanel('dozerup'); bayPage = 0; } }, { name: 'last page', open: () => { openPanel('dozerup'); bayPage = 99; } }],
   });
 
-  // ---------- drawing: the pit ----------
-  function drawBay(g, tx, ty) {
-    const cx = tc(tx), cy = tc(ty);
-    // the pit: a dark rectangular hole edged with iron, planks over one end
-    g.fillStyle = '#5a5a62'; roundRect(g, cx - 22, cy - 18, 44, 36, 4); g.fill();
-    g.fillStyle = '#15161c'; roundRect(g, cx - 18, cy - 14, 36, 28, 3); g.fill();
-    g.strokeStyle = 'rgba(255,255,255,0.12)'; g.lineWidth = 1; g.beginPath(); g.moveTo(cx - 18, cy - 8); g.lineTo(cx + 18, cy - 8); g.moveTo(cx - 18, cy + 4); g.lineTo(cx + 18, cy + 4); g.stroke();
-    g.fillStyle = '#7a4a2a'; for (const ox of [-16, -10]) g.fillRect(cx + ox, cy - 14, 5, 28);
-    // tool rack along the top edge: a spanner, a hammer, an oil can, a coil of chain
-    g.strokeStyle = '#c9ccd3'; g.lineWidth = 2; g.lineCap = 'round'; g.beginPath(); g.moveTo(cx - 4, cy - 12); g.lineTo(cx + 4, cy - 2); g.stroke(); g.beginPath(); g.arc(cx - 5, cy - 13, 2.6, 0, 7); g.stroke();
-    g.strokeStyle = '#8a6a3a'; g.lineWidth = 2; g.beginPath(); g.moveTo(cx + 9, cy - 12); g.lineTo(cx + 13, cy + 0); g.stroke(); g.fillStyle = '#3a3a42'; g.fillRect(cx + 6, cy - 15, 7, 4);
-    g.fillStyle = '#4a7a3a'; roundRect(g, cx + 8, cy + 5, 7, 8, 2); g.fill(); g.fillRect(cx + 10, cy + 2, 3, 3);
-    g.strokeStyle = '#8f96a3'; g.lineWidth = 1.5; for (let k = 0; k < 3; k++) { g.beginPath(); g.arc(cx - 6 + k * 4, cy + 9, 2.2, 0, 7); g.stroke(); }
-    // a spare wheel leaning on the corner and a smear of grease
-    g.fillStyle = '#2f2a26'; g.beginPath(); g.arc(cx - 20, cy + 16, 6, 0, 7); g.fill(); g.fillStyle = '#5a4a3a'; g.beginPath(); g.arc(cx - 20, cy + 16, 3.5, 0, 7); g.fill();
-    g.fillStyle = 'rgba(0,0,0,0.25)'; g.beginPath(); g.ellipse(cx + 16, cy + 18, 7, 3, 0, 0, 7); g.fill();
-    // blue blueprint pinned to a post when something can be fitted right now
-    if (!player.mech && UPGRADES.some(u => !DU()[u.id] && canFitUpgrade(u).ok)) { const bob = Math.sin(time * 4) * 2; g.fillStyle = BLUE; g.fillRect(cx - 5, cy - 34 + bob, 10, 7); g.fillStyle = '#e6edf3'; g.fillRect(cx - 3, cy - 32 + bob, 6, 1); g.fillRect(cx - 3, cy - 30 + bob, 4, 1); }
-  }
-  HOOKS.draw.push((g, items, cam) => {
-    if (!bayPos || tileAt(bayPos.x, bayPos.y) !== T_BAY) return;
-    const { x: tx, y: ty } = bayPos;
-    if (tx * TILE < cam.x - 80 || tx * TILE > cam.x + VW + 80 || ty * TILE < cam.y - 80 || ty * TILE > cam.y + VH + 80) return;
-    items.push({ y: ty * TILE + TILE - 10, draw: () => drawBay(g, tx, ty) });
-    if (!player.dead && !player.mech) { // use-highlight (the core only highlights its own INTERESTING tiles)
-      const ft = frontTile(player);
-      if (ft.tx === tx && ft.ty === ty) items.push({ y: 1e9, draw: () => { HK.brackets(g, tx * TILE + 2, ty * TILE + 2, TILE - 4, TILE - 4); } });
-    }
-  });
+  // (the cell is drawn by 96-dozerbay as the tunnel's arch, with the gold corners when it is faced)
   HOOKS.newGame.push(() => { blueprintsDropped = 0; pendingBanner = null; });
 
   window.DOZERUP = { UPGRADES, BLUEPRINTS, BLUEPRINT_DROPS, tile: T_BAY, get bay() { return bayPos; }, rollBlueprint, fitUpgrade, canFitUpgrade, hasBlueprint, missingBlueprints, get dropped() { return blueprintsDropped; } };
@@ -271,10 +249,11 @@
     h.clearJunk(); { let free = player.inv.filter(s => !s).length; for (let i = player.inv.length - 1; i >= 0 && free < 8; i--) { const s = player.inv[i]; if (s && s.id !== 'coins' && !ITEMS[s.id].weapon && !ITEMS[s.id].armour) { player.inv[i] = null; free++; } } }
     for (const id of BLUEPRINTS) removeItem(id, 99);
     F.tp(bay.x, bay.y + 1); F.face(bay.x, bay.y); player.mech = null; player.r = 13; player.speed = 175;
-    F.press('KeyE'); const opened = panel === 'dozerup';
+    F.press('KeyE'); const door = panel === (window.DOZERBAY ? 'baydoor' : 'dozerup');
+    render(); const viaDoor = !window.DOZERBAY || F.clickButton('Fit upgrades'); const opened = panel === 'dozerup';
     render();
     const rows = buttons.filter(b => /^(disabled:)?Fit: /.test(b.label)).length;
-    check(P + 'E at the bay opens the Bulldozer bay panel with a row per upgrade', opened && rows === 4 && !!panelRect, { opened, rows, panel });
+    check(P + 'E at the bay opens its door, and Fit upgrades there opens the Bulldozer bay panel with a row per upgrade', door && viaDoor && opened && rows === 4 && !!panelRect, { door, viaDoor, opened, rows, panel });
     // 4. fitting: each upgrade refuses without the blueprint / level / materials, and fits with them (blueprint + materials consumed, crafting xp)
     const fitOne = (u, mats) => {
       player.skills.crafting.xp = XP_TABLE[Math.max(1, u.lv - 1)];

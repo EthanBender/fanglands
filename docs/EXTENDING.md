@@ -497,6 +497,21 @@ RIDE.state.ride`): his place is the machine's. E is Hop on only when `RIDE.offer
 E has nothing in front of him: a new usable tile needs nothing more, since anything that is not open ground keeps its E). A
 rider is set down only on ground open in his own world (`RIDE.freeAt`: clear, and a walk reaches `RIDE.OPEN_REACH` tiles).
 
+**The Bulldozer Bay** (`src/96-dozerbay.js`; the parts and the bay's cell stay in `src/40-dozerup.js`): the DOZER_BAY cell
+on the port `thistledown.dozer_bay` is the mouth of a tunnel (drawn as an arch; the tile and its place never changed, so no
+`WORLD_REV`). A knight-driven machine (the walker, the bulldozer, the Barrelbeast; never the mare) driven into it, or E / the
+DRIVE IN seat at it, rolls into the first of four stalls in the workshop under it (an instance, `dozer_bay`) and the knight
+climbs down beside it; E on a stored machine drives it back up onto the street beside the mouth, and on foot E at the mouth
+opens the bay's door panel (Go inside, Take it out per stall). The stalls are `player.bay.stalls` (`{ kind, hp }` or null:
+saved on the knight, never a map diff, never relayed: every page draws its own knight's stalls). A new machine kind is a row
+in its `MACH` table (radius, speed, full hull, as climbing in gives them: its self-test reads them from the real machines)
+and in `WHAT`. A friend riding along is set down by his own game when the driver's map changes (84-ridetogether's
+"went inside"). Inside: the parts bench opens 40-dozerup's `dozerup` panel, the repair bench (`bayrepair`) mends a stored
+hull for one goblin scrap per 20 points missing, the blueprint board reads the plans, and Sprocket (83-townsart's
+`sprocket`) talks. **Tile ids are bytes** (`map` is a Uint8Array): 249 of 256 are taken, so the bay adds none. Its floor is
+FLOOR under a drawn slab, its walls CWALL, and every solid fixture stands on 95-thistledown's TD_PROP with a side table of
+its own (`DOZERBAY.CELLS`), 84-crossroads' way; a new place should do the same before it spends one of the last seven.
+
 ### The townsfolk (`src/83-townsart.js`, `src/83-townsfolk.js`)
 
 Every follower and non-fighting townsperson is drawn in the owner-approved townsfolk look. `83-townsart.js` is the

@@ -134,6 +134,9 @@ async function main() {
   };
   const press = (g, code) => { g.FANGLANDS.press(code); wire.flush(); };
   const login = async (g, name) => { const r = await g.NET.post('/api/login', { name, pass: 'secret' }); g.NET.setToken(r.token); g.NET.connect(); wire.flush(); return r; };
+  // the old page is here for its seats, not its Atlas: a build that adds a place (a new instance) changes the Atlas hash, and
+  // the Room keys a page with another Atlas apart (room.js STALE), so the old page says this build's hash in its hello
+  if (O) { const h = JSON.stringify(atlas.hash); R(O, `if (typeof ATLAS !== 'undefined' && typeof ATLAS.hash === 'function' && ATLAS.hash() !== ${h}) ATLAS.hash = () => ${h};`); }
   await login(M, 'Mudtech'); await login(B, 'Ben'); await login(A, 'Ann'); await login(C, 'Cy'); if (O) await login(O, 'Old');
   tick(4);
 

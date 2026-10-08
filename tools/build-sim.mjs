@@ -267,8 +267,8 @@ export const STRIP_READS = {
     why: '79-deaths wraps it at load to draw loot popping out of a body; the wrapper only runs when something draws, which a copy never does',
   },
   HK: {
-    files: ['05-input', '17-tap', '21-companion', '23-law', '24-dwarves', '29-quests', '43-settings', '47-outliers', '53-coalmine', '54-graves', '55-riding', '61-markers', '66-storm', '71-login', '73-players', '74-chat', '78-trade', '79-boygirl', '79-deaths', '84-ridetogether'],
-    why: 'the HUD kit (59-hudkit): fonts, colours, text widths, panel rows, plaques, seats and safe insets, read by panel, plaque, chat-wrap and tap code (79-boygirl: its "Boy or girl?" card on the title, drawn only while the title is up; 84-ridetogether wraps HK.usePreview at load behind a typeof guard, the USE seat\'s verb, which only the HUD reads); the two update-time reads are a held BLOCK seat, used only for the copy\'s own knight on a machine (55-riding returns first: the parked stand-in has no machine) and a pointer release (05-input, a copy has no pointer)',
+    files: ['05-input', '17-tap', '21-companion', '23-law', '24-dwarves', '29-quests', '43-settings', '47-outliers', '53-coalmine', '54-graves', '55-riding', '61-markers', '66-storm', '71-login', '73-players', '74-chat', '78-trade', '79-boygirl', '79-deaths', '84-ridetogether', '96-dozerbay'],
+    why: 'the HUD kit (59-hudkit): fonts, colours, text widths, panel rows, plaques, seats and safe insets, read by panel, plaque, chat-wrap and tap code (79-boygirl: its "Boy or girl?" card on the title, drawn only while the title is up; 84-ridetogether and 96-dozerbay wrap HK.usePreview at load behind a typeof guard, the USE seat\'s verb, which only the HUD reads); the two update-time reads are a held BLOCK seat, used only for the copy\'s own knight on a machine (55-riding returns first: the parked stand-in has no machine) and a pointer release (05-input, a copy has no pointer)',
   },
   title: {
     files: ['17-tap', '54-graves', '71-login', '72-cloudsave', '72-deviceknights', '72-savelock', '75-coop', '76-admin', '77-dropparty', '78-trade', '79-boygirl', '82-knightgear', '91-royalmine', '96-rests', '97-spread', '99-boot', '84-ridetogether'],
@@ -307,7 +307,7 @@ export const STRIP_READS = {
   SFX: { files: ['95-thistledown'], why: 'the sound bank: two sounds added if missing' },
   noise: { files: ['95-thistledown'], why: 'a sound, inside the splash sound 95 adds' },
   'window.WIKI': {
-    files: ['17-tap', '46-cinderwight', '46-scales', '47-outliers', '54-graves', '58-underground', '62-ores', '77-dropparty', '88-aerie', '90-canyon', '91-cloudkingdom', '91-royalmine', '95-thistledown'],
+    files: ['17-tap', '46-cinderwight', '46-scales', '47-outliers', '54-graves', '58-underground', '62-ores', '77-dropparty', '88-aerie', '90-canyon', '91-cloudkingdom', '91-royalmine', '95-thistledown', '96-dozerbay'],
     why: 'the book: pages added at load, and a tap that opens a monster\'s page',
   },
   'window.ICONS': { files: ['54-graves', '81-partyhats', '88-aerie', '90-canyon', '91-cloudkingdom', '91-royalmine'], why: 'item icons registered at load' },
