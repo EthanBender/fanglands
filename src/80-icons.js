@@ -407,6 +407,11 @@
       g.quadraticCurveTo(-0.8, -4.6, 0, -2.4); g.quadraticCurveTo(0.8, -4.6, 2.6, -4.6); g.quadraticCurveTo(5.4, -4.6, 5.4, -1.6);
       g.quadraticCurveTo(5.4, 1.4, 0, 6); g.closePath(); g.fill();
     },
+    necromancy: (g, ink) => { // a skull (89-necromancy: the skill's mark and its cape's)
+      g.fillStyle = ink;
+      g.beginPath(); g.arc(0, -1.2, 4.8, Math.PI * 0.8, Math.PI * 2.2); g.lineTo(3.2, 3.4); g.lineTo(-3.2, 3.4); g.closePath(); g.fill();
+      g.fillRect(-2.6, 3, 5.2, 2.6);
+    },
     agility: (g, ink) => { // a running boot
       g.fillStyle = ink;
       g.beginPath(); g.moveTo(-2.6, -4.6); g.lineTo(1, -4.6); g.lineTo(1.6, 0.6); g.lineTo(5, 2.6); g.lineTo(5.4, 5.4); g.lineTo(-2.6, 5.4); g.closePath(); g.fill();
@@ -579,6 +584,8 @@
     // set(id, (g, size, item) => {}) — the canvas is already centred and scaled; draw inside -9..+9.
     set(id, fn) { if (typeof fn !== 'function') throw new Error('ICONS.set(' + id + ') needs a drawing function'); REG[id] = fn; return fn; },
     get: id => REG[id] || null,
+    // a skill cape's drawing from its emblem (a skill registered after this file, as 89-necromancy is, asks for its own)
+    cape: key => EMBLEM[key] ? capeIcon(EMBLEM[key]) : null,
     has: id => !!REG[id],
     ids: () => Object.keys(REG),
     rarity: id => tierOf(id).key,                        // 'common' | 'uncommon' | 'rare' | 'epic' | 'unique' | 'mega'

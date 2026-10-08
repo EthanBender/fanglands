@@ -470,8 +470,9 @@ const TOWNSFOLK = (() => {
         // and 4 more: the riverside's Wilf, Tamsin the miller, Odo and Nan Gully (the Great Spread, Stage 5b); and 3 more: the
         // Crossroads Inn's Mother Hobb, Jory the pedlar and Marigold the drover (Stage 5c); and 3 more: Ansel the beacon keeper,
         // Hilde the trapper and Corvin the hunter (Stage 5d); and 2 more: Bramble the scout and Brin the drover (Stage 5e); and 1
-        // more: Wat the carter (Stage 5f); and 3 more: the roads' traders, Ivo the ore-picker, Rusty Kett and Cinder Meg (Stage 6)
-        ids.length === 96 && !bad.length && !missed.length && !dup.length && !small.length, { n: ids.length, bad: bad.slice(0, 5), missed, dup, small }); }
+        // more: Wat the carter (Stage 5f); and 3 more: the roads' traders, Ivo the ore-picker, Rusty Kett and Cinder Meg (Stage 6); and
+        // 1 more: Granny Wick at the Old Barrow (89-necroart: the sample's own parts, a family of one)
+        ids.length === 97 && !bad.length && !missed.length && !dup.length && !small.length, { n: ids.length, bad: bad.slice(0, 5), missed, dup, small }); }
 
     // 2. every person the game draws reaches the new look by id: each NPCS entry through the core's drawNpc, and every
     // place's own people in real frames (Hollowford's square and the guild, the ferry, Deepholm, Sylvaris, Aerie and the

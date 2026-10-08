@@ -918,5 +918,17 @@
   {"file": "86-bandits.js", "literal": "6 * TILE", "decl": "sight", "reason": "the bandit archer's sight (6 tiles): a range, not a position"},
   {"file": "86-bandits.js", "literal": "TILE * 2", "decl": "THING_REACH", "reason": "THING_REACH: how far a bandit tent's or booth's drawing reaches past its tile, in pixels (the cull), not a position"},
   {"file": "93-roads.js", "literal": "3 * TILE", "decl": "sight", "reason": "the named beasts' sight (3 tiles, roads2's): a range, not a position"},
-  {"file": "93-roads.js", "literal": "9 * TILE", "decl": "GREEN_RANGE", "reason": "GREEN_RANGE: how near a beast must be for the Green Path blessing to calm it (9 tiles), a range, not a position"}
+  {"file": "93-roads.js", "literal": "9 * TILE", "decl": "GREEN_RANGE", "reason": "GREEN_RANGE: how near a beast must be for the Green Path blessing to calm it (9 tiles), a range, not a position"},
+  {"file": "89-oldbarrow.js", "decl": "PT", "reason": "the Old Barrow's named points as offsets in its own plan frame (ATLAS.planFrame('necromancy')), read only through BF.p; 01-atlas's necromancy ports say the same on the map"},
+  {"file": "89-oldbarrow.js", "decl": "DEEP", "reason": "the Barrow Deep's own map (instance 'barrow_deep', 44 x 36): its rooms, bell, candles, ropes, doors and torches are instance-local, never the overworld"},
+  {"file": "89-oldbarrow.js", "decl": "NED_AT", "reason": "Old Ned's spot on the Afterlands' own map (instance 'afterlands', 35-night), instance-local"},
+  {"file": "89-oldbarrow.js", "decl": "LANTERNS", "reason": "the five way-lanterns on the Afterlands' own map (instance 'afterlands', 35-night: the path from the fire, the fifth by Count Ashvane's altar), instance-local"},
+  {"file": "89-necroart.js", "decl": "flash", "reason": "pixel offsets inside a drawing (pictures only, stripped from the server): sizes round the thing being drawn, never a map position"},
+  {"file": "89-necroart.js", "decl": "thing", "reason": "pixel offsets inside a drawing (pictures only, stripped from the server): sizes round the thing being drawn, never a map position"},
+  {"file": "89-necroart.js", "decl": "deepThing", "reason": "pixel offsets inside a drawing (pictures only, stripped from the server): sizes round the thing being drawn, never a map position"},
+  {"file": "89-necroart.js", "decl": "ghost", "reason": "pixel offsets inside a drawing (pictures only, stripped from the server): sizes round the thing being drawn, never a map position"},
+  {"file": "89-necroart.js", "decl": "wayLantern", "reason": "pixel offsets inside a drawing (pictures only, stripped from the server): sizes round the thing being drawn, never a map position"},
+  {"file": "89-necroart.js", "decl": "moths", "reason": "pixel offsets inside a drawing (pictures only, stripped from the server): sizes round the thing being drawn, never a map position"},
+  {"file": "89-necroart.js", "decl": "drawKing", "reason": "pixel offsets inside a drawing (pictures only, stripped from the server): sizes round the thing being drawn, never a map position"},
+  {"file": "89-necroart.js", "decl": "drawHollow", "reason": "pixel offsets inside a drawing (pictures only, stripped from the server): sizes round the thing being drawn, never a map position"}
 ]

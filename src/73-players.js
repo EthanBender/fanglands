@@ -70,6 +70,8 @@
       girl: !!l.girl,
       // the six worn items' ids (82-knightgear draws each one in its own way); old clients ignore it
       gear: l.gear ? { helm: l.gear.helm || null, body: l.gear.body || null, legs: l.gear.legs || null, shield: l.gear.shield || null, cape: l.gear.cape || null, weapon: l.gear.weapon || null } : null,
+      // spells, the Ghostlight, the ward and the helpers (89-necromancy's playerLook wrapper; absent when nothing is going on)
+      necro: l.necro || undefined,
     };
   }
   // the machine or mount he is on: its kind and hp, and a bulldozer's fitted upgrades (40-dozerup) so a friend sees the
@@ -123,7 +125,7 @@
   });
   // a cheap signature of everything the contract counts as a change; the full message is only built when it differs
   const blocking = () => { const O = window.OUTLIERS; return !!(O && O.BLOCK && O.BLOCK.t > 0); };
-  const lookKey = () => { const e = player.equip, a = player.action, m = player.mech; return (e.weapon || '') + '|' + (e.helm || '') + '|' + (e.head || '') + '|' + (e.body || '') + '|' + (e.legs || '') + '|' + (e.shield || '') + '|' + (e.cape || '') + '|' + (a ? a.type + ':' + (a.tier || '') : '') + '|' + (m ? (m.kind || 'walker') + ':' + Math.ceil(m.hp) + (m.kind === 'dozer' ? ':' + dozerUps() : '') : '-') + '|' + (player.gender || '') + '|' + SWING.n + '|' + (blocking() ? 'B' : ''); };
+  const lookKey = () => { const e = player.equip, a = player.action, m = player.mech; return (e.weapon || '') + '|' + (e.helm || '') + '|' + (e.head || '') + '|' + (e.body || '') + '|' + (e.legs || '') + '|' + (e.shield || '') + '|' + (e.cape || '') + '|' + (a ? a.type + ':' + (a.tier || '') : '') + '|' + (m ? (m.kind || 'walker') + ':' + Math.ceil(m.hp) + (m.kind === 'dozer' ? ':' + dozerUps() : '') : '-') + '|' + (player.gender || '') + '|' + SWING.n + '|' + (blocking() ? 'B' : '') + '|' + (window.NECRO ? NECRO.lookKey() : ''); };
   const sig = () => mapId() + '|' + Math.round(player.x) + ',' + Math.round(player.y) + '|' + player.facing.x.toFixed(2) + ',' + player.facing.y.toFixed(2) + '|' + (player.moving ? 1 : 0) + '|' + Math.ceil(player.hp) + '/' + player.maxHp + '|' + (player.dead ? 1 : 0) + '|' + lookKey();
   let lastSig = null, lastSentAt = -1e9, sent = 0, sentSock = null;
 

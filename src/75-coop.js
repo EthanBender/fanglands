@@ -55,7 +55,7 @@
   // knight is still resting from his last paid kill, and then his kill pays nothing (no purse, no drops, no dragon item, no
   // kill bonus): m.noPay, which the boss files, 30-ashdrake, 45-progression and 37-dragonkillers read.
   HOOKS.bossCall = HOOKS.bossCall || {};
-  const CREDIT = new Set(['the_fang', 'barrelbeast', 'thunderbird', 'gnasher', 'brood_mother', 'count_ashvane']);
+  const CREDIT = new Set(['the_fang', 'barrelbeast', 'thunderbird', 'gnasher', 'brood_mother', 'count_ashvane', 'barrow_king', 'the_hollow']);
   const CREDIT_HITS = 3, CREDIT_FOR = 60;
   // CALL_GAP: the keeper wakes one boss at most this often, whoever asks. CALL_WAIT: a call nobody answered in this long
   // says so. SEND_GAP: this game sends a boss_call at most this often (the world's cap is 0.5 a second, a burst of 2).
@@ -554,8 +554,9 @@
       return _hitMonster(m, dmg, knock, fromBomb, source);
     }
     // a named boss keeps count of who is hitting it, so every knight who fought it gets the kill (CREDIT_HITS in CREDIT_FOR s)
-    if (!m.phantom && CREDIT.has(m.type) && (num(dmg) || 0) > 0 && online() && (source === undefined || source === 'player' || source === 'remote')) countHit(m, source === 'remote' ? m.lastHitBy : NET.me);
-    if (source === undefined || source === 'player') m.lastHitBy = null;
+    if (!m.phantom && CREDIT.has(m.type) && (num(dmg) || 0) > 0 && online() && (source === undefined || source === 'player' || source === 'necro' || source === 'remote')) countHit(m, source === 'remote' ? m.lastHitBy : NET.me);
+    // a spell or a helper's blow (89-necromancy, source 'necro') is this knight's own blow, as a sword's is
+    if (source === undefined || source === 'player' || source === 'necro') m.lastHitBy = null;
     return _hitMonster(m, dmg, knock, fromBomb, source);
   };
   function countHit(m, name) {

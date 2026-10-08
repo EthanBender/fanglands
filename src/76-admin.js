@@ -394,7 +394,7 @@
   }
   function seeAllMarkers() { if (!window.MARKERS) return; MARKERS.refresh(); const s = MARKERS.state(); for (const m of MARKERS.all()) s.seen[m.key] = 1; MARKERS.refresh(); }
   const UNLOCKS = [
-    { key: 'skills', system: 'Skills (SKILL_DEFS, all 13)', what: 'every skill at level 99, full health',
+    { key: 'skills', system: 'Skills (SKILL_DEFS, all 14)', what: 'every skill at level 99, full health',
       apply() { for (const s of SKILL_DEFS) { const sk = player.skills[s.key] || (player.skills[s.key] = { xp: 0 }); if (!(sk.xp >= xpForLevel(99))) sk.xp = xpForLevel(99); } player.hpSeeded = true; recomputeMaxHp(); player.hp = player.maxHp; },
       ok: () => SKILL_DEFS.every(s => player.skills[s.key] && levelForXp(player.skills[s.key].xp) >= 99) },
     { key: 'story', system: 'Main quest (core stages 0-8, HOOKS.mainQuest 8-16)', what: 'the story at its last stage; the sword, the first goblins, Thistledown and the walker behind you',

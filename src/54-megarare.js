@@ -47,7 +47,8 @@ const MEGA_RARE = (() => {
 
   // ---------- WHERE EACH ONE COMES FROM: the one table ----------
   // { monster: '<MONSTER_DEFS type>', chance: N }: 1 kill in N of that monster drops it. "we will work out where it comes
-  // from later": none yet.
+  // from later": the Void Scythe's row is Necromancy's (89-necromancy sets it from its CHOICES.SCYTHE: the Hollow, 1 in 250
+  // per paid kill, at the end of the necromancy quests; this file loads first, so it starts empty here).
   const SOURCES = {
     void_scythe: [],
   };
@@ -137,16 +138,18 @@ const MEGA_RARE = (() => {
     // the drop tables: no monster drops it, and the one table is empty
     const inTables = Object.keys(MONSTER_DEFS).filter(k => { const d = MONSTER_DEFS[k].drops || {}; return [...(d.always || []), ...(d.table || []), ...((d.rare && d.rare.table) || [])].some(r => r[0] === 'void_scythe'); });
     const spear = ITEMS.dragon_spear.weapon, perHit = (str, cd) => (2 + Math.floor(107 * (str + 64) / 300)) / cd;
-    check(P + 'the Void Scythe: a two-handed melee weapon with the most strength in the game (48), accuracy 34, a swing every 0.7 s with cleave; one on one the Dragon spear still out-hits it over time; necro power 15 (the kit\'s best), mega rare, 20,000 coins, and nothing drops it yet',
+    const hollowOnly = SOURCES.void_scythe.length === 1 && SOURCES.void_scythe[0].monster === 'the_hollow' && SOURCES.void_scythe[0].chance === 250 && !!MONSTER_DEFS.the_hollow && Object.keys(MONSTER_DEFS).every(k => k === 'the_hollow' ? dropsOf(k).length === 1 : !dropsOf(k).length);
+    check(P + 'the Void Scythe: a two-handed melee weapon with the most strength in the game (48), accuracy 34, a swing every 0.7 s with cleave; one on one the Dragon spear still out-hits it over time; necro power 15 (the kit\'s best), mega rare, 20,000 coins; its one source is the Hollow, 1 in 250 (no other monster has a row, and no drop table holds it)',
       !!w && w.str === 48 && w.att === 34 && w.cd === 0.7 && w.perk === 'cleave' && !w.ranged && w.str > top && v.necro.power === 15 && v.necro.power > Math.max(...necro)
       && v.rarity === 'mega' && isMega('void_scythe') && !isMega('dragon_spear') && v.value === 20000 && v.stack === 1 && v.id === 'void_scythe'
-      && perHit(spear.str, spear.cd) > perHit(w.str, w.cd) && SOURCES.void_scythe.length === 0 && !inTables.length && Object.keys(MONSTER_DEFS).every(k => !dropsOf(k).length),
-      { top, str: w && w.str, inTables, spearPerSec: +perHit(spear.str, spear.cd).toFixed(1), scythePerSec: +perHit(w.str, w.cd).toFixed(1) });
+      && perHit(spear.str, spear.cd) > perHit(w.str, w.cd) && hollowOnly && !inTables.length,
+      { top, str: w && w.str, inTables, sources: SOURCES.void_scythe, spearPerSec: +perHit(spear.str, spear.cd).toFixed(1), scythePerSec: +perHit(w.str, w.cd).toFixed(1) });
 
     // the one table: a row rolls after the monster's own drops; empty, not one more random number is drawn
-    { const rnd = Math.random, d0 = drops.length, b0 = levelBanner, f0 = FLASH.n, l0 = LOG.length;
+    { const rnd = Math.random, d0 = drops.length, b0 = levelBanner, f0 = FLASH.n, l0 = LOG.length, rows0 = SOURCES.void_scythe;
       let calls = 0;
       try {
+        SOURCES.void_scythe = [];                                          // the empty table: put back below
         Math.random = () => { calls++; return 0.5; };
         rollDrops(MONSTER_DEFS.goblin, -9999, -9999); const plain = calls;
         calls = 0; _rollDrops(MONSTER_DEFS.goblin, -9999, -9999); const core = calls;
@@ -164,7 +167,7 @@ const MEGA_RARE = (() => {
           plain === core && got.length === 1 && got[0].mega === true && got[0].rare === true && got[0].qty === 1 && !!lb && lb.style === 'mega' && lb.text === 'MEGA RARE' && lb.sub === 'Void Scythe'
           && FLASH.n === f0 + 1 && FLASH.id === 'void_scythe' && LOG.length === l0 + 1 && LOG[l0].how === 'drop' && LOG[l0].monster === 'goblin' && none && rowsOk,
           { plain, core, got: got.length, banner: lb && lb.text, style: lb && lb.style, rowsOk, none });
-      } finally { Math.random = rnd; SOURCES.void_scythe.length = 0; drops.length = d0; levelBanner = null; if (b0) levelBanner = b0; LOG.length = l0; }
+      } finally { Math.random = rnd; SOURCES.void_scythe = rows0; drops.length = d0; levelBanner = null; if (b0) levelBanner = b0; LOG.length = l0; }
     }
     // the ground: one he had no moment for is his moment when he picks it up; one he put down himself is not, nor his kill's roll
     { const inv0 = player.inv, b0 = levelBanner, l0 = LOG.length;

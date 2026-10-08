@@ -67,6 +67,8 @@ export const STRIP_FILES = [
   '93-roadart',
   // the mega rares' look (the Void Scythe's icon and its look on the ground, the MEGA RARE flash, the pack's and the book's words, its chime): pictures only, no rules
   '54-megarareart',
+  // Necromancy's look (the item icons, the monster looks, the helpers and spells, the Old Barrow's things, Granny Wick's look): pictures only, no rules
+  '89-necroart',
 ];
 // What a stripped name reads before anything is written to it (the rest reads as the no-op stand-in).
 const STUB_SEED = { title: { active: false, bootActive: false } };
