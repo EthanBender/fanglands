@@ -134,7 +134,7 @@ between knights on the same map; chat and the roster go to everyone.
 | `t` | Fields | Cap | Meaning |
 |---|---|---|---|
 | `hello` | `v: 1, map?, caps?, atlas?` | once | first frame after open; the server answers `welcome`. Without `map` the knight is on `over` until its first `p`. `caps` and `atlas`: see *The shared world*, Stage 1 |
-| `p` | `map, region, x, y, fx, fy, mv, wt, hp, mhp, lv, look, mech, dead, def, act, sw, j, spd, s` | 8/s | presence. `region` is the region or instance name the roster shows; `look` is the serialisable part of `playerLook()`, with the six worn item ids in `look.gear` (see below); `def` is `playerDefRoll()` so the keeper can roll monster hits against you; `act` is the action type or null; `sw` counts the swings the knight has started (one more each time `player.attackT` goes up): a friend's game plays the 0.22 s swing when it goes up, and a change of it sends presence at once |
+| `p` | `map, region, x, y, fx, fy, mv, wt, hp, mhp, lv, look, mech, dead, def, act, sw, j, spd, s, ride?, wk?` | 8/s | presence. `ride: {d, s}` while the knight rides along in seat `s` of `d`'s machine, and `wk: 1` for 2 s after the machine he drove broke under him (see *Riding together*); `region` is the region or instance name the roster shows; `look` is the serialisable part of `playerLook()`, with the six worn item ids in `look.gear` (see below); `def` is `playerDefRoll()` so the keeper can roll monster hits against you; `act` is the action type or null; `sw` counts the swings the knight has started (one more each time `player.attackT` goes up): a friend's game plays the 0.22 s swing when it goes up, and a change of it sends presence at once |
 | `chat` | `text` | 1 per 1.5 s, ≤ 120 chars | filtered and logged server-side, then sent to everyone |
 | `mon` | `list, full?` | 8/s, keeper only | monster snapshot for the map (format below); `full: true` only in the one answer to the world's `snap` (Stage 2): every monster the game runs, not only those near a knight |
 | `hit` | `nid, dmg, knock, bomb` | 20/s | a non-keeper hit a monster; routed to the keeper |
@@ -168,6 +168,8 @@ between knights on the same map; chat and the roster go to everyone.
 | `gift_ok` / `gift_back` | `gid, id, qty` | the receiver took it / it comes back to you |
 | `boss_call` | `n, id, first?` | (to the keeper) knight `n` on your map asks you to wake the named boss `id`; `first` is passed on only when it was exactly `true`; your game decides (see *Named bosses*) |
 | `boss_wait` | `id, left` | the keeper says the boss you asked for rests there `left` more seconds: the boss file says so in m:ss and your ask is over |
+| `ride_no` | `d, code` | the world will not have the ride your presence named (`code`: `gone`, `self`, `off`, `seat`, `taken`, `full`, `far`): your game sets you down (see *Riding together*) |
+| `ride_end` | `d, why` | the knight whose machine you ride stopped driving (`why`: `off`, `wreck`, `fell`, `inside`, `left`, `jump`): your game sets you down |
 | `error` | `code, text` | `auth` (token dead: the client forgets it and shows the login), `elsewhere` (the same knight opened on another device: this socket is closed with code 4000 and must not reconnect), `wait`, `full`, `banned` (close 4003, no reconnect), `kicked` (close 4005, no reconnect), `words` (kept out for bad words, with `until` and `n`: close 4006, no reconnect, the session kept), `renamed` (an admin gave the knight a new name, with `name`: close 4007, the wire comes straight back as it), `admin` (that was an admin message), `bad` |
 | `strike` | `n, text` | a chat line of yours had a swear word or a slur in it: `n` 1 is the warning, 2 the last warning (the third is `error` `words`); see *Word strikes* |
 | `role` `mod` `modlist` `muted` `unmuted` `spawn` `spawn_clear` `crackers` `boom` `party_end` `light_no` `prize` `party_no` `announce` | | see *Admins and drop parties* |
@@ -1221,6 +1223,93 @@ Ann gave 5 bread; Ben gave 20 coins."), from `GET /api/admin/trades`; `GET /api/
   the buttons, exactly once (one row, both acks, nothing more on a repeat or a reconnect); 15, Ben changes his offer after
   Ann accepted and nothing moves until both accept again; 16, closing, walking away and disconnecting each end a trade with
   nothing moved. `tools/dom-keys.js`: a real right-click on a knight opens the card with no browser menu.
+## Riding together
+
+Owner (7 Oct 2026): *"Can you also make it so that if a player has repaired a goblin bulldozer or other mech that other
+players if they see them walking by and hop on and ride as well so they can ride together?"*
+
+### In one screen
+
+A machine a knight drives online has seats: the walker 1, the bulldozer 2, the Barrelbeast 2; the mare none. A friend
+standing by it (on any tile touching it, corners too) reads **E: Hop on** beside it (on a touch screen the USE seat reads
+**HOP ON**) when he faces the machine, or when his own E has nothing in front of him: a person, a station, a chest, the
+bank, water, a tree, his own parked machine or wreck, a door, anything that is not open ground (and his hoe on grass) keep
+their E, exactly as before (`RIDE.offer()`; the seat, the tag and E all ask it). E puts his knight in the first free seat, drawn sitting on the machine, and it goes wherever the machine
+goes on every screen: his own (his camera rides along), the driver's and everyone's. A full machine says
+"Mudtech's bulldozer is full." A rider cannot steer (walking keys and taps say "Mudtech is driving. Press E to hop off.")
+and **cannot swing or shoot** from the seat (he holds on: "No swinging while you ride along. Hop off to fight."), nor place
+anything; he can chat, eat from his belt, and go home (H: he hops off first). E, the same seat (now **HOP OFF**) or X sets
+him down. His plaque reads RIDING WITH MUDTECH; the driver's reads RIDING WITH YOU with the count and the names, and the
+driver hears "Ben hopped on." / "Ben hopped off."
+
+### Getting down
+
+Each kid's world keeps its own tiles: a lane the driver's bulldozer clears through a forest is cleared only in his world,
+and the riders' worlds still have the trees. So a rider is set down only on ground that is open **in his own world**: the
+spot must pass `collides` as a beast and as a knight on foot (never a wall or water), and a walk over tiles that are not
+solid for a knight must reach at least `RIDE.OPEN_REACH` (32) tiles from it (never a one-tile gap among his trees). The
+spots tried: round the machine, on his seat's side first; then the newest spot on his **trail** (while he rides, each new
+tile his seat reaches that passes the same test is kept, the last 16, with the spot he hopped on from always first); then
+where he hopped on (he stood there on foot). That happens when he hops off (E in the middle of a lane too), and when the
+driver gets out, parks, loses the machine (a wreck), falls, goes into a place (an instance), logs out or his line drops:
+the world tells each rider (`ride_end`) and each rider's game also sees it in the driver's presence, so either one is
+enough. The words: "Mudtech got out of the bulldozer. You hop down.", "Mudtech's bulldozer broke. You hop down." (a wreck:
+the driver's presences carry `wk: 1` for 2 s after it), "Mudtech fell. You hop down.", "Mudtech went inside. You hop
+down.", "Mudtech left. You hop down.", and on a rider's own dropped or silent line "You are not connected, so you hop
+down." (a rider who has heard nothing at all from the world for a second sends `{"t":"ping"}`, which the world answers
+`pong` without waking; 3 s of nothing at all is a silent line, told apart from a driver who left). A rider whose line
+drops just goes from the seat on everyone else's screen (`left`); the driver drives on. The driver's screen says "Ben
+hopped on." once a friend has sat 0.15 s (a late presence from a line that was down names its old seat for a moment).
+
+**A driver who cheats carries nobody.** Only a rider's own game moves his knight, but it glues him to the driver's seat,
+so the driver's path is watched on both sides, whatever the movement check's mode: a jump (the driver's `j` changes) or a
+path further from any place he was in the last 3 s than the fastest machine goes (Full Steam's 430 px/s with a quarter to
+spare, plus 200 px over a stretch of 0.4 s or more, 480 px over a shorter one; presences that arrive bunched within 30 ms
+keep only the newest) sets every rider down at once: his game puts him on the trail from before the jump ("Mudtech's
+bulldozer went too fast for you. You hop down.") and the world ends the seats (`ride_end` `jump`). Climbing out and a
+wreck move the driver a tile; they are read first and are never a jump. A driver who slides slower than 430 px/s through
+a wall is not told apart from one plowing a lane the rider's world still has; his rider is still only ever set down on
+open ground in his own world.
+
+### The wire
+
+- Presence carries `ride: {d, s}` (the driver's name, the seat from 1) while riding; the rider's own `x, y` is his seat's
+  place on the machine as his screen draws it, `mv` is false, and `spd` is at least the driver's (`src/84-ridetogether.js`
+  wraps `NET.send`). Nothing else is new.
+- The world (`online/src/ride.js`, from `Room.onPresence`) checks every ride on every presence: the driver is on line, on the
+  same map (keyed as `mapKey` keys it), driving a machine with that seat (`mech` with no kind, `walker`, `dozer` or `beast`;
+  not the mare), not a rider himself and not fallen; the rider is on foot; the seat is nobody else's; and the two are within
+  3 tiles (`HOP_REACH`) for a new ride, 10 (`RIDE_REACH`) while riding (a second's lag at Full Steam). A real ride is
+  relayed as the world's `{d, s}` (the driver's name as the world spells it); anything else is taken off the relayed
+  presence (everyone sees him stand where he says he is) and the rider is told why with `ride_no`, at most once a second.
+  `taken` means another seat is free (his game moves to it); `full` that none is.
+- When a driver's presence says he is no longer driving a machine with that seat (out, on the mare, fallen), or his map
+  changes, or he leaves the world, every rider gets `ride_end` (the map change is told before the `left` the map change
+  sends). After a wake the world has not heard a driver yet: a ride on him is not held against the rider until it has.
+- The movement check (move.js) judges a real rider at the larger of his speed and the driver's, so a rider on a machine at
+  Full Steam counts nothing. A ride changes no save, item, coin, quest or machine: the rider's game moves its own knight
+  (its save holds where that knight is), and the machine stays the driver's.
+- Not built (a question for the owner): the driver cannot put a rider off; his only way to end a ride is to get out.
+- **Old pages.** A page from before seats ignores `ride`, `ride_no` and `ride_end`: it draws a rider standing where his
+  presence says (on the machine), and nothing else changes (`tools/mmo-sim-ride.js` line 13 loads the game at `49df821`).
+  Offline (single-player) nothing is offered and nothing changes.
+
+### Testing
+
+`node --test online/test/ride.test.mjs` (the world's checks, every refusal, every way down, the movement check) and
+`node tools/mmo-sim-ride.js` (four whole games and an old page against the real Room: hop on, full, riding along on every
+screen, no steering or swinging, chat, hop off, a gate and a door, every way down, the walker's one seat, the
+Barrelbeast's two, a dropped line either side, nothing owned changes, offline unchanged; then the review's findings: E by a
+friend's machine keeps a kid's own E, a forest only the riders' worlds still have, a driver who teleports and one who
+slides through a wall at 1200 px/s, a rider whose line goes silent; `RIDE_PAGE=<a built page>` puts another build under
+test). `deploy.sh` runs both.
+`node tools/ride-browser.mjs` does it in three real game pages against a LOCAL world only (its header says how to start one):
+a computer driver, a computer rider on the E key, an iPad rider tapping HOP ON, each machine in turn, with screenshots from the
+driver's and a rider's screens at 1280 x 800 and at the iPad size, and the world's movement check reading zero; then a
+forest the bulldozer plows that stays in the riders' worlds (the iPad rider taps HOP OFF mid-lane, the other gets down when
+the driver climbs out; both walk away), a kid facing his own parked walker beside a friend's bulldozer, a wreck, and a
+rider whose wifi drops (the browser goes offline with the socket open).
+
 ## Every knight lives on the server
 
 Owner (2026-10-03): *"everything should be server side so that they can play on multiple devices"*, and yes to taking
@@ -2987,7 +3076,7 @@ His own presence (he never receives it) goes by `hooks.presence` (`k.last`, with
 |---|---|
 | `VIEW_FORWARD` (his screen) | `p`, `left`, `mon`, `keeper`, `chat`, `crackers`, `boom`, `party_end`, `announce` |
 | `VIEW_STATUS` (the header only) | `muted`, `unmuted`, `chat_pause`, `strike` |
-| `VIEW_DROP` (never) | `welcome`, `who`, `role`, `sim`, `snap`, `hit`, `kill`, `hurt`, `gift`, `gift_ok`, `gift_back`, `prize`, `trade_ask`, `trade_asked`, `trade_ask_off`, `trade_no`, `trade_open`, `trade_state`, `trade_note`, `trade_end`, `trade_done`, `mod`, `modlist`, `spawn`, `spawn_clear`, `light_no`, `party_no`, `boss_call`, `boss_wait`, `hand`, `watching`, `error`, `pong`, `view` |
+| `VIEW_DROP` (never) | `welcome`, `who`, `role`, `sim`, `snap`, `hit`, `kill`, `hurt`, `gift`, `gift_ok`, `gift_back`, `prize`, `trade_ask`, `trade_asked`, `trade_ask_off`, `trade_no`, `trade_open`, `trade_state`, `trade_note`, `trade_end`, `trade_done`, `mod`, `modlist`, `spawn`, `spawn_clear`, `light_no`, `party_no`, `boss_call`, `boss_wait`, `hand`, `watching`, `error`, `pong`, `view`, `ride_no`, `ride_end` |
 
 `watch.test.mjs` fails on any type the contract, `room.js`, `sim/worlds.js` or `watch.js` sends a game that is in none of the
 three lists, or in two. An `error` to the kid of `kicked`, `words`, `elsewhere`, `banned` or `renamed` ends the view (`w_vend`).
@@ -3245,6 +3334,8 @@ cost, with screenshots. `filter.test.mjs` holds the "teacher" name rule.
   each Watch) is checked by the world and written to `mod_log` with the teacher's name, and every action is undoable.
 - Trades: only between two knights on one map who both said yes, both accepted and both confirmed the very same offers; the
   world holds the offers and moves nothing that does not add up. Every finished trade is kept and shown on the parent page.
+- Riding together moves nothing of anyone's: a rider's own game moves his own knight, and the world only checks the ride is
+  real (same map, a real seat, within reach) and tells the rider when it is over.
 
 ## Where things are
 
@@ -3270,3 +3361,5 @@ cost, with screenshots. `filter.test.mjs` holds the "teacher" name rule.
   `strikes.test.mjs`, the two addresses and the hand-over).
 - `tools/mmo-sim-admin.js` and `tools/mmo-sim-party.js`: the admin and party scenarios, two games against the real
   Room (see *Admins and drop parties*, *Testing*). `deploy.sh` runs them with the others.
+- `tools/mmo-sim-ride.js`: riding together, four games and a page from before seats against the real Room (see *Riding
+  together*). `deploy.sh` runs it with the others.

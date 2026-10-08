@@ -274,7 +274,8 @@ cooldown sweep with seconds), `charge` (0..1, a gold ring filling outside the ri
 press does not fire; read `HK.held('block')` in your update), `learn: 'id'` (its ribbon hides after 20 uses while learning).
 The table in use (prio in brackets): **swing** SWING (0), STOMP / RAM in a machine (10), SWING disabled on the mare (10);
 **use** the faced verb TALK / CHOP / MINE / FISH / COOK / OPEN / ENTER / USE (0), CRUSH asleep in a machine (10), BOMB in the
-Barrelbeast (30, 32-beast), CRUSH lit with a plank in front (50), NEXT while someone talks (100); **block** BLOCK (0,
+Barrelbeast (30, 32-beast), CRUSH lit with a plank in front (50), HOP ON by a friend's machine and HOP OFF riding along (60,
+84-ridetogether), NEXT while someone talks (100); **swing** also SWING disabled riding along (20, 84-ridetogether); **block** BLOCK (0,
 47-outliers), the machine special (10, 55-riding), LEAVE on your island (30, 64-island); **ctx** RIDE (10, 51-mounts), LEAVE (30, 16-instances), BUILD on your island (35, 63-house),
 EXIT in a machine (50), GET DOWN on the mare (50, 51-mounts). `HK.seat(name)` gives a seat's circle `{ x, y, r }`;
 `HK.face(name)` the face it shows this frame.
@@ -470,6 +471,17 @@ hp, maxHp, up })`. It also draws parked machines and wrecks, a friend's mount on
 standing open while a rider is in it. `MOUNT_LOOK.roof(kind, facing)` is where something stands on a machine (55-riding's
 beacon), `MOUNT_LOOK.top(kind)` how far above its middle a name or a coach tag goes. 84 is pictures only (stripped from the
 server copy): a kept file reads it only from drawing code.
+
+**Riding together** (`src/84-ridetogether.js`, docs/ONLINE.md *Riding together*): online, a friend hops on a machine another
+knight drives (the walker 1 seat, the bulldozer 2, the Barrelbeast 2; `RIDE.SEATS`) and rides along. `RIDE.SEAT_AT` holds
+where each seat sits on the drawing (px from the machine's middle: side view facing right, front, behind); a new machine
+kind gets a row there and in `online/src/ride.js` `RIDE_SEATS`. While a knight rides along (`RIDE.state.ride`), his game
+puts his knight in the seat every frame and draws him seated after the machine; E, X, Space, Q, H, the walking keys and
+taps are taken by the file's wrappers (each passes straight through otherwise), and `frontTile(player)` / `npcInFront()`
+answer nothing. A feature that moves the knight or acts for him must leave a rider alone (`window.RIDE &&
+RIDE.state.ride`): his place is the machine's. E is Hop on only when `RIDE.offer()` says so (he faces the machine, or his own
+E has nothing in front of him: a new usable tile needs nothing more, since anything that is not open ground keeps its E). A
+rider is set down only on ground open in his own world (`RIDE.freeAt`: clear, and a walk reaches `RIDE.OPEN_REACH` tiles).
 
 ### The townsfolk (`src/83-townsart.js`, `src/83-townsfolk.js`)
 
