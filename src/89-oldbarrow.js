@@ -603,7 +603,8 @@ const OLD_BARROW = (() => {
   }
   function keeperTick(dt) {
     const b = bellMon(); if (!b) return;
-    // keep the bell and candles where they stand (harmless and still: nothing moves them but a stray shove)
+    // keep the bell and candles where they stand (nothing may move them: each goes back to its own spot every tick)
+    for (const m of [b, ...candles()]) { if (!m.pin) m.pin = pinOf(m); if (m.pin) { m.x = m.pin.x; m.y = m.pin.y; } }
     const w = waveOf(b.state);
     if (!b.nw) b.nw = { t: 0, pause: 0, hold: 0 };     // after a keeper handoff the timers start again from the streamed state
     const nw = b.nw, lit = candles().filter(c => c.hp > 0);
@@ -632,8 +633,17 @@ const OLD_BARROW = (() => {
     // the fallen are taken away once their death has played (they never come back)
     for (let i = monsters.length - 1; i >= 0; i--) { const m = monsters[i]; if ((WATCH_FOES.has(m.type) || m.type === 'name_wisp') && m.dead && m.deadT > 1.6) monsters.splice(i, 1); }
   }
-  // the candles and the bell cannot be hurt by a knight (a sword on one puts back what it took)
-  HOOKS.hit.push((m, dmg) => { if (m && !m.remote && (m.type === 'watch_candle' || m.type === 'watch_bell') && dmg > 0) m.hp += dmg; });
+  // the candles and the bell cannot be hit at all: no damage, no XP, no shove and no 'hit' sent online (a sword, an arrow,
+  // a bomb or a spell on one does nothing). Wrapped here, outside 75-coop's wrapper, so nothing below it ever sees the blow.
+  const UNHITTABLE = new Set(['watch_candle', 'watch_bell']);
+  const _hitMonster = hitMonster;
+  hitMonster = function (m, dmg, knock, fromBomb, source) {
+    if (m && UNHITTABLE.has(m.type)) return;
+    return _hitMonster(m, dmg, knock, fromBomb, source);
+  };
+  hitMonster.__inner = _hitMonster;
+  // where each candle and the bell stand: their spawn tile's centre (DEEP.candles, DEEP.bell)
+  const pinOf = m => { const at = m.type === 'watch_bell' ? DEEP.bell : DEEP.candles.reduce((b, c) => (!b || dist(tc(c[0]), tc(c[1]), m.x, m.y) < dist(tc(b[0]), tc(b[1]), m.x, m.y)) ? c : b, null); return at ? { x: tc(at[0]), y: tc(at[1]) } : null; };
   // each knight's own pay: he stood in the hall and landed a hit this watch; every wave the bell moves on pays him
   const PAY = { last: null, hitAt: -1e9, start: 1e9, waves: 0, paid: 0, get hit() { return this.hitAt >= this.start; }, set hit(v) { this.hitAt = v ? time : -1e9; } };
   HOOKS.hit.push((m, dmg, source) => { if (m && WATCH_FOES.has(m.type) && (source === 'player' || source === 'necro' || source === undefined)) PAY.hitAt = time; });
@@ -1263,7 +1273,15 @@ const OLD_BARROW = (() => {
         // the Deep Watch's 1 in 40 kit roll, the dice pinned under it
         Math.random = () => 0; const d0 = drops.length; PAY.last = 'w6'; PAY.hit = true; bellMon().state = 'won'; bellMon().maxHp = 3; payTick(); const kit = drops.slice(d0).some(d => MONSTER_DEFS.zombie_brute.drops.rare.table.some(t => t[0] === d.id)); Math.random = keep.rnd;
         bellMon().state = 'idle'; bellMon().maxHp = 1; for (const c of candles()) c.hp = c.maxHp;
+        // a candle and the bell are not training dummies: 50 sword swings on each pay no XP, take no hp and move neither
+        { drain(); setLv('melee', 70); player.equip.weapon = 'dragon_spear'; if (!countItem('dragon_spear')) addItem('dragon_spear', 1);
+          const swing = (m, n) => { const at = { x: m.x, y: m.y, hp: m.hp }, mx = player.skills.melee.xp, hx = player.skills.hitpoints.xp; let sent = 0;
+            const was = NET.send; NET.send = msg => { if (msg && msg.t === 'hit') sent++; };
+            try { for (let i = 0; i < n; i++) { player.x = m.x; player.y = m.y + 34; player.facing = { x: 0, y: -1 }; player.attackCd = 0; playerAttack(); F.step([]); } } finally { NET.send = was; }
+            return m.x === at.x && m.y === at.y && m.hp === at.hp && !m.dead && player.skills.melee.xp === mx && player.skills.hitpoints.xp === hx && sent === 0; };
+          r.dummy = swing(candles()[0], 50) && swing(bellMon(), 50); player.equip.weapon = keep.equip.weapon; }
         INSTANCES.leave();
+        check(P2 + 'N13b the Watch\'s candles and bell cannot be hit: 50 sword swings on a candle and 50 on the bell give no melee or Hitpoints XP, take no hp, send no hit and move neither', !!r.dummy, { dummy: r.dummy });
         check(P2 + 'N13 the Lantern Watch: on a puppet view a rope asks the keeper and spawns nothing; the keeper\'s bell streams w1 to w6 then won; a knight in the hall with a hit landed is paid each wave once (Dusk: 20 x 1 + ... + 20 x 6 = 420) and 3 soul shards on a win; losing every candle ends it as lost; a won Deep Watch rolls 1 in 40 for a kit piece',
           r.puppet && r.started && r.states === 'w1 w2 w3 w4 w5 w6 won' && r.won && r.paid === 420 && r.shards >= 3 && r.lost && kit, Object.assign(r, { kit })); }
       drain();
