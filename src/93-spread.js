@@ -335,10 +335,10 @@
     // every reserved place is staked, with a plaque that says what is coming
     const res = A.reserved().filter(r => !A.isBuilt(r.id)), unstaked = res.filter(r => r.id !== 'wreck_rock' && !(S.stakes[r.id] > 0)).map(r => r.id), noPlaque = res.filter(r => !S.plaques[r.id]).map(r => r.id);
     const plaques = [...PROPS.entries()].filter(([, p]) => p.kind === 'plaque');
-    const glass = plaques.find(([, p]) => p.place === 'alchemy'), barrow = plaques.find(([, p]) => p.place === 'necromancy');
+    const glass = plaques.find(([, p]) => p.place === 'alchemy'), barrow = plaques.find(([, p]) => p.place === 'necromancy');   // the Old Barrow is built (89-oldbarrow): no plaque
     // (a place Stage 5 has built takes its own stakes up: 85-riverside and the rest test their own ground)
-    check(P + "every reserved place not yet built has builders' stakes round it and a plaque (the Glasshouse's says \"Builders' stakes. The Glasshouse is coming.\", the Old Barrow's \"... The Old Barrow is coming.\"), and Wreck Rock's buoys float in the Grey Sea",
-      !unstaked.length && !noPlaque.length && !!glass && !!barrow && plaqueText('alchemy') === "Builders' stakes. The Glasshouse is coming." && plaqueText('necromancy') === "Builders' stakes. The Old Barrow is coming." && S.buoys >= 4,
+    check(P + "every reserved place not yet built has builders' stakes round it and a plaque (the Glasshouse's says \"Builders' stakes. The Glasshouse is coming.\"; the Old Barrow is built and its plaque is gone), and Wreck Rock's buoys float in the Grey Sea",
+      !unstaked.length && !noPlaque.length && !!glass && !barrow && A.isBuilt('necromancy') && plaqueText('alchemy') === "Builders' stakes. The Glasshouse is coming." && S.buoys >= 4,
       { unstaked, noPlaque, stakes: S.stakes, buoys: S.buoys, skipped: S.skipped });
     // the plaques' grammar: a plural name is "are" (the review of c34fddf read "The Bandit Hills is coming.")
     { const texts = res.map(r => [r.id, plaqueText(r.id)]), bad = texts.filter(([, t]) => /\b\w+s is coming\.$/.test(t));

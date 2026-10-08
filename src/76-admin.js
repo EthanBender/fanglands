@@ -394,7 +394,7 @@
   }
   function seeAllMarkers() { if (!window.MARKERS) return; MARKERS.refresh(); const s = MARKERS.state(); for (const m of MARKERS.all()) s.seen[m.key] = 1; MARKERS.refresh(); }
   const UNLOCKS = [
-    { key: 'skills', system: 'Skills (SKILL_DEFS, all 13)', what: 'every skill at level 99, full health',
+    { key: 'skills', system: 'Skills (SKILL_DEFS, all 14)', what: 'every skill at level 99, full health',
       apply() { for (const s of SKILL_DEFS) { const sk = player.skills[s.key] || (player.skills[s.key] = { xp: 0 }); if (!(sk.xp >= xpForLevel(99))) sk.xp = xpForLevel(99); } player.hpSeeded = true; recomputeMaxHp(); player.hp = player.maxHp; },
       ok: () => SKILL_DEFS.every(s => player.skills[s.key] && levelForXp(player.skills[s.key].xp) >= 99) },
     { key: 'story', system: 'Main quest (core stages 0-8, HOOKS.mainQuest 8-16)', what: 'the story at its last stage; the sword, the first goblins, Thistledown and the walker behind you',
@@ -1142,6 +1142,11 @@
         const overlap = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
         const setSize = (w, hh) => { try { window.innerWidth = w; window.innerHeight = hh; } catch (e) { } render(); return VW === w && VH === hh; };
         const hits = [], small = [], done = [];
+        // the column held for the chip: a phone's column has two slots, and the knight's own plaques (a companion, the graves
+        // at dusk or night) fill it on some clocks, folding the chip into the +n badge as the kit means to; this check is the
+        // chip's place, so for it the day is noon and the companion is away (both put back after it, and in finally)
+        was.dayTime = player.dayTime; was.compId = player.companion && typeof player.companion === 'object' ? player.companion.id : undefined;
+        player.dayTime = 0; if (was.compId !== undefined) player.companion.id = null;
         for (const touchOn of [false, true]) {
           window.__forceTouch = touchOn;
           for (const [w, hh, name] of sizes) {
@@ -1163,11 +1168,13 @@
           }
         }
         setSize(was.vw, was.vh); window.__forceTouch = was.touch;
+        player.dayTime = was.dayTime; if (was.compId !== undefined) player.companion.id = was.compId; delete was.dayTime; delete was.compId;
         check(P + 'layout: the ADMIN chip sits clear of every other button, and every tab and view of the panel keeps its buttons inside it and clear of each other, at phone, landscape phone, iPad (both ways) and laptop sizes, touch on and off; on touch every one is at least 44 px', hits.length === 0 && small.length === 0 && done.length === 60, { hits: hits.slice(0, 12), small: small.slice(0, 12), done: done.length }); }
     } catch (e) {
       check(P + 'the admin self-test ran to the end without an exception', false, { error: String((e && e.stack) || e).slice(0, 800) });
     } finally {
       if (window.CLOUD && _reset) CLOUD.reset = _reset;
+      if ('dayTime' in was) { player.dayTime = was.dayTime; if (was.compId !== undefined && player.companion) player.companion.id = was.compId; }
       S.god = false; S.teleport = false; S.view = null; S.busy = null; S.pinAt = undefined; S.modlist = null; S.search = ''; S.inputMode = 'search'; S.item = null; S.monType = null; S.count = 1; S.qty = 1; S.qtyText = '1'; S.tab = 'knights'; S.page = { knights: 0, give: 0, monsters: 0 }; S.spans = {}; S.followUp = 0; refill();
       NET.disconnect(); NET.emit('offline', { t: 'offline' }); NET.fake = was.fake; NET.enabled = was.enabled; NET.token = was.token; NET.status = 'off'; NET.me = null; NET.role = 'player';
       if (window.COOP) COOP.reset();

@@ -67,6 +67,8 @@ export const STRIP_FILES = [
   '93-roadart',
   // the mega rares' look (the Void Scythe's icon and its look on the ground, the MEGA RARE flash, the pack's and the book's words, its chime): pictures only, no rules
   '54-megarareart',
+  // Necromancy's look (the item icons, the monster looks, the helpers and spells, the Old Barrow's things, Granny Wick's look): pictures only, no rules
+  '89-necroart',
 ];
 // What a stripped name reads before anything is written to it (the rest reads as the no-op stand-in).
 const STUB_SEED = { title: { active: false, bootActive: false } };
@@ -267,11 +269,11 @@ export const STRIP_READS = {
     why: '79-deaths wraps it at load to draw loot popping out of a body; the wrapper only runs when something draws, which a copy never does',
   },
   HK: {
-    files: ['05-input', '17-tap', '21-companion', '23-law', '24-dwarves', '29-quests', '43-settings', '47-outliers', '53-coalmine', '54-graves', '55-riding', '61-markers', '66-storm', '71-login', '73-players', '74-chat', '78-trade', '79-boygirl', '79-deaths', '84-ridetogether', '96-dozerbay'],
+    files: ['05-input', '17-tap', '21-companion', '23-law', '24-dwarves', '29-quests', '43-settings', '47-outliers', '53-coalmine', '54-graves', '55-riding', '61-markers', '66-storm', '71-login', '73-players', '74-chat', '78-trade', '79-boygirl', '79-deaths', '84-ridetogether', '96-dozerbay', '89-oldbarrow'],
     why: 'the HUD kit (59-hudkit): fonts, colours, text widths, panel rows, plaques, seats and safe insets, read by panel, plaque, chat-wrap and tap code (79-boygirl: its "Boy or girl?" card on the title, drawn only while the title is up; 84-ridetogether and 96-dozerbay wrap HK.usePreview at load behind a typeof guard, the USE seat\'s verb, which only the HUD reads); the two update-time reads are a held BLOCK seat, used only for the copy\'s own knight on a machine (55-riding returns first: the parked stand-in has no machine) and a pointer release (05-input, a copy has no pointer)',
   },
   title: {
-    files: ['17-tap', '54-graves', '71-login', '72-cloudsave', '72-deviceknights', '72-savelock', '75-coop', '76-admin', '77-dropparty', '78-trade', '79-boygirl', '82-knightgear', '91-royalmine', '96-rests', '97-spread', '99-boot', '84-ridetogether'],
+    files: ['17-tap', '54-graves', '71-login', '72-cloudsave', '72-deviceknights', '72-savelock', '75-coop', '76-admin', '77-dropparty', '78-trade', '79-boygirl', '82-knightgear', '91-royalmine', '96-rests', '97-spread', '99-boot', '84-ridetogether', '89-oldbarrow'],
     why: 'title.active reads false in a copy (84-ridetogether: a friend\'s machine is offered only past the title, behind a typeof guard, and only online, which a copy never is; STUB_SEED and the stand-in\'s start(), as for a knight past the title; 97-spread opens its NEW WORLD page only off the title, and a copy has no quest.spread to tell); 75-coop\'s alone stream (the teacher view\'s Watch: a watched kid alone on his map) stops on the title, and a copy is never watched (no world says view on to it); 96-rests reads title.slotKey and title.slot behind a typeof guard to name its time-away stamp (no slot in a copy, so no stamp is written or read); 79-boygirl wraps the title\'s door, slot start, open and knight sprite at load and reads a slot\'s save before it is loaded, none of which a copy ever calls (it starts with newGame(), never from the title); 82-knightgear gives the title\'s knight figure (title.KNIGHT) its gear at load, which only the title\'s drawing reads; the rest are the title\'s save slots (slotKey, slot) for login, cloud saves, device knights (72-deviceknights names and offers them on the login card) and admin, which a copy never uses (save() does nothing, NET.call throws), 72-savelock\'s look at the slot on disk inside save() and its slot-start wrapper (the lock is cleared when a slot starts), neither of which a copy ever reaches, the title frame for drawing, and 99-boot\'s frame(), which a copy never runs',
   },
   cam: {
@@ -279,7 +281,7 @@ export const STRIP_READS = {
     why: 'the camera: screen-to-world for a tap, where a name tag, a sky or a bark is drawn, and the drawing passes\' default view',
   },
   playerLook: {
-    files: ['22-bulldozer', '32-beast', '73-players', '77-dropparty', '79-boygirl', '82-knightgear', '95-thistledown'],
+    files: ['22-bulldozer', '32-beast', '73-players', '77-dropparty', '79-boygirl', '82-knightgear', '95-thistledown', '89-necromancy'],
     why: 'the copy\'s own knight\'s look: drawn in a machine or a beast (22, 32), the party hat wrapper (77), the girl knight wrapper (79-boygirl, which only adds `girl` from player.gender), the knight gear wrapper (82-knightgear, which only adds the six worn item ids, the tool held at work and the raised shield, and reads it for the player on foot inside its drawCharacter wrapper), the stone statue (95), and 73-players\' lookOf() for its own presence, which is the parked stand-in\'s and drawn by nobody',
   },
   render: {
@@ -298,7 +300,7 @@ export const STRIP_READS = {
   drawTower: { files: ['95-thistledown'], why: 'a wrapper that keeps the tower drawing to call it' },
   drawBuilding: { files: ['91-cloudkingdom', '95-thistledown'], why: 'wrappers that keep the building drawing to call it, and 91-cloudkingdom\'s own drawing pass' },
   panelBox: { files: ['24-dwarves', '38-agility', '79-teacher'], why: 'the panel frame: where a panel\'s text goes (24) and wrappers that keep it (38; 79 puts "A teacher is watching." in the Friends header, which only runs when something draws)' },
-  PANEL_KIT: { files: ['60-bank', '69-retaliate'], why: 'panel sizes and button widths' },
+  PANEL_KIT: { files: ['60-bank', '69-retaliate', '89-necromancy'], why: 'panel sizes and button widths' },
   itemBlurb: { files: ['26-boats', '90-canyon'], why: 'wrappers that keep the pack\'s item sentence to call it, for their own items\' sentences' },
   darkLayer: { files: ['88-aerie'], why: 'the night canvas, cleared and borrowed by the Aerie\'s lighting' },
   miniWindow: { files: ['61-markers'], why: 'where the minimap shows the markers' },
@@ -307,11 +309,11 @@ export const STRIP_READS = {
   SFX: { files: ['95-thistledown'], why: 'the sound bank: two sounds added if missing' },
   noise: { files: ['95-thistledown'], why: 'a sound, inside the splash sound 95 adds' },
   'window.WIKI': {
-    files: ['17-tap', '46-cinderwight', '46-scales', '47-outliers', '54-graves', '58-underground', '62-ores', '77-dropparty', '88-aerie', '90-canyon', '91-cloudkingdom', '91-royalmine', '95-thistledown', '96-dozerbay'],
+    files: ['17-tap', '46-cinderwight', '46-scales', '47-outliers', '54-graves', '58-underground', '62-ores', '77-dropparty', '88-aerie', '90-canyon', '91-cloudkingdom', '91-royalmine', '95-thistledown', '96-dozerbay', '89-oldbarrow'],
     why: 'the book: pages added at load, and a tap that opens a monster\'s page',
   },
   'window.ICONS': { files: ['54-graves', '81-partyhats', '88-aerie', '90-canyon', '91-cloudkingdom', '91-royalmine'], why: 'item icons registered at load' },
-  'window.LIGHTS': { files: ['88-aerie', '91-royalmine'], why: 'the lighting: lights registered at load, and whether a lit scene owns the night canvas' },
+  'window.LIGHTS': { files: ['88-aerie', '91-royalmine', '89-necromancy', '89-oldbarrow'], why: 'the lighting: lights registered at load, and whether a lit scene owns the night canvas' },
   MONSTER_LOOK: { files: ['79-deaths'], why: '79-deaths asks the monsters\' new looks (78-monsterlook, stripped) how far a falling body reaches and how tall it stands, for the clips that split or crumble it, and for a person\'s own weapon to throw clear; all of it drawing, which a copy never does' },
   'window.MONSTER_LOOK': { files: ['79-deaths'], why: 'the same reads as MONSTER_LOOK, guarded by whether the look is loaded' },
   'window.TEACHERSCREEN': { files: ['71-login'], why: 'the login card hands a teacher\'s answer to the teacher screen (79-teacherscreen, stripped); a copy never signs anyone in' },
@@ -320,6 +322,8 @@ export const STRIP_READS = {
     why: 'the townsfolk\'s new look (83-townsfolk, stripped): whether it draws a person, where the name goes over the new head and how big a statue stands, inside the two cities\' own drawing passes (people, Lark, the fliers, the fountain children, the statues\' sprites), which a copy never runs',
   },
   'window.TOWNSFOLK': { files: ['91-cloudkingdom', '95-thistledown'], why: 'the same reads as TOWNSFOLK, guarded by whether the look is loaded' },
+  'window.VIEW': { files: ['89-necromancy'], why: 'whether a teacher\'s page is watching (79-view, stripped): there the knight\'s own spells and helpers are not drawn, only every knight\'s presence; read inside drawing passes, which a copy never runs' },
+  'window.NECRO_ART': { files: ['89-oldbarrow'], why: 'Necromancy\'s pictures (89-necroart, stripped), read only inside drawing passes and the DECO kinds\' draws, which a copy never runs' },
   'window.PLAYTHROUGH': { files: ['91-royalmine'], why: 'the playthrough audit\'s gather times, in an HOOKS.xpSource row only that audit reads' },
 };
 

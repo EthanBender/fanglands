@@ -86,7 +86,7 @@
   RAILS.remove = id => { const i = RAILS.findIndex(q => q.id === id); if (i >= 0) RAILS.splice(i, 1); return i >= 0; };
   RAILS.add({ id: 'thistledown', place: "Fennick's rail in Thistledown", at: () => POST });
   RAILS.add({ id: 'alchemy', place: "the Glasshouse's rail", at: () => null, reserved: true });
-  RAILS.add({ id: 'necromancy', place: "the Old Barrow's rail", at: () => null, reserved: true });
+  // (the Old Barrow's rail is built: 89-oldbarrow adds it with its post)
   const visited = () => { const h = H(); if (!Array.isArray(h.rails)) h.rails = ['thistledown']; return h.rails; };
   RAILS.visited = id => id === 'thistledown' || visited().includes(id);
   // the nearest built rail he has visited, from a point in pixels (Fennick's when no other is nearer, or none is built)
@@ -1062,7 +1062,7 @@
     F.tp(post.x, post.y + 2); F.step([]); const seen = RAILS.visited('selftest');
     const second = throwNear(), toNew = !!second.at && Math.max(Math.abs(second.at[0] - post.x), Math.abs(second.at[1] - post.y)) <= 4 && /the test rail by the signpost/.test(second.said);
     // the registry: Fennick's first, the two reserved plots' rails held (no post yet), the visited list saved on the horse
-    const reg = RAILS[0].id === 'thistledown' && ['alchemy', 'necromancy'].every(id => { const r = RAILS.find(q => q.id === id); return r && r.reserved && r.at() === null; }) && Array.isArray(player.horse.rails) && player.horse.rails.includes('selftest');
+    const reg = RAILS[0].id === 'thistledown' && ['alchemy'].every(id => { const r = RAILS.find(q => q.id === id); return r && r.reserved && r.at() === null; }) && Array.isArray(player.horse.rails) && player.horse.rails.includes('selftest');
     if (riding()) dismount(true); liftHorse(); RAILS.remove('selftest');
     // G with her out of reach names no one rail: any rail whistles her in (the review of bcb559f: it sent him to Fennick's
     // while he stood at a new one)
@@ -1070,7 +1070,7 @@
     const anyRail = /Whistle her at any hitching rail\./.test(hint || '') && !/Fennick/.test(hint || '');
     player.horse = h0 || { owned: false, hp: HORSE_HP, at: null, under: null };
     dialog.cur = dc; dialog.queue.length = 0; dialog.queue.push(...dq); h.peace(false);
-    check(P + "thrown off, she bolts to the NEAREST rail he has visited and the Voice names it: Fennick's while the new rail is unvisited, the new one once he has stood by it (RAILS: Fennick's first, the Glasshouse's and the Old Barrow's reserved); G with her out of reach says to whistle her at any hitching rail",
+    check(P + "thrown off, she bolts to the NEAREST rail he has visited and the Voice names it: Fennick's while the new rail is unvisited, the new one once he has stood by it (RAILS: Fennick's first, the Glasshouse's reserved); G with her out of reach says to whistle her at any hitching rail",
       !!added && toFennick && seen && toNew && reg && anyRail, { first, second, seen, reg, hint, post: [post.x, post.y], fennick: fen && [fen.x, fen.y] });
   });
 }

@@ -435,6 +435,22 @@
    "file": "95-thistledown.js",
    "match": "Osric is at the West Gate",
    "local": "the gate's name (the town moved whole)"
+  },
+  {
+   "file": "89-oldbarrow.js",
+   "match": "climbs out every night and walks east",
+   "from": "graveyard.gate",
+   "to": "hollowford.square",
+   "dir": "east",
+   "note": "Granny Wick (Q2): the graveyard's skeleton walks home to Hollowford"
+  },
+  {
+   "file": "89-oldbarrow.js",
+   "match": "It wants to walk east",
+   "from": "graveyard.gate",
+   "to": "hollowford.square",
+   "dir": "east",
+   "note": "the Voice (Q2): Ambrose wants to walk home to Hollowford"
   }
  ]
 }

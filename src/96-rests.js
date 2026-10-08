@@ -12,7 +12,9 @@
 // ============================================================================
 {
   // [the quest key, the field that holds the day-clock second the rest ends]
-  const RESTS = [['fang', 'restUntil'], ['hollowford', 'shedRestUntil'], ['storm', 'restUntil'], ['tinker', 'restUntil']];
+  const RESTS = [['fang', 'restUntil'], ['hollowford', 'shedRestUntil'], ['storm', 'restUntil'], ['tinker', 'restUntil'],
+    // Necromancy (89-necromancy: Grave Walk and Call the Last Knight; 89-oldbarrow: the Barrow King and the Hollow)
+    ['necro', 'walkUntil'], ['necro', 'knightUntil'], ['barrow', 'kingRest'], ['barrow', 'hollowRest']];
   const AWAY_MAX = 7 * 24 * 3600;
   // what the last load credited (for the check below)
   const LAST = { away: 0, credited: [] };

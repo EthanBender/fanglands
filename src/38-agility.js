@@ -46,8 +46,8 @@
   };
 
   // ---------- capes ----------
-  const CAPE_COLOR = { melee: '#d9822b', defence: '#4c7dd0', range: '#3f9a4f', woodcutting: '#7a5230', mining: '#7d8088', fishing: '#4aa3df', cooking: '#8b3a62', firemaking: '#ff8a1a', farming: '#6ab04c', smithing: '#c0c4cc', crafting: '#c9a36a', hitpoints: '#e63946', agility: '#2b8c8c' };
-  const CAPE_ABILITY = { melee: '+5% max hit', defence: '10% less damage taken', range: '+5% arrow max hit', woodcutting: 'Chop 25% faster', mining: 'Mine 25% faster', fishing: 'Fish 25% faster', cooking: 'Food heals +2', firemaking: 'Fires last 3x longer', farming: 'Crops grow 2x faster', smithing: 'Smith and smelt 30% faster', crafting: '+10% crafting xp', hitpoints: '+10% max health', agility: 'Never slip on a log' };
+  const CAPE_COLOR = { melee: '#d9822b', defence: '#4c7dd0', range: '#3f9a4f', woodcutting: '#7a5230', mining: '#7d8088', fishing: '#4aa3df', cooking: '#8b3a62', firemaking: '#ff8a1a', farming: '#6ab04c', smithing: '#c0c4cc', crafting: '#c9a36a', hitpoints: '#e63946', agility: '#2b8c8c', necromancy: '#4fd1b5' };
+  const CAPE_ABILITY = { melee: '+5% max hit', defence: '10% less damage taken', range: '+5% arrow max hit', woodcutting: 'Chop 25% faster', mining: 'Mine 25% faster', fishing: 'Fish 25% faster', cooking: 'Food heals +2', firemaking: 'Fires last 3x longer', farming: 'Crops grow 2x faster', smithing: 'Smith and smelt 30% faster', crafting: '+10% crafting xp', hitpoints: '+10% max health', agility: 'Never slip on a log', necromancy: 'Helpers last twice as long' };
   const CAPE_PRICE = 999;
   EQUIP_SLOTS.push('cape');
   const capeId = key => 'cape_' + key;

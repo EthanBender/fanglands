@@ -475,6 +475,33 @@ look, opts)`; a townsperson's look (`who`) is 83-townsfolk's, and every other lo
   branch: `helmFam` / `bodyFam` / `shieldFam` / `weaponFam`, or its metal in `tierOf` and the tier switches. The
   self-test draws every wearable in the game and names any two of a slot that draw the same shape.
 
+### Necromancy (`src/89-necromancy.js`, `src/89-oldbarrow.js`, `src/89-necroart.js`)
+
+The magic skill (spec `~/.fanglands/work/necromancy/spec.md`). Every designer's choice is one line in `NECRO.CHOICES` (the
+teachers, the Spirit bar, combat level, the Void Scythe's source, the Deep Watch's kit roll, the chapter-9 hint, the last
+knight's name `LAST_KNIGHT`, helpers that time out, no spell that hurts a knight, the Hitpoints share, the Watch's pay,
+Granny Wick's shard price, the twelve-ghost reward).
+- **Power** is `NECRO.power()`: the sum of every worn item's own `necro.power` (never a list of ids), +5 for the whole
+  Barrow-bound set. A new necromancer item needs only a `necro: { power, focus? }` block; `focus: true` makes Space a Soul Bolt
+  (the BOLT face), and the Void Scythe counts as a focus for CAST only.
+- **The undead** are one set, `NECRO.isUndead(type)`; a new undead type joins with `NECRO.addUndead(type)` (Banish's
+  2.5x, the soul shard from a spell kill).
+- **The `'necro'` hit source.** Every spell and helper blow is `hitMonster(m, dmg, 0, false, 'necro')`, capped at 500.
+  75-coop treats `'necro'` as `'player'` (the boss hit count, `lastHitBy`), so online a spell on a puppet is the same `hit`
+  message a sword sends. A `HOOKS.hit` handler that pays or counts the knight's own blows reads `source === 'player' ||
+  source === 'necro'`.
+- **`look.necro`** rides in presence (`playerLook` wrapper; 73-players' `lookOf` passes it, `lookKey` adds `NECRO.lookKey()`),
+  so a friend sees spells, the Ghostlight, the ward and the helpers; `NECRO.readLook` reads one defensively. Everything
+  necromantic about any knight, the watched one in the teacher view included, is drawn from presence.
+- **Helpers** are client entities on the caster's game (`NECRO.HELPERS`), never a `monsters` row. A story helper (`quest`
+  set) walks through doors with the knight and never times out.
+- **Spirit**: `NECRO.addSpirit(n)` (an Alchemy potion needs nothing more); a lit candle circle registers a finder in
+  `NECRO.circles`; Grave Walk lands at `NECRO.landing.at()`.
+- **The Old Barrow** is built the Stage 5 way (85-riverside's): no new tile (its solid things stand on TD_PROP with a side
+  table, its candles and graves are DECO kinds), WORLD_REV 8 with `ATLAS.REVS[8]`. The Barrow Deep's numbers are its own
+  map's (`DEEP`, allow-listed). The Lantern Watch and the two bosses run only where `!NET.online() || COOP.isKeeper()`; the
+  candles and the bell are harmless monsters whose hp and `state` already stream, and every knight is paid on his own game.
+
 ### The mounts (`src/51-mounts.js`, `src/84-mountlook.js`)
 
 Cinder draws herself in 51-mounts (`MOUNTS.drawHorse(g, e, hurt, riderLook)`, her middle at the origin, hooves 21.5 px

@@ -46,6 +46,7 @@
     // every boss instance is multi (the Royal Mine's golem is its boss though the define names none)
     { id: 'spider_den', combat: 'multi' }, { id: 'war_shed', combat: 'multi' }, { id: 'tinker_lab', combat: 'multi' },
     { id: 'stormfront', combat: 'multi' }, { id: 'afterlands', combat: 'multi' }, { id: 'royalmine', combat: 'multi' },
+    { id: 'barrow_deep', combat: 'multi' },   // the Old Barrow's deep: the Lantern Watch, the Barrow King and the Hollow (89-oldbarrow)
   ];
   // What no honest knight can stand in, by tile name: rock and cave walls (every instance's walls too), castle, building and
   // town walls, cliffs and crags. Never water or lava (hover armour, boats, the ferry), never anything a knight can chop,
@@ -384,6 +385,8 @@
     'hunters_lodge.door': ['new', 112, 110], 'outpost_north.road': ['new', 217, 70], 'outpost_south.road': ['new', 236, 100],
     'bandit_hills.toll': ['new', 262, 158], 'bandit_hills.hideout': ['new', 257, 168], 'skypier.pad': ['new', 167, 20], 'skypier.mast': ['new', 167, 12], 'brightwater.landing': ['new', 378, 150],
     'wreck_rock.rock': ['new', 283, 117], 'alchemy.door': ['new', 125, 78], 'necromancy.door': ['new', 73, 119],
+    // the Old Barrow (89-oldbarrow's plan frame says the same: the Bone Altar, the stair down in the mound, Granny Wick)
+    'necromancy.altar': ['new', 67, 113], 'necromancy.mound_door': ['new', 73, 109], 'necromancy.granny': ['new', 75, 112],
     // 63-house's Wolfwood arch landing: open forest on the Wolfwood Road west of the Old Bridge (it was a world point)
     'wolfwood.arch': ['new', 125, 104],
   };
@@ -854,7 +857,7 @@
 
   // the worldRev footprints (§10 "worldRev sweeps"): a later stage that changes ground a knight may have built on (Stage 5's
   // places, Stage 6's roads) adds REVS[n] = { boxes: [[x0, y0, x1, y1], ...] } (the new map's coordinates) and bumps
-  // WORLD_REV to n; a save with an older worldRev is swept in those boxes only (97-spread's SPREAD.sweep). 1: 87-critters; 2: 85-riverside; 3: 84-crossroads; 4: 86-wildplaces; 5: 86-outposts; 6: 86-bandits; 7: 93-roads (its boxes made by its pass: the laid road, grown by 2).
+  // WORLD_REV to n; a save with an older worldRev is swept in those boxes only (97-spread's SPREAD.sweep). 1: 87-critters; 2: 85-riverside; 3: 84-crossroads; 4: 86-wildplaces; 5: 86-outposts; 6: 86-bandits; 7: 93-roads (its boxes made by its pass: the laid road, grown by 2); 8: 89-oldbarrow (the Old Barrow's box and ring, and Bramble's trail).
   const REVS = {};
 
   Object.assign(A, {

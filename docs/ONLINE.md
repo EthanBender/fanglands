@@ -215,6 +215,18 @@ with `girl` with the skirt and long hair, a braid with a ribbon (out of any helm
 counts the weapon, helm, head, body, legs, shield and cape). The server relays the look unchanged: it checks nothing in it,
 only the size of the whole message (`MAX_P`, 4096 characters; a full look with every slot worn is about 600) and the rate.
 
+`look.necro` (Necromancy, `src/89-necromancy.js`) is `{ c, s, tx, ty, gl, w, h }`, absent when nothing is going on: `c` counts
+the knight's casts (a new one on a friend's screen starts that spell's picture), `s` is the last spell (`bolt`, `siphon`,
+`banish`, `spikes`, `walk`, `step`, `ward`, `raise`, `risen`, `brute`, `knight`, `light`), `tx` the bolt's target (the
+monster's `nid`, or `tx, ty` a point in pixels from the caster), `gl: 1` while the Ghostlight is on (it lights the friend's
+night too, and a knight within 5 tiles of it sees the ghosts on his own game), `w` the ward's tenths left (0 to 9), and `h`
+up to 3 helpers, each `[kind, dx, dy, fx, frac]` (`sq`, `rg`, `bb` or `lk`; the offset in pixels, at most 8 tiles; facing
+x; the time left in ninths). With 3 helpers and a ward it is about 120 characters. Every field is read defensively
+(`NECRO.readLook`: a wrong type dropped, numbers clamped, at most 3 helpers drawn); older games ignore it. A cast, the
+helper count, the Ghostlight and the ward count in `lookKey`, so they send presence at once; while a helper is out
+`lookKey` also moves 4 times a second, so presence goes 4 a second even standing still (friends glide each helper to its
+last spot): at most 240 extra presences a minute of helpers, no rows written.
+
 ## The keeper model, in the client
 
 `src/75-coop.js` owns it. The tricks, so nobody re-invents them:
@@ -313,6 +325,19 @@ together. Two rules make that safe on a shared map; `src/75-coop.js` owns both.
   blow would leave it. A knight arriving at an instance whose boss is down while the rest still stand finds the boss alone
   stood up again at its own spawn tile; nobody's `cleared` count changes.
 - After a handoff, a live boss the old keeper had woken is `awake` on the new keeper too, so the Fang's Echo stays up.
+
+
+**The Old Barrow's** (`src/89-oldbarrow.js`): `barrow_king` (called at his throne, `near` 4 tiles) and `the_hollow` (at the
+vault's circle, 4 tiles), each `rest` 300 s and in `CREDIT`; and the Lantern Watch's three bell-ropes, `watch_dusk`,
+`watch_midnight` and `watch_deep` (at the bell, 4 tiles; the rope's Necromancy level is checked on the asker's own game
+before `COOP.call`). The Watch adds no message: its candles (`watch_candle`) and its bell (`watch_bell`) are harmless
+monsters in the instance's own stream; the bell's `state` is `idle`, `w1` to `w6`, `won` or `lost` and its `maxHp` the
+watch (1 Dusk, 2 Midnight, 3 Deep). Only the keeper (or the world copy) spawns the waves, moves the wisps to the candles,
+burns the candles down and ends the watch; its timers live on the bell (`m.nw`) and start again from the streamed state
+after a handoff. Each knight pays himself when he sees the bell move on (`w1` to `w2` ... `won`): in the hall, a hit landed
+this watch. The King's court shield and the Hollow's fade run on the keeper; each knight takes the King's ring and the
+Hollow's crescent on his own game, when the boss's streamed `state` leaves `sweep` or `reap`. Two knights in a Deep Watch:
+about 210 s x 8 snapshots x 2 knights, about 3,400 socket messages (about 170 billed requests, 0.17% of the free day).
 
 ## The bridge (bringing a knight from the old address)
 

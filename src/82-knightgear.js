@@ -133,14 +133,14 @@ const KNIGHTGEAR = (() => {
   const shieldFam = id => !id ? null : id === 'soul_lantern' ? 'lantern' : 'shield';
   const SHAPES = { sword: 1, dagger: 1, axe: 1, battleaxe: 1, warhammer: 1, bow: 1 };
   const shapeFam = s => SHAPES[s] ? s : 'sword';
-  const weaponFam = id => !id ? null : /spear/.test(id) ? 'spear' : id === 'fang_of_the_fang' ? 'fang' : id === 'bone_stave' ? 'stave' : id === 'skull_mace' ? 'mace' : id === 'void_scythe' ? 'scythe' : shapeFam(ITEMS[id] && ITEMS[id].shape);
+  const weaponFam = id => !id ? null : /spear/.test(id) ? 'spear' : id === 'fang_of_the_fang' ? 'fang' : id === 'bone_stave' ? 'stave' : id === 'skull_mace' ? 'mace' : id === 'void_scythe' ? 'scythe' : id === 'barrow_wand' ? 'wand' : id === 'gravewood_stave' ? 'gravestave' : shapeFam(ITEMS[id] && ITEMS[id].shape);
   const gemOf = id => !id ? null : /^sunstone/.test(id) ? '#ffcf5a' : /^stormstone/.test(id) ? '#efe8ff' : null;
   // which item slot an item goes in (the obsidian helm's armour slot is 'head': it is a helm)
   const slotOf = it => !it ? null : it.weapon ? 'weapon' : it.armour ? (it.armour.slot === 'head' ? 'helm' : it.armour.slot) : null;
   const SLOTS = ['helm', 'body', 'legs', 'shield', 'cape', 'weapon'];
   // pieces whose drawing moves with the clock (a picture of them is made at four phases)
   const ANIMATED = new Set(['mithril_helm', 'stormstone_helm', 'obsidian_helm', 'godly_helm', 'necro_robe', 'silk_cloak', 'shadow_cloak', 'hover_armour', 'stormstone_body', 'soul_lantern', 'stormstone_shield', 'gale_cloak']);
-  const WANIMATED = new Set(['mithril_sword', 'mithril_dagger', 'skysinger', 'sunstone_sword', 'stormstone_sword', 'bone_stave', 'dragon_spear', 'void_scythe']);
+  const WANIMATED = new Set(['mithril_sword', 'mithril_dagger', 'skysinger', 'sunstone_sword', 'stormstone_sword', 'bone_stave', 'dragon_spear', 'void_scythe', 'barrow_wand', 'gravewood_stave']);
 
   // ---------- reading a look: the six pieces ----------
   // part = { id, fam, tier, color } (id null for a piece known only by its colour)
@@ -259,6 +259,7 @@ const KNIGHTGEAR = (() => {
     else if (k === 'smithing') { g.fillRect(-2.2, -2.2, 4.4, 1.8); line(0, -0.6, 0, 2.6); }
     else if (k === 'crafting') { line(-2.2, 2.2, 2.2, -2.2); g.beginPath(); g.arc(1.6, -1.6, 0.8, 0, 7); g.stroke(); }
     else if (k === 'hitpoints') { g.beginPath(); g.moveTo(0, 2.6); g.bezierCurveTo(-3.4, 0, -1.6, -2.8, 0, -1); g.bezierCurveTo(1.6, -2.8, 3.4, 0, 0, 2.6); g.fill(); }
+    else if (k === 'necromancy') { ell(g, 0, -0.4, 2.3, 2.1); g.fill(); g.fillRect(-1.4, 1.2, 2.8, 1.4); g.fillStyle = shade(col, 0.7); ell(g, -0.9, -0.5, 0.6, 0.7); g.fill(); ell(g, 0.9, -0.5, 0.6, 0.7); g.fill(); }
     else if (k === 'agility') { for (let i = 0; i < 3; i++) { g.beginPath(); g.ellipse(-1 + i * 1.2, 0.6 - i * 0.9, 0.9, 2.2, 0.7, 0, 7); g.fill(); } }
     else { for (let i = 0; i < 5; i++) { const a = -Math.PI / 2 + i * Math.PI * 2 / 5; g.beginPath(); g.moveTo(0, 0); g.lineTo(Math.cos(a) * 2.7, Math.sin(a) * 2.7); g.stroke(); } }
     g.restore();
@@ -814,6 +815,19 @@ const KNIGHTGEAR = (() => {
       ell(g, 29, 0, 3.6, 3.4); g.fillStyle = '#efe9d8'; g.fill(); outline(g, 0.5);
       g.fillStyle = '#2a2420'; ell(g, 30.2, -1.2, 0.8, 0.9); g.fill(); ell(g, 30.2, 1.2, 0.8, 0.9); g.fill();
       const p = (0.4 + Math.sin(T * 3) * 0.2).toFixed(3); const gl = g.createRadialGradient(29, 0, 0, 29, 0, 7); gl.addColorStop(0, `rgba(160,255,200,${p})`); gl.addColorStop(1, 'rgba(160,255,200,0)'); g.fillStyle = gl; ell(g, 29, 0, 7, 7); g.fill();
+    } else if (fam === 'wand') {
+      // the Barrow wand (89-necromancy): a short pale-wood rod, a wrapped grip, a blue gem at its tip glowing blue-green
+      rr(g, -3, -1.1, 18, 2.2, 1); g.fillStyle = '#d8ccb0'; g.fill(); outline(g, 0.5);
+      rr(g, -3.4, -1.5, 5, 3, 0.8); g.fillStyle = '#6a4a2a'; g.fill();
+      g.beginPath(); g.moveTo(15, 0); g.lineTo(17.4, -2.6); g.lineTo(19.8, 0); g.lineTo(17.4, 2.6); g.closePath(); g.fillStyle = '#4aa3df'; g.fill(); outline(g, 0.4);
+      { const p = (0.35 + Math.sin(T * 3) * 0.2).toFixed(3); const gl = g.createRadialGradient(17.4, 0, 0, 17.4, 0, 6); gl.addColorStop(0, `rgba(126,240,208,${p})`); gl.addColorStop(1, 'rgba(126,240,208,0)'); g.fillStyle = gl; ell(g, 17.4, 0, 6, 6); g.fill(); }
+    } else if (fam === 'gravestave') {
+      // the Gravewood stave: a dark twisted staff, a little skull knotted at its head in a twist of the wood
+      g.strokeStyle = '#2a2018'; g.lineWidth = 3.4; g.lineCap = 'round'; g.beginPath(); g.moveTo(-14, 0); for (let u = -14; u <= 26; u += 2) g.lineTo(u, Math.sin(u * 0.45) * 1.1); g.stroke();
+      g.strokeStyle = '#3d3226'; g.lineWidth = 2.2; g.beginPath(); g.moveTo(-14, 0); for (let u = -14; u <= 26; u += 2) g.lineTo(u, Math.sin(u * 0.45) * 1.1); g.stroke();
+      g.strokeStyle = '#3d3226'; g.lineWidth = 1.6; g.beginPath(); g.moveTo(24, -1); g.quadraticCurveTo(30, -6, 33, -1); g.moveTo(24, 1); g.quadraticCurveTo(30, 6, 33, 1); g.stroke();
+      ell(g, 29, 0, 3.2, 3); g.fillStyle = '#e9e4d2'; g.fill(); outline(g, 0.4);
+      g.fillStyle = '#1a1814'; ell(g, 30, -1, 0.7, 0.8); g.fill(); ell(g, 30, 1, 0.7, 0.8); g.fill();
     } else if (fam === 'scythe') {
       drawScythe(g);
     } else if (fam === 'spear') {
@@ -933,7 +947,7 @@ const KNIGHTGEAR = (() => {
   // how a knight stands with each kind of weapon (angles in his own frame: 0 = to his right, + = down the screen)
   function restAngle(fam, side) {
     if (fam === 'axe' || fam === 'battleaxe' || fam === 'warhammer' || fam === 'mace') return side ? -1.2 : -1.12;
-    if (fam === 'spear' || fam === 'stave' || fam === 'scythe') return side ? -1.4 : -1.48;
+    if (fam === 'spear' || fam === 'stave' || fam === 'scythe' || fam === 'gravestave') return side ? -1.4 : -1.48;
     if (fam === 'bow') return side ? -0.08 : 0;
     // swords, daggers and the Fang: held upright too, blade up beside the shoulder (owner: "should be up like the battle axes")
     return side ? -1.2 : -1.12;

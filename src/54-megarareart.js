@@ -126,8 +126,9 @@
       { icon, reach: m && +m.reach.toFixed(2), tier: tier && tier.key, alone, broken: window.ICONS ? ICONS.broken() : null });
     // the words: the pack's sentence, the book's blurb and tag
     const blurb = itemBlurb(ITEMS.void_scythe), page = window.WIKI ? WIKI.get('items', 'void_scythe') : null;
-    check(P + 'the pack says "Mega rare." first; the book\'s page has its blurb and no source yet; a plain item\'s sentence is unchanged',
-      blurb === 'Mega rare. Weapon: strength +48, accuracy +34, cleave.' && !!page && /held in both hands/.test(page.blurb || '') && page.sources.length === 0 && itemBlurb(ITEMS.iron_sword) === 'Weapon: strength +9, accuracy +8.',
+    // (its one source since Necromancy: the Hollow, 1 in 250; 54-megarare's SOURCES row, set from 89-necromancy's CHOICES)
+    check(P + 'the pack says "Mega rare." first; the book\'s page has its blurb and its one source (the Hollow); a plain item\'s sentence is unchanged',
+      blurb === 'Mega rare. Weapon: strength +48, accuracy +34, cleave.' && !!page && /held in both hands/.test(page.blurb || '') && page.sources.length === 1 && itemBlurb(ITEMS.iron_sword) === 'Weapon: strength +9, accuracy +8.',
       { blurb, page: !!page, sources: page && page.sources.length });
     // the banner: gold words on the purple tag, the item's name under it in pale violet; it fits a phone's lane
     if (window.HK && HK.banner && HK.audit) {

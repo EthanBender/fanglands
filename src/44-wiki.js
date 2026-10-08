@@ -17,7 +17,7 @@
   const SECTIONS = ['monsters', 'items', 'recipes', 'skills', 'places', 'quests'];
   const SECTION_NAME = { monsters: 'Monsters', items: 'Items', recipes: 'Recipes', skills: 'Skills', places: 'Places', quests: 'Quests' };
   const SECTION_SHORT = { monsters: 'Beasts', items: 'Items', recipes: 'Craft', skills: 'Skills', places: 'Places', quests: 'Quests' };
-  const STATION_NAME = { workbench: 'Workbench (Tinker\'s Workshop)', anvil: 'Anvil (needs a hammer)', workshop: 'Tinker\'s table', alchemy: 'Alchemy table', forge: 'Forge (smelting)', loom: 'Thessaly\'s loom (Sylvaris)', oven: 'Oven (the bakery)', skyforge: 'Master Halcyon\'s cloud forge (Aerie)', null: 'Your pack (no station)' };
+  const STATION_NAME = { workbench: 'Workbench (Tinker\'s Workshop)', anvil: 'Anvil (needs a hammer)', workshop: 'Tinker\'s table', alchemy: 'Alchemy table', forge: 'Forge (smelting)', loom: 'Thessaly\'s loom (Sylvaris)', oven: 'Oven (the bakery)', skyforge: 'Master Halcyon\'s cloud forge (Aerie)', bone_altar: 'The Bone Altar (the Old Barrow)', null: 'Your pack (no station)' };
   const BOSS_TYPES = new Set(['walker', 'bulldozer', 'barrelbeast', 'brood_mother', 'gnasher', 'count_ashvane', 'the_fang', 'green_dragon', 'red_dragon']);
   const custom = {}; for (const s of SECTIONS) custom[s] = {};
   let data = null; // { monsters: {id: entry}, ... , order: {section: [ids]} }
@@ -118,6 +118,7 @@
     dragons: { giver: 'Dunstan the dung farmer, the Ashfields', reward: '150 coins, 150 Farming xp, his stall opens', kind: 'Side quest' },
     board: { giver: 'The notice board in Thistledown square (and by the cave road)', reward: 'Coins and xp per job; the Duke pays a steel bar', kind: 'Tiny quests' },
     tinker: { giver: 'Tinkerton, Grubmarket (the Far Shore)', reward: "400 coins, Tinker's goggles, his shop opens", kind: 'Side quest' },
+    // (Necromancy's quests, nec_*: 89-oldbarrow writes their rows with WIKI.add, from its own names and numbers)
     gnash: { giver: 'King Gnash, Castle Gnash', reward: 'His treasury: 3 steel bars, 2 mithril bars, his crown', kind: 'Side quest' },
     rebuild: { giver: "The board in Hollowford's square", reward: 'A town again; 500 coins at the end', kind: 'Side quest' },
     guild: { giver: 'Old Tam, Hollowford', reward: 'Ranks, a chest, a cape (500 coins) and staff', kind: 'Side quest' },
@@ -264,7 +265,7 @@
       out.order.monsters = Object.keys(out.monsters).filter(t => !out.monsters[t].aliasOf)
         .sort((a, b) => (out.monsters[a].level - out.monsters[b].level) || out.monsters[a].name.localeCompare(out.monsters[b].name)); }
     out.order.items = Object.keys(out.items).sort((a, b) => out.items[a].name.localeCompare(out.items[b].name));
-    const stOrder = ['null', 'workbench', 'workshop', 'alchemy', 'oven', 'forge', 'anvil', 'loom', 'skyforge', 'dozerbay'];
+    const stOrder = ['null', 'workbench', 'workshop', 'alchemy', 'oven', 'forge', 'anvil', 'loom', 'skyforge', 'bone_altar', 'dozerbay'];
     out.order.recipes = Object.keys(out.recipes).sort((a, b) => { const A = out.recipes[a], B = out.recipes[b]; return (stOrder.indexOf(String(A.station)) - stOrder.indexOf(String(B.station))) || (A.lv - B.lv) || A.name.localeCompare(B.name); });
     out.order.skills = Object.keys(out.skills);
     out.order.places = Object.keys(out.places).sort((a, b) => { const A = out.places[a], B = out.places[b]; const wild = n => n === 'The Wilds' ? 2 : n === 'Goblin Fields' ? 1 : 0; return (wild(A.name) - wild(B.name)) || (A.kind === B.kind ? 0 : A.kind === 'region' ? -1 : 1); });
