@@ -192,7 +192,7 @@ const NECRO_ART = (() => {
       g.fillStyle = 'rgba(80,110,160,0.8)'; g.fillRect(cx - 12, base - 26, 6, 10);
     }
   }
-  function mound(g, b, night, t) {
+  function mound(g, b, night, t, door) {
     const x0 = b[0] * TILE, y0 = b[1] * TILE, x1 = (b[2] + 1) * TILE, y1 = (b[3] + 1) * TILE, cx = (x0 + x1) / 2, w = x1 - x0, h = y1 - y0;
     shadow(g, cx, y1 - 4, w * 0.5);
     g.fillStyle = '#3e6a2c'; ell(g, cx, y1 - h * 0.45, w * 0.52, h * 0.58); g.fill();
@@ -200,9 +200,11 @@ const NECRO_ART = (() => {
     g.fillStyle = 'rgba(255,255,255,0.06)'; ell(g, cx - w * 0.12, y1 - h * 0.7, w * 0.2, h * 0.16); g.fill();
     // the kerb stones round its foot
     for (let k = 0; k <= 12; k++) { const a = Math.PI * (0.05 + 0.9 * k / 12), sx = cx - Math.cos(a) * w * 0.5, sy = y1 - h * 0.45 + Math.sin(a) * h * 0.55; g.fillStyle = k % 2 ? '#8a8680' : '#77736c'; g.fillRect(sx - 6, sy - 6, 12, 9); }
-    // the stair's arch in its face (16-instances draws the door tile; this is the stone frame round it)
-    const dx = cx - TILE / 2 + TILE * 0.5 - TILE / 2, dy = y1 - TILE;
-    g.fillStyle = '#5f5b54'; g.fillRect(dx - 6, dy - 10, TILE + 12, 10); g.fillRect(dx - 6, dy - 10, 8, TILE + 4); g.fillRect(dx + TILE - 2, dy - 10, 8, TILE + 4);
+    // the stair down in its face: a dark doorway with steps going down, in a stone frame carved with runes
+    const dx = door ? door[0] * TILE : cx - TILE / 2, dy = door ? door[1] * TILE : y1 - TILE;
+    g.fillStyle = '#16120e'; g.fillRect(dx + 2, dy + 2, TILE - 4, TILE - 2);
+    g.fillStyle = '#3a342c'; for (let k = 0; k < 4; k++) g.fillRect(dx + 6 + k * 2, dy + 12 + k * 9, TILE - 12 - k * 4, 4);
+    g.fillStyle = '#5f5b54'; g.fillRect(dx - 6, dy - 10, TILE + 12, 10); g.fillRect(dx - 6, dy - 10, 8, TILE + 10); g.fillRect(dx + TILE - 2, dy - 10, 8, TILE + 10);
     g.strokeStyle = C.teal; g.lineWidth = 1.4; for (let k = 0; k < 5; k++) { const rx = dx + 2 + k * 9; g.beginPath(); g.moveTo(rx, dy - 7); g.lineTo(rx + 3, dy - 3); g.lineTo(rx + 6, dy - 7); g.stroke(); }
     if (night) glow(g, cx, dy - 5, 30, TEAL, 0.2 + 0.06 * Math.sin(t * 2));
   }
@@ -280,6 +282,14 @@ const NECRO_ART = (() => {
       g.fillStyle = '#5a5664'; g.beginPath(); g.moveTo(cx - 14, base); g.lineTo(cx - 12, base - 38); g.quadraticCurveTo(cx, base - 46, cx + 12, base - 38); g.lineTo(cx + 14, base); g.closePath(); g.fill();
       g.strokeStyle = 'rgba(30,26,40,0.8)'; g.lineWidth = 1.2; for (let k = 0; k < 6; k++) { g.beginPath(); g.moveTo(cx - 9, base - 32 + k * 5); g.quadraticCurveTo(cx, base - 35 + k * 5, cx + 9, base - 30 + k * 5); g.stroke(); }
     }
+  }
+  // an Ossuary shelf: a stone niche of neat skulls and long bones, row on row (tidy, never gory)
+  function boneShelf(g, px, py, k) {
+    g.fillStyle = '#3a3630'; g.fillRect(px + 2, py - 14, TILE - 4, TILE + 10);
+    g.fillStyle = '#2a2622'; for (let r = 0; r < 3; r++) g.fillRect(px + 5, py - 10 + r * 18, TILE - 10, 14);
+    for (let r = 0; r < 3; r++) for (let j = 0; j < 3; j++) { const sx = px + 12 + j * 12, sy = py - 2 + r * 18;
+      if ((j + r + k) % 3 === 0) { g.fillStyle = C.bone; g.fillRect(sx - 5, sy - 2, 12, 3); }
+      else { g.fillStyle = C.bone; ell(g, sx, sy - 3, 4.2, 4); g.fill(); g.fillStyle = C.ink; ell(g, sx - 1.5, sy - 3.5, 1, 1.2); g.fill(); ell(g, sx + 1.5, sy - 3.5, 1, 1.2); g.fill(); } }
   }
   function wallNames(g, px, py, k) { g.fillStyle = `rgba(232,246,255,${0.3 + 0.15 * Math.sin(time * 1.5 + k)})`; for (let j = 0; j < 4; j++) g.fillRect(px + 6 + j * 9, py + 18 + (j % 2) * 6, 6, 2); }
   function hollowCircle(g, x, y, t) { g.strokeStyle = `rgba(${VIOLET},${0.35 + 0.1 * Math.sin(t * 2)})`; g.lineWidth = 2; ell(g, x, y, 56, 24); g.stroke(); ell(g, x, y, 44, 18); g.stroke(); for (let k = 0; k < 8; k++) { const a = k * TAU / 8 + t * 0.2; g.fillStyle = `rgba(${VIOLET},0.5)`; ell(g, x + Math.cos(a) * 50, y + Math.sin(a) * 21, 2.5, 2); g.fill(); } }
@@ -509,6 +519,6 @@ const NECRO_ART = (() => {
   // ---------- the cast's sound: a soft rising chime ----------
   if (typeof SFX === 'object' && SFX && !SFX.necro && typeof tone === 'function') SFX.necro = () => { tone('sine', 660, 990, 0.25, 0.04); tone('triangle', 330, 495, 0.3, 0.02); };
 
-  return { C, helper, bolt, flash, shard, thing, mound, moundWisps, lychGate, candleCell, oldGrave, tobiasStone, spoil, pawPrints, nameLight, deepThing, wallNames, hollowCircle, ghost, wayLantern, tinyLantern, moths, skeleton, LOOKS };
+  return { C, helper, bolt, flash, shard, thing, boneShelf, mound, moundWisps, lychGate, candleCell, oldGrave, tobiasStone, spoil, pawPrints, nameLight, deepThing, wallNames, hollowCircle, ghost, wayLantern, tinyLantern, moths, skeleton, LOOKS };
 })();
 window.NECRO_ART = NECRO_ART;

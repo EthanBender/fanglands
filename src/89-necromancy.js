@@ -50,7 +50,8 @@ const NECRO = (() => {
   };
 
   // ---------- small helpers ----------
-  const L = () => skillLv('necromancy');
+  // (the knight 04-state made at load, before this file added the skill, has no row yet: level 1 until a new game or a load)
+  const L = () => player && player.skills && player.skills.necromancy ? skillLv('necromancy') : 1;
   const px = n => n * TILE;                       // tiles to pixels (a size, never a place)
   const MAX_DMG = 500;
   const HAND = 18, GLOW = 12;      // pixels above the feet: where a bolt leaves the hand, where the Ghostlight sits
@@ -73,6 +74,7 @@ const NECRO = (() => {
   // 1. THE SKILL
   // ======================================================================================================================
   SKILL_DEFS.push({ key: 'necromancy', name: 'Necromancy' });   // no `needs`: 10-hud's skillLocked would read it as "a hoe"
+  if (typeof player !== 'undefined' && player && player.skills && !player.skills.necromancy) player.skills.necromancy = { xp: 0 };   // the knight 04-state already made
   // the cape: made here the way 38-agility's ensureCapes makes the others (this file loads after it); 38's tables hold its
   // colour and ability; it is bought at the Master of Skills for 999 coins, like every cape
   ITEMS.cape_necromancy = Object.assign(ITEMS.cape_necromancy || { id: 'cape_necromancy', name: 'Necromancy cape', value: 999, color: '#4fd1b5', shape: 'cape', stack: 1, armour: { slot: 'cape', def: 5 }, capeSkill: 'necromancy' }, { necro: { power: 3 } });
@@ -973,7 +975,7 @@ const NECRO = (() => {
   // ======================================================================================================================
   const API = {
     CHOICES, SPELLS, SPELL, HELPER, HELPERS, BOLTS, FLASHES, WARD, CD, STATS, SUPPLIES, KIT, UNDEAD, XP, SPIRIT, MAX_DMG, GRAVE_XP,
-    power, spiritMax, spirit, addSpirit, refillRate, inCircle, circles, boltMax, attRoll, cast, castReady, canKnow, lockedWhy, costOf, coolLeft,
+    level: () => L(), power, spiritMax, spirit, addSpirit, refillRate, inCircle, circles, boltMax, attRoll, cast, castReady, canKnow, lockedWhy, costOf, coolLeft,
     isUndead, addUndead, fair, boltTarget, focusInHand, castFocus, fullSet, wearing, capOf, helperLoad, lifeMul, makeHelper, helpersHere, raise, ownGrave,
     ITEM_USE, itemUse: (id, fn, label) => { fn.label = label; ITEM_USE[id] = fn; },
     ROLL, seesGhost, lightsNear, remotes, readLook, lookNecro, lookKey, gates, landing, dummies, N, Q, HIT, mapNow,

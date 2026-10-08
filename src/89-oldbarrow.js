@@ -227,7 +227,7 @@ const OLD_BARROW = (() => {
       if (map[i] !== SOLID_T() || !vis(px + TILE / 2, py + TILE / 2, tiles(6))) continue;
       const v = variant[i] % 3;
       items.push({ y: -1e9 + 1, draw: () => { const img = tex[TEX_NAME[c.under] + v]; if (img) g.drawImage(img, px, py, TILE, TILE); } });
-      if (c.kind === 'mound') { if (moundDone) continue; moundDone = true; const m = moundBox(); items.push({ y: (m[3] + 1) * TILE - 4, draw: () => a.mound(g, m, nightNow(), time) }); continue; }
+      if (c.kind === 'mound') { if (moundDone) continue; moundDone = true; const m = moundBox(); items.push({ y: (m[3] + 1) * TILE - 4, draw: () => a.mound(g, m, nightNow(), time, P('door')) }); continue; }
       items.push({ y: py + TILE - 4, draw: () => a.thing(g, c.kind, px, py, { tx, ty, night: nightNow(), rattleTalk: RT.at > time - 3 }) });
     }
     // the lych-gate over the path, drawn in front of anyone under it
@@ -267,7 +267,7 @@ const OLD_BARROW = (() => {
   // THE PEOPLE: Granny Wick (an NPCS row, the townsfolk look) and Rattle (a skull on a post: a prop, not a person)
   // =====================================================================================================================
   const say2 = (lines, who) => { for (const l of lines) say(l, who); };
-  const L = () => skillLv('necromancy');
+  const L = () => NECRO.level();
   SHOPS.barrow_candles = { name: "Granny Wick's shelf", stock: [['soul_shard', C.SHARD_PRICE]], buys: [], rate: 1, buysWords: 'Granny Wick buys nothing. "I have more bones than I know what to do with, dear."' };
   const AFTER = [
     'Most of them only want someone to remember them. Remember that, and you will be a good keeper.',
@@ -481,6 +481,8 @@ const OLD_BARROW = (() => {
     voice: 'The Barrow Deep. Candles, bones and a bell. Somewhere below, a king is waiting.',
     build: buildDeep,
   }) : null;
+  // the Deep has its own plaque (the Watch's): 16-instances' "n left" would count the Watch's candles and the court
+  if (deepInst) deepInst.plaque = false;
   // the props become TD_PROP once every file has loaded (a world pass: every game builds its world before it plays)
   HOOKS.world.push(() => {
     if (!deepInst || SOLID_T() < 0) return;
@@ -542,6 +544,8 @@ const OLD_BARROW = (() => {
     // the names on the vault's walls: spirit marks, seen in a Ghostlight
     for (let x = DEEP.vault[0]; x <= DEEP.vault[2]; x += 2) for (const y of [DEEP.vault[1] - 1, DEEP.vault[3] + 1]) if (NECRO.seesGhost(tc(x), tc(y))) items.push({ y: -1e9 + 5, draw: () => a.wallNames(g, x * TILE, y * TILE, x + y) });
     { const [cx, cy] = DEEP.circle; items.push({ y: -1e9 + 3, draw: () => a.hollowCircle(g, tc(cx), tc(cy), time) }); }
+    // the Ossuary's shelves hold neat bones and skulls (the core's shelf tile, dressed over)
+    for (let y = DEEP.ossuary[1]; y <= DEEP.ossuary[3]; y++) for (const x of [DEEP.ossuary[0], DEEP.ossuary[2]]) if (map[idx(x, y)] === T.SHELF) items.push({ y: (y + 1) * TILE - 6, draw: () => a.boneShelf(g, x * TILE, y * TILE, x + y) });
   });
 
   // =====================================================================================================================
@@ -1064,7 +1068,7 @@ const OLD_BARROW = (() => {
     const SP = NECRO.SPELLS;
     const skillLines = () => {
       const out = ['Necromancy is listening to the dead. You ask old bones and lost ghosts for help; they help, and then they go back to rest.', `Start: ${GRANNY} at the Old Barrow (combat level 5).`, { t: 'SPELLS', c: '#d9b25c' }];
-      for (const s of SP) out.push(`Lv ${s.lv} · ${s.name}: ${s.what}${s.spirit ? ' ' + s.spirit + ' spirit.' : ''}${s.rest ? ' Rests ' + Math.round(s.rest / 60) + ' minutes.' : s.cd ? ' Every ' + s.cd + ' s.' : ''}`);
+      for (const s of SP) out.push(`Lv ${s.lv} · ${s.name}: ${s.what}${s.spirit ? ' ' + s.spirit + ' spirit.' : ''}${s.rest ? ' Rests ' + Math.round(s.rest / 60) + ' minutes.' : s.cd >= 1 ? ' Every ' + s.cd + ' s.' : ''}`);
       out.push({ t: 'SPIRIT AND POWER', c: '#d9b25c' }, 'Spirit = 20 + your level + your power, and it refills by itself: twice as fast out of a fight, twice again in a lit candle circle. The Bone Altar fills it; a soul shard gives 15.',
         'Power is what your necromancer gear adds: the wand 2, the Gravewood stave 6, the Bone stave 10, the Void Scythe 15, the hood 4, the robe 8, the wraps 5, the Soul lantern 6, the cape 3, and +5 for the whole Barrow-bound set.',
         { t: 'SUPPLIES', c: '#d9b25c' }, 'Bones, grave dust, soul shards, brute bones and dragon bones. Granny Wick sells soul shards for ' + C.SHARD_PRICE + ' coins.',
