@@ -1088,14 +1088,16 @@
       const runs = {}, WET = new Set(['WATER', 'BRIDGE'].map(Tn).filter(v => v >= 0));
       for (const id of A.MAIN_ROADS) { let run = 0, worst = 0, at = null;
         for (const [x, y] of RD.roads[id].path) { const i = y * MAP_W + x;
-          if (own[i] || PROTECT[i] || inAF(x, y) || WET.has(map[i]) || (window.DECO && DECO.isBridge(i)) || map[i] === T_ROAD) { run = 0; continue; }
+          // (not the pass's own PROTECT mask: that is what kept the burn unpaved; only a place's own ground, a short step
+          // through a gate or a palisade's ring, up to 3 tiles)
+          if (own[i] || inAF(x, y) || WET.has(map[i]) || (window.DECO && DECO.isBridge(i)) || map[i] === T_ROAD) { run = 0; continue; }
           if (++run > worst) { worst = run; at = [x, y]; } }
         runs[id] = worst ? { worst, at } : 0; }
       const both = new Uint8Array(MAP_W * MAP_H); for (let i = 0; i < both.length; i++) both[i] = own[i] || PROTECT[i];
       const ghost = oldDirt(oldLine(), both).map(i => [i % MAP_W, (i / MAP_W) | 0]);
       const [sx, sy] = A.port('signpost.sign').map(Math.round), spur = ghost.filter(([x, y]) => Math.abs(x - sx) <= 6 && y > sy && y - sy <= 8);
       check(P + `every main road is paved all the way between places (outside a place's own ground, the ash and the water no cell of its way is left dirt: longest unpaved stretch ${Math.max(0, ...Object.values(runs).map(r => r ? r.worst : 0))} tiles), right up to Hollowford by the Long Road and the Goblin Road; the old dirt a road left off its Stage 4 line is grass again (${S.unlaid} tiles, the story signpost's spur among them)`,
-        Object.values(runs).every(r => !r || r.worst <= 2) && !ghost.length && !spur.length, { runs, ghost: ghost.slice(0, 10), spur, unlaid: S.unlaid }); }
+        Object.values(runs).every(r => !r || r.worst <= 3) && !ghost.length && !spur.length, { runs, ghost: ghost.slice(0, 10), spur, unlaid: S.unlaid }); }
     // 3. what it may not touch: no road, verge or thing inside a place's ground, a reserved plot or a built place (a road
     //    meets them at their gates), nothing laid on anything but ordinary ground, the Ashfields' open ground kept
     { const bad = [];

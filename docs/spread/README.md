@@ -970,29 +970,41 @@ fingerprint baseline is this build's (36c5648ca969975e), for Stage 6's diff.
 
 - **What it is.** The six main roads (the Cave, Sea, Long, Goblin, Wolfwood and Ash Roads) are ROAD, three wide, with a
   VERGE kerb (two new tile ids, 247 and 248, made by the pass after PROP and DECO). Every other track stays the dirt Stage 4
-  laid. 1,285 ROAD tiles and 665 VERGE tiles; 37 trees felled where going round cost more.
+  laid. 1,356 ROAD tiles and 708 VERGE tiles; 39 trees felled where going round cost more. The dirt a main road left where
+  it moved off its Stage 4 line (the spur south of the story signpost) is grass again: 211 tiles.
 - **How it is laid.** A `HOOKS.built` pass, last of all (no earlier pass sees it): each leg (one track point to the next)
   by A* over a cost field (the old track 0.5, open ground 1, a wood 3, its own mulberry32 jitter), bounded to the leg's
-  box plus 24; 81 searches. Places' own boxes, reserved plots, built places, the Hollowford burn, a tile round every
-  building, door and person are adopted, never paved: a road meets a place at its gate. Nothing in the Ashfields is paved
+  box plus 24; 81 searches. Places' own boxes, reserved plots, built places, a tile round every building, door and
+  person are adopted, never paved: a road meets a place at its gate. The Long Road and the Goblin Road are paved right up
+  to Hollowford's own ground (the review fix: they had been left dirt across its burn for 16 and 8 tiles, for 97's seam
+  lines; those lines now step off a main road they run along). Nothing in the Ashfields is paved
   (the open-ground rule: 1,987 open tiles before and after); past the Warden's gate the Ash Road is its old track across
   the ash, marked by cairns.
 - **Signposts.** 15 forks, a signpost within 2 tiles of each: three new (the Glasshouse spur, the Old Barrow spur,
   Dunstan's turn: `ATLAS.SIGNPOSTS` nodes with `stage: 6`), one moved in (the Skypier lane's). Every arm of all 17 posts
   names the next stop on its road and the walk to it from the road as laid ("Millbrook, south-west, 20 seconds on foot."),
-  at 3.65 tiles a second (`ATLAS.legSecs`).
-- **Markers.** A milestone at each end of every main road (12; E names the road, the walk to the far end and every stop
-  on the way); 30 lantern posts along the main roads (lit at night, in 35-night's light list); 13 cairns on the tracks and
-  the Ash Road's ash (two short tracks, the Quarry Track and the Beacon Path, found no room for their first cairn).
+  at 3.65 tiles a second (`ATLAS.legSecs`); at a place's own post an arm that leaves by another gate adds the walk across
+  to it (Hollowford's square: the Bandit Hills 15 seconds, Sylvaris 30). The story signpost (105,42) reads the roads too
+  (`ATLAS.storySignText`, said by 06-systems, the quest step unchanged): "→ THE CAVE, north-west, 25 seconds on foot.
+  → THISTLEDOWN, east, 10 seconds on foot.   → GREY QUARRY, north-west, 10 seconds on foot.   → H̶O̶L̶L̶O̶W̶F̶O̶R̶D̶ (scorched),
+  east through Thistledown, then the Long Road, 1 minute on foot." E on a post the knight faces reads it even with
+  someone near (06-systems; Dunstan, two tiles from the post at his turn, used to answer for it).
+- **Markers.** A milestone at each end of every main road (12; E names the road, the place at the far end and the walk
+  to it, and every stop on the way but the road's own two ends); 32 lantern posts along the main roads (lit at night, in
+  35-night's light list); 16 cairns on the tracks and the Ash Road's ash (two short tracks, the Quarry Track and the
+  Beacon Path, found no room for their first cairn).
 - **Places to stop for.** 35, each `{ road, at: 0..1, side }`, never a tile: roads2's 25 re-homed by road and 10 new
   (the Broken Fence, the Burnt Farmstead, the Wayside Well, the Fallen Beacon, the Bandits' Lookout, the Fisher's Shrine,
   the Hollow Oak, the Bone Pile, two lore boards). Six wayshrines with their blessings, the six named beasts (none
   charges; roam 2), the three traders (Ivo, Rusty Kett, Cinder Meg; declared at load), the iron key and the strongbox.
 - **Nothing on the road.** `placeAction` refuses ROAD and VERGE ("This is the road. Build beside it.").
 
-**The footprint: WORLD_REV 7.** `ATLAS.REVS[7]` is made by the pass: every tile it paved, walked or stood a thing on,
-grown by 2, as 660 row runs (9,872 tiles). `node tools/spread-footprint.mjs <master 49df821 index.html>`: 2,043 tiles
-changed (map and variants), 0 outside; 3 people (the traders) and 6 spawns (the named beasts) added, all inside. A new
+**The footprint: WORLD_REV 7.** `ATLAS.REVS[7]` is made by the pass: every tile it changed or stood a thing, a person or
+a beast on, grown by 2, as 449 row runs (6,188 tiles). Not the tracks or the stretches it only walked (the review fix:
+the first footprint grew the whole network, 9,872 tiles, 4,442 of them more than 2 from any change, and swept a knight's
+bulldozer 13 tiles from any new road back to its bay). `node tools/spread-footprint.mjs <master 7269b13 index.html>`:
+2,372 tiles changed (map and variants), 0 outside; 3 people (the traders) and 6 spawns (the named beasts) added, all
+inside. A new
 place or pass later changes the ground the roads are laid on: its footprint must hold the road tiles that moved too
 (docs/EXTENDING.md).
 
@@ -1000,17 +1012,27 @@ place or pass later changes the ground the roads are laid on: its footprint must
 tiles: Cave 19 / 15, Sea 13 / 9, Long 17 / 17, Goblin 13 / 9, Wolfwood 9 / 4, Ash 17 / 15 (limits 73 / 36, beats
 within 10 tiles of the centre line).
 
-**The proofs** (93-roads' self-tests, roads2's re-pointed, and Stage 6's):
+**The proofs** (93-roads' self-tests, roads2's re-pointed, and Stage 6's; the review fixes each with a check that fails
+on 8d26eb1):
 - the network is one: a flood over its own tiles from the cave mouth reaches every place's port but the 12 listed with
   their reason (the islands and the east by boat, the reserved plots);
 - a flood over ROAD tiles alone (through a place's own ground at its gates, the Ash Road's track across the ash, the
-  bridges) takes in all 1,285 ROAD tiles and all 21 ports on the six main roads;
+  bridges) takes in all 1,356 ROAD tiles and all 21 ports on the six main roads;
+- paved all the way: no cell of a main road's way outside a place's own ground, the ash and the water is left dirt (the
+  longest such stretch 3 tiles, a step through a gate or the camp palisade's ring; on 8d26eb1 the Long Road's 16 and the
+  Goblin Road's 8), and no old dirt is left off a road's Stage 4 line;
 - three wide with a kerb (77% of the edges verged; the rest a tree, a wall, the water or a place), on the line of the
   Stage 4 track (within 3);
 - nothing a place has is touched, nothing laid on anything but ordinary ground, the Ashfields' open ground kept;
-- a signpost within 2 of every fork; every arm with its walk;
+- a signpost within 2 of every fork; E on each of the 18 posts from every open side reads the post; every arm with its
+  walk, and the walk across a place's own ground at its post; every milestone names its far place and never lists the
+  road's own ends; the story signpost's arms all timed, Hollowford struck through, no "1 mile" (11-main);
 - the markers, the places to stop for, each kind of thing doing what it says;
-- the A* time budget: the pass 128 ms in all, its 81 searches 11 ms (limits 250 and 120);
+- the A* budget, counted in work, not the clock (a busy machine took 225 to 495 ms over the same pass): 81 searches,
+  one a leg, 9,400 cells settled (limit 40,000), none failed; the clock is `tools/boot-budget.mjs`'s (the pass 118 to
+  174 ms here, its searches 13 to 22 ms);
+- the worldRev 7 footprint is what the pass changed, grown by 2: nothing changed outside it, nothing in it further than 2
+  from a change;
 - the mare rides each main road within 10% of its length over 7.3 tiles a second (all within 1%: Cave 139.2 tiles 19.03 s,
   Sea 89 tiles 12.08 s, Long 160.3 tiles 21.78 s, Goblin 70.2 tiles 9.53 s, Wolfwood 138.3 tiles 18.83 s, Ash 175.5 tiles
   23.82 s).
@@ -1028,6 +1050,28 @@ its signpost, a lantern road at night, the Cave Road's milestone, the Drovers' T
 Bridge, a cairn on the ash, the mare on the Sea Road; laptop 1280x800 and iPad 1024x768); full map
 `s6-roads-fullmap.png`. Deployed to the TEST world (test.gorkscape.ca, WORLD_REV 7) after a backup
 (`~/.fanglands/backups/20261007-202337-pre-roads-test`), nobody online. The fingerprint baseline is this build's (0a9081a8bd939131).
+
+**Roads-ready (the review of 8d26eb1, fixed; tag `roads-ready`).** Master 7269b13 merged in first (the mare never
+whistled in on top of a knight, aa3eaff, which fanglands.com already served; the Void Scythe and MEGA RARE; Summon a ride).
+The fixes, each with a check that fails on 8d26eb1: the story signpost reads the roads; the milestones name the Goblin
+Camp and leave out their own ends; E on a faced post reads it (Dunstan); the Long and Goblin Roads paved up to Hollowford
+(the burn's seam lines step off a road: median 9, 2 nearly ruled); the walk across Hollowford's square counted; the old
+dirt off a road's line grassed (211 tiles); the footprint only what the pass changed (6,188 tiles, was 9,872); the
+pass's self-test counts its work, not the clock. One fix outside the roads: E on a mare with the hero just past her opened
+the hero's panel (21-companion; master's own `--play` failed its Summon a ride check on it), now the mare answers.
+
+The migration: `--rev-base` master 7269b13 (rev 6): fixture + matrix 27/27 (449 footprint planks back of 449 placed; 416
+stumps and fires dropped); the 7 Oct pre-teacher-chat export 94/94 and the newest, pre-summon-ride, 97/97 (MudGoll's
+bulldozer stays where he left it; 12 of his cleared tiles beside the new road go back to the world's own); 0 stage
+changes, 0 lost machines, items or coins. `spread-footprint` against master 7269b13: 2,372 tiles changed, 0 outside.
+
+**Proved on this build:** `./build.sh` (literals 0 bare, changetile, compass 70 rows all hold, boot budget: node 1,643 ms,
+Chromium 4x 2,560 ms at load 10); headless ALL 1534; `--play` ALL 1535, the Fang dead; online 448; mmo-sim 43, `--room` 43,
+`--sim` 47; dom-keys 16; mmo-sim-admin 12; mmo-sim-party 18; mmo-sim-teacher 9; sim-suite 28; mmo-sim-world 16;
+build-sim `--strip --reads`; atlas-drift; the footprint; the migration as above. Shots: `~/.fanglands/work/spread/s6r/`
+(the Mill Lane fork and its post, a lantern road at night, the Cave Road's milestone, the Drovers' Track, the goblin-road
+bridge, the mare on the Sea Road, the story signpost, the Long Road into Hollowford, Dunstan's turn; laptop 1280x800 and
+iPad 1024x768) and the full map `s6r/s6r-fullmap.png`. The fingerprint baseline is this build's (77be4546a7a0be2e).
 
 ## Proving "nothing visible changed" (spec §9.4)
 
