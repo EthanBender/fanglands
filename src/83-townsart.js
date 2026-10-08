@@ -4483,6 +4483,52 @@ const TOWNSFOLK_ART = (() => {
     },
   });
 
+  // ---------- the Bulldozer Bay (96-dozerbay): Sprocket, the goblin grease-monkey who ran away from the goblin camp ----------
+  // A small goblin in oily blue work clothes and a leather apron, a red cap with brass goggles on its brim, grease on his
+  // cheek and nose, a red rag hanging from his pocket, a big spanner in one hand and a dented oil can in the other
+  PROPS.dz_oilcan = (g, C, o) => {
+    const sw = C.step * 0.06 + Math.sin(time * 2 + C.seed) * 0.03; g.save(); g.rotate(sw);
+    // the handle loop over the hand
+    g.strokeStyle = OUT; g.lineWidth = 1.4; g.beginPath(); g.arc(0, 2.2, 2.2, Math.PI, 0); g.stroke(); g.strokeStyle = '#8f96a3'; g.lineWidth = 0.7; g.stroke();
+    // the can: a squat tin drum with a dent and a seam
+    g.beginPath(); g.moveTo(-3.4, 2.4); g.lineTo(3.4, 2.4); g.lineTo(3.8, 8.4); g.quadraticCurveTo(0, 9.4, -3.8, 8.4); g.closePath();
+    g.fillStyle = metal(g, '#5a7a4a', 2.4, 9); g.fill(); outline(g, 0.5);
+    g.strokeStyle = 'rgba(30,40,20,0.5)'; g.lineWidth = 0.35; g.beginPath(); g.moveTo(-3.5, 5); g.lineTo(3.6, 5); g.stroke();
+    ell(g, -1.6, 6.8, 0.9, 0.6); g.fillStyle = 'rgba(30,40,20,0.35)'; g.fill();
+    // the long thin spout, up and out, and a drip of oil off its end
+    g.strokeStyle = OUT; g.lineWidth = 1.3; g.beginPath(); g.moveTo(2.4, 3); g.lineTo(6.6, -3.4); g.stroke(); g.strokeStyle = '#c9a040'; g.lineWidth = 0.6; g.stroke();
+    const d = (time * 0.6 + C.seed) % 1; ell(g, 6.8, -3 + d * 4, 0.4, 0.55); g.fillStyle = `rgba(40,30,20,${(0.8 * (1 - d)).toFixed(3)})`; g.fill();
+    g.restore();
+  };
+  addPeople('dozerbay', {
+    sprocket: gob_base({
+      size: 0.95,
+      face: { kind: true, smile: true },
+      hat: { kind: 'cap', c: '#b0302c' },
+      body: { kind: 'tunic', c: '#3f5f8a', under: '#d9c9a0', belt: '#3a2614', buckle: '#8f96a3', pouch: false, sleeve: '#4a6a9a', rolled: '#d9c9a0' },
+      over: [{ kind: 'leather', c: '#4a3a2a' }],
+      legs: { c: '#2e3e5e', patch: '#4a5a7a' },
+      held: { kind: 'gob_spanner', c: '#9aa0aa' },
+      off: { kind: 'dz_oilcan' },
+      head: (g, C) => {
+        const { hy, r, ex } = gob_H(C);
+        // the goggles on the cap's brim: two brass rims, two blue lenses, the strap round the back
+        g.strokeStyle = '#3a2614'; g.lineWidth = 0.7; g.beginPath(); g.moveTo(-r + 0.6, hy - r + 2.2); g.quadraticCurveTo(0, hy - r + 1.2, r - 0.6, hy - r + 2.2); g.stroke();
+        if (C.back) return;
+        for (const s of [-1, 1]) { ell(g, ex * 0.6 + s * 2.3, hy - r + 1.8, 1.6, 1.4); g.fillStyle = '#c9a040'; g.fill(); outline(g, 0.3); ell(g, ex * 0.6 + s * 2.3, hy - r + 1.8, 1, 0.85); g.fillStyle = '#7ab0d0'; g.fill(); }
+        // grease on his cheek and his nose
+        g.fillStyle = 'rgba(30,26,24,0.5)'; ell(g, -3.8 + ex, hy + 2, 1.5, 0.8); g.fill(); ell(g, 1.2 + ex, hy + 0.6, 0.9, 0.5); g.fill();
+      },
+      torso: (g, C) => {
+        if (C.back) return; const wy = C.B.waist;
+        // a red rag hanging out of his apron pocket, swinging a little as he breathes
+        const sw = Math.sin(time * 1.6 + C.seed) * 0.4;
+        g.beginPath(); g.moveTo(2, wy - 0.6); g.lineTo(4, wy - 0.6); g.lineTo(4.3 + sw, wy + 3.6); g.lineTo(3.2 + sw, wy + 3.2); g.lineTo(2.4 + sw, wy + 3.8); g.closePath();
+        g.fillStyle = '#b8352b'; g.fill(); outline(g, 0.3);
+      },
+    }),
+  });
+
   // Rusty Kett's basket of finds: a white pearl-shell, a cork float and a blue-grey bottle neck
   function rd_finds(g) {
     for (const [x, y, r, c] of [[-2.2, 2.6, 1.5, '#e6edf3'], [0.4, 2.2, 1.3, '#d9a96a'], [2.4, 2.8, 1.2, '#7a9aa8']]) { ell(g, x, y, r, r * 0.8, 0.2); g.fillStyle = c; g.fill(); outline(g, 0.3); }
@@ -4591,7 +4637,7 @@ const TOWNSFOLK_ART = (() => {
 
   // every person's name as the sample's people list has it (today.json), for the talking pose; the game's own name for
   // a person wins where the call site hands it in
-  const NPC_NAMES = {"sera": "Sera", "garrick": "Garrick", "marta": "Marta", "aldous": "Aldous the banker", "rosalind": "Rosalind", "brakka": "Brakka the smith", "pim": "Pim the tinker", "dorran": "Dorran the innkeeper", "duke": "Duke Ferrin", "hale": "Sergeant Hale", "tobin": "Tobin", "greta": "Greta", "fennick": "Fennick the trader", "wren": "Old Wren", "v1": "Ada", "v2": "Bram", "v3": "Cass", "v4": "Dunn", "v5": "Elsie", "v6": "Finn", "osric": "Gatewarden Osric", "ambrose": "Ambrose the bell-ringer", "hettie": "Hettie the apple seller", "mabel": "Mabel the candle maker", "moll": "Moll the flower seller", "wynn": "Wynn", "tess": "Tess", "robin": "Robin", "death2": "Death", "tam": "Old Tam", "nell": "Nell", "pip": "Pip", "hob": "Hob", "wenna": "Wenna", "harl": "Harl the ferryman", "pete": "Pete", "thrain": "King Thrain", "brunhild": "Brunhild the smith", "dagny": "Dagny", "orik": "Orik", "hilde": "Hilde", "aelith": "Queen Aelith", "lira": "Lira the archery master", "thessaly": "Thessaly the weaver", "faelan": "Faelan", "seraphel": "Queen Seraphel", "halcyon": "Master Halcyon", "pell": "Keeper Pell", "quill": "Quill Windward", "skyla": "Skyla Fleetwing", "ferris": "Old Ferris", "aldric": "Captain Aldric", "tamsin": "Tamsin the baker", "mossbeard": "Mossbeard", "aubade": "Sister Aubade", "corvin": "Guildmaster Corvin", "merriweather": "Merriweather", "orla": "Warden Orla", "brisk": "Warden Brisk", "lark": "Lark", "bellweather": "Bellweather the lamplighter", "brannoc": "Brannoc the porter", "fen": "Fen", "tilly": "Tilly", "wick": "Wick the messenger", "pippa": "Pippa the fruit seller", "maudie": "Maudie the weaver", "plume": "Old Plume the feather seller", "crockett": "Crockett the potter", "hazel": "Hazel", "wim": "Wim", "tinkerton": "Tinkerton", "grubb": "Grubb the cook", "nix": "Nix the scrapper", "snaggle": "Old Snaggle", "pipsqueak": "Pip-squeak", "gnash": "King Gnash", "mudge": "Mudge", "skritch": "Skritch", "ratchet": "Ratchet", "wilf": "Wilf the stonemason", "tamsin_miller": "Tamsin the miller", "odo": "Odo the farmer", "nan_gully": "Nan Gully", "mother_hobb": "Mother Hobb", "jory": "Jory the pedlar", "marigold": "Marigold the drover", "ansel": "Ansel the beacon keeper", "hilde_trapper": "Hilde the trapper", "corvin_hunter": "Corvin the hunter", "bramble_scout": "Bramble the scout", "brin_drover": "Brin the drover", "wat_carter": "Wat the carter"};
+  const NPC_NAMES = {"sera": "Sera", "garrick": "Garrick", "marta": "Marta", "aldous": "Aldous the banker", "rosalind": "Rosalind", "brakka": "Brakka the smith", "pim": "Pim the tinker", "dorran": "Dorran the innkeeper", "duke": "Duke Ferrin", "hale": "Sergeant Hale", "tobin": "Tobin", "greta": "Greta", "fennick": "Fennick the trader", "wren": "Old Wren", "v1": "Ada", "v2": "Bram", "v3": "Cass", "v4": "Dunn", "v5": "Elsie", "v6": "Finn", "osric": "Gatewarden Osric", "ambrose": "Ambrose the bell-ringer", "hettie": "Hettie the apple seller", "mabel": "Mabel the candle maker", "moll": "Moll the flower seller", "wynn": "Wynn", "tess": "Tess", "robin": "Robin", "death2": "Death", "tam": "Old Tam", "nell": "Nell", "pip": "Pip", "hob": "Hob", "wenna": "Wenna", "harl": "Harl the ferryman", "pete": "Pete", "thrain": "King Thrain", "brunhild": "Brunhild the smith", "dagny": "Dagny", "orik": "Orik", "hilde": "Hilde", "aelith": "Queen Aelith", "lira": "Lira the archery master", "thessaly": "Thessaly the weaver", "faelan": "Faelan", "seraphel": "Queen Seraphel", "halcyon": "Master Halcyon", "pell": "Keeper Pell", "quill": "Quill Windward", "skyla": "Skyla Fleetwing", "ferris": "Old Ferris", "aldric": "Captain Aldric", "tamsin": "Tamsin the baker", "mossbeard": "Mossbeard", "aubade": "Sister Aubade", "corvin": "Guildmaster Corvin", "merriweather": "Merriweather", "orla": "Warden Orla", "brisk": "Warden Brisk", "lark": "Lark", "bellweather": "Bellweather the lamplighter", "brannoc": "Brannoc the porter", "fen": "Fen", "tilly": "Tilly", "wick": "Wick the messenger", "pippa": "Pippa the fruit seller", "maudie": "Maudie the weaver", "plume": "Old Plume the feather seller", "crockett": "Crockett the potter", "hazel": "Hazel", "wim": "Wim", "tinkerton": "Tinkerton", "grubb": "Grubb the cook", "nix": "Nix the scrapper", "snaggle": "Old Snaggle", "pipsqueak": "Pip-squeak", "gnash": "King Gnash", "mudge": "Mudge", "skritch": "Skritch", "ratchet": "Ratchet", "wilf": "Wilf the stonemason", "tamsin_miller": "Tamsin the miller", "odo": "Odo the farmer", "nan_gully": "Nan Gully", "mother_hobb": "Mother Hobb", "jory": "Jory the pedlar", "marigold": "Marigold the drover", "ansel": "Ansel the beacon keeper", "hilde_trapper": "Hilde the trapper", "corvin_hunter": "Corvin the hunter", "bramble_scout": "Bramble the scout", "brin_drover": "Brin the drover", "wat_carter": "Wat the carter", "sprocket": "Sprocket"};
   const H = { lerp, ease, OUT, shade, hex, rr, ell, outline, vfill, rfill, metal, shadow, face4 };
   return { NEW_NPC, NPC_FAMILY, NPC_SPEC, NPC_NAMES, npc, drawPerson, npcFromToday, BUILDS, SKIN, HAIR, H, mark: f => { NPC_MARK = f || null; } };
 })();

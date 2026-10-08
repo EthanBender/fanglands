@@ -19,6 +19,7 @@
     "35-night.js": { "calls": 3, "remake": "35-night.js", "what": "story: the crypt door at the last knight's grave (its remake); test" },
     "37-dragonkillers.js": { "calls": 3, "remake": "37-dragonkillers.js", "what": "story: the warden's gate opened (its remake); test: the gate shut again" },
     "40-dozerup.js": { "calls": 6, "remake": null, "what": "test: the drill field's lane, a parked bulldozer, rocks and ores, each put back" },
+    "96-dozerbay.js": { "calls": 4, "remake": null, "what": "test: a walker, a bulldozer and a Barrelbeast parked on the drill field's lane to climb into, each put back (the bay itself writes no tile: a stored machine is player.bay, never a map diff)" },
     "41-guild.js": { "calls": 5, "remake": "41-guild.js", "what": "story: the guild hall built when the guild is founded (its remake); test: the hall put back" },
     "45-progression.js": { "calls": 1, "remake": null, "what": "test: soil put back" },
     "47-outliers.js": { "calls": 3, "remake": null, "what": "test: soil and a crop put back" },

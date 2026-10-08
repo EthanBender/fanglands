@@ -166,9 +166,9 @@
   {"file": "37-dragonkillers.js", "literal": "4 * TILE", "reason": "the self-test: the allies appear within 4 tiles of the knight, a distance", "context": "&& dist(m.x, m.y, player.x, player.y) < 4 * TILE"},
   {"file": "37-dragonkillers.js", "literal": "4 * TILE", "decl": "near", "reason": "the self-test: the allies fight within 4 tiles of The Fang, a distance"},
   {"file": "38-agility.js", "literal": "4 * TILE", "line": 430, "reason": "the self-test moves a guard standing within 4 tiles of the Master of Skills: a radius, not a position"},
-  {"file": "40-dozerup.js", "literal": "9 * TILE", "line": 307, "reason": "the self-test clears monsters within 9 tiles of its drive lane: a half-width, not a position"},
-  {"file": "40-dozerup.js", "literal": "3 * TILE", "line": 307, "reason": "the self-test clears monsters within 3 tiles of its drive lane: a half-height, not a position"},
-  {"file": "40-dozerup.js", "literal": "o.x - 30", "line": 307, "reason": "the self-test parks a monster 30 tiles off its open spot: an offset, not a position"},
+  {"file": "40-dozerup.js", "literal": "9 * TILE", "context": "for (const m of monsters) if (!m.dead && Math.abs(m.x - tc(o.x + 5)) < 9 * TILE", "reason": "the self-test clears monsters within 9 tiles of its drive lane: a half-width, not a position"},
+  {"file": "40-dozerup.js", "literal": "3 * TILE", "context": "for (const m of monsters) if (!m.dead && Math.abs(m.x - tc(o.x + 5)) < 9 * TILE", "reason": "the self-test clears monsters within 3 tiles of its drive lane: a half-height, not a position"},
+  {"file": "40-dozerup.js", "literal": "o.x - 30", "context": "for (const m of monsters) if (!m.dead && Math.abs(m.x - tc(o.x + 5)) < 9 * TILE", "reason": "the self-test parks a monster 30 tiles off its open spot: an offset, not a position"},
   {"file": "41-guild.js", "literal": "20", "decl": "CHEST_SLOTS", "reason": "the guild chest holds 20 stacks: a count, not a tile"},
   {"file": "41-guild.js", "literal": "12 * TILE", "line": 206, "reason": "Pip snaps to the knight from more than 12 tiles behind: a distance, not a position"},
   {"file": "41-guild.js", "literal": "3 * TILE", "line": 206, "reason": "a stuck Pip snaps from more than 3 tiles behind: a distance, not a position"},
@@ -918,5 +918,14 @@
   {"file": "86-bandits.js", "literal": "6 * TILE", "decl": "sight", "reason": "the bandit archer's sight (6 tiles): a range, not a position"},
   {"file": "86-bandits.js", "literal": "TILE * 2", "decl": "THING_REACH", "reason": "THING_REACH: how far a bandit tent's or booth's drawing reaches past its tile, in pixels (the cull), not a position"},
   {"file": "93-roads.js", "literal": "3 * TILE", "decl": "sight", "reason": "the named beasts' sight (3 tiles, roads2's): a range, not a position"},
-  {"file": "93-roads.js", "literal": "9 * TILE", "decl": "GREEN_RANGE", "reason": "GREEN_RANGE: how near a beast must be for the Green Path blessing to calm it (9 tiles), a range, not a position"}
+  {"file": "93-roads.js", "literal": "9 * TILE", "decl": "GREEN_RANGE", "reason": "GREEN_RANGE: how near a beast must be for the Green Path blessing to calm it (9 tiles), a range, not a position"},
+  {"file": "96-dozerbay.js", "literal": "{ x: 2, y: 36, w: 23, h: 11 }", "decl": "HALL", "reason": "instance-local: the hall's top-left and size in the bay's own map (an instance), not the overworld"},
+  {"file": "96-dozerbay.js", "decl": "drawMouth", "reason": "drawing: pixel offsets round the mouth's own cell (the arch, the board, the lamps)"},
+  {"file": "96-dozerbay.js", "decl": "drawFloor", "reason": "drawing: the hall's slab floor, stall lines and numbers, in pixels from each stall's own column"},
+  {"file": "96-dozerbay.js", "decl": "drawPost", "reason": "drawing: pixel offsets inside a stall post's cell"},
+  {"file": "96-dozerbay.js", "decl": "drawBoard", "reason": "drawing: pixel offsets inside the blueprint board's cell"},
+  {"file": "96-dozerbay.js", "decl": "drawDrums", "reason": "drawing: pixel offsets inside the oil drums' cell"},
+  {"file": "96-dozerbay.js", "literal": "4 * TILE", "decl": "LABEL_REACH", "reason": "LABEL_REACH: how near the knight must be for a stored machine's name and hull to show (4 tiles), a reach, not a position"},
+  {"file": "96-dozerbay.js", "literal": "2 * TILE", "context": "dist(at1.x, at1.y, standPx(0).x, standPx(0).y) < 2 * TILE", "reason": "the self-test: the knight within 2 tiles of stall 1's machine, a distance, not a position"},
+  {"file": "96-dozerbay.js", "literal": "3 * TILE", "context": "dist(player.x, player.y, tc(b.x), tc(b.y)) < 3 * TILE", "reason": "the self-test: the machine taken out within 3 tiles of the mouth, a distance, not a position"}
 ]
