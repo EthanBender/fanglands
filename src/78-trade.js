@@ -408,6 +408,8 @@
       if (left > 0 && bankAdd(it.id, left)) { left = 0; banked = true; }
       if (left > 0) { drops.push({ x: player.x + rint(-10, 10), y: player.y + rint(-10, 10), id: it.id, qty: left, t: 0 }); dropped = true; }
     }
+    // a mega rare (54-megarare) that came in this trade: its MEGA RARE banner, flash and chime here, and a line in its log
+    if (window.MEGA_RARE) for (const it of got) MEGA_RARE.received(it.id, it.qty, 'trade', withN);
     d.done.push(key); while (d.done.length > KEEP) d.done.shift();
     notify(`Traded with ${withN || 'a friend'}: you gave ${words(gave)} and got ${words(got)}.`);
     if (got.length) floatText(player.x, player.y - 30, '+' + words(got), ITEMS[got[0].id].color || '#f5c542');
@@ -830,6 +832,29 @@
         const once2 = countItem('bread') === 3 && countItem('coins') === 23 && since(k1, 'trade_ack').length === 2;
         check(P + 'the trade window with a fake wire: Accept answers the ask; your pack offers (Add 1 / Add all), your offer takes back; Accept sends the version shown and waits; a change un-accepts; "Are you sure?" confirms; trade_done takes out and puts in exactly once (a repeat only acks)',
           answered && open && amounts && offerSent && packGone && took && accepted && waits && unaccepted && sure && confirmed && nothingYet && once1 && once2, { answered, open, amounts, offerSent, packGone, took, accepted, waits, unaccepted, sure, confirmed, nothingYet, once1, once2, bread: countItem('bread'), coins: countItem('coins') }); }
+      // 5b. a mega rare that comes in a trade (54-megarare): the knight who GETS it has the MEGA RARE banner, the flash and a
+      // "trade" line in its log on his own screen, once; a full pack and bank put it at his feet without a second moment on pickup
+      if (window.MEGA_RARE) { player.inv = empty(); addItem('coins', 3); player.trades = { done: [] }; levelBanner = null; const l0 = MEGA_RARE.LOG.length, f0 = MEGA_RARE.FLASH.n;
+        feed({ t: 'trade_done', tid: 61, id: null, with: 'Ethan', gave: [{ id: 'coins', qty: 3 }], got: [{ id: 'void_scythe', qty: 1 }] });
+        const lb = levelBanner, line = MEGA_RARE.LOG[l0];
+        const got = countItem('void_scythe') === 1 && countItem('coins') === 0 && !!lb && lb.style === 'mega' && lb.text === 'MEGA RARE' && lb.sub === 'Void Scythe'
+          && MEGA_RARE.FLASH.n === f0 + 1 && MEGA_RARE.LOG.length === l0 + 1 && !!line && line.how === 'trade' && line.from === 'Ethan' && line.id === 'void_scythe';
+        levelBanner = null; feed({ t: 'trade_done', tid: 61, id: null, with: 'Ethan', gave: [{ id: 'coins', qty: 3 }], got: [{ id: 'void_scythe', qty: 1 }] });
+        const once = countItem('void_scythe') === 1 && !levelBanner && MEGA_RARE.LOG.length === l0 + 1;
+        // a plain trade raises no banner and writes no line
+        feed({ t: 'trade_done', tid: 62, id: null, with: 'Ava', gave: [], got: [{ id: 'bread', qty: 2 }] });
+        const plain = !levelBanner && MEGA_RARE.LOG.length === l0 + 1;
+        // pack and bank full: at his feet, one moment on arrival, none when he picks it up
+        const bank0 = player.bank; player.bank = new Array(BANK_SLOTS).fill(null).map(() => ({ id: 'wood', qty: 1 }));
+        player.inv = empty().map(() => ({ id: 'iron_dagger', qty: 1 }));
+        feed({ t: 'trade_done', tid: 63, id: null, with: 'Ethan', gave: [], got: [{ id: 'void_scythe', qty: 1 }] });
+        const d = drops.find(x => x.id === 'void_scythe'), atFeet = !!d && d.seen === true && MEGA_RARE.LOG.length === l0 + 2;
+        player.bank = bank0; player.inv = empty(); levelBanner = null; if (d) { d.x = player.x; d.y = player.y; }
+        F.step([]); F.step([]);
+        const picked = countItem('void_scythe') === 1 && !drops.includes(d) && !levelBanner && MEGA_RARE.LOG.length === l0 + 2;
+        MEGA_RARE.LOG.length = l0; player.inv = empty(); levelBanner = null; drops = drops.filter(x => x.id !== 'void_scythe');
+        check(P + 'a Void Scythe received in a trade raises the MEGA RARE banner with its name, the flash and a "trade" log line (from the giver) on the receiver\'s screen, once; a plain trade does not; a full pack and bank put it at his feet with the one moment, and picking it up is not a second',
+          got && once && plain && atFeet && picked, { got, once, plain, atFeet, picked, banner: lb && lb.text, sub: lb && lb.sub, how: line && line.how, from: line && line.from }); }
       // 6. cancellation moves nothing: the world's trade_end, and the window closed by hand (trade_close goes out)
       { player.inv = empty(); addItem('bread', 5); addItem('coins', 3); const snap = JSON.stringify(player.inv);
         feed({ t: 'trade_open', id: 8, with: 'Ava', ver: 1 }); feed({ t: 'trade_state', id: 8, ver: 2, stage: 'confirm', mine: [{ id: 'bread', qty: 5 }], theirs: [{ id: 'coins', qty: 20 }], acc: [true, true], conf: [false, true] });

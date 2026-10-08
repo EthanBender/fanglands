@@ -136,6 +136,24 @@
       const ok = L => L.some(r => r.s === 'MEGA RARE' && r.fill === '#ffd76a') && L.some(r => r.s === 'Void Scythe' && r.fill === '#e9d5ff') && L.every(r => r.x - (r.w || 0) / 2 >= -1);
       check(P + 'the MEGA RARE banner draws its gold words and the item\'s name, wide and on a phone', ok(wide) && ok(narrow), { wide: wide.map(r => r.s + ' ' + r.fill), narrow: narrow.map(r => r.s) });
     }
+    // the live path on phones: drawBanners with the real phone layouts (the scroll slot, a short lane that drops other banners'
+    // sentences) still says the item's name, beside the tag, inside the lane
+    if (window.HK && HK.drawBanners && HK.layoutFor && HK.audit) {
+      const b0 = levelBanner, out = {};
+      try {
+        levelBanner = { text: 'MEGA RARE', sub: 'Void Scythe', t: 4.5, style: 'mega' };
+        for (const [w, h] of [[390, 844], [844, 390], [360, 640]]) {
+          const L = HK.layoutFor(w, h, { touch: true, online: true, minimap: true }), lane = L.banners && L.banners[0], log = [];
+          if (!lane) { out[w + 'x' + h] = 'no lane'; continue; }
+          HK.drawBanners(HK.audit.fitCtx(log), L);
+          const tag = log.find(r => r.s === 'MEGA RARE'), name = log.find(r => r.s === 'Void Scythe');
+          out[w + 'x' + h] = { fam: L.fam, laneH: lane.h, tag: !!tag && tag.fill === '#ffd76a', name: !!name && name.fill === '#e9d5ff', inLane: !!name && name.x >= lane.x && name.x < lane.x + lane.w && name.y > lane.y && name.y <= lane.y + lane.h };
+        }
+      } finally { levelBanner = b0; }
+      const vals = Object.values(out);
+      check(P + 'on a phone the live banner (drawBanners, the real phone layouts) shows MEGA RARE and the item\'s name inside its lane',
+        vals.length === 3 && vals.every(v => v && v.tag && v.name && v.inLane), out);
+    }
     // on the ground: drawn as itself without a throw; a plain drop goes on to the old drawing
     { let threw = null; try { const L = []; const c = HK.audit.fitCtx(L); const at = { x: player.x, y: player.y }; drawDrop(c, Object.assign({ id: 'void_scythe', qty: 1, t: 0.4, mega: true }, at)); drawDrop(c, Object.assign({ id: 'iron_sword', qty: 1, t: 0 }, at)); } catch (e) { threw = String(e && e.message || e); }
       check(P + 'a dropped Void Scythe draws (laid down in its glow) and a plain drop still draws the old way', !threw, { threw }); }

@@ -1120,9 +1120,10 @@ const HK = (() => {
   // RARITY TAG: the gold-and-purple plate a rarity above the rare drop wears (54-megarare's MEGA RARE): a purple
   // swallowtail ribbon with a gold edge and gold words, `h` tall, starting at x (align 'center': centred on x). It is what
   // the MEGA RARE banner stands on, and the wiki's tag on such an item's page. Returns its width.
+  const rarityTagW = (g, label, h) => tw(g, label, FC(800, Math.max(10, Math.round(h * 0.6)))) + Math.min(h * 0.38, 12) * 2 + h * 0.9;
   function rarityTag(g, x, y, label, h, o = {}) {
     const size = Math.max(10, Math.round(h * 0.6)), f = FC(800, size), n = Math.min(h * 0.38, 12);
-    const w = tw(g, label, f) + n * 2 + h * 0.9, x0 = o.align === 'center' ? x - w / 2 : x;
+    const w = rarityTagW(g, label, h), x0 = o.align === 'center' ? x - w / 2 : x;
     const path = () => { g.beginPath(); g.moveTo(x0, y); g.lineTo(x0 + w, y); g.lineTo(x0 + w - n, y + h / 2); g.lineTo(x0 + w, y + h); g.lineTo(x0, y + h); g.lineTo(x0 + n, y + h / 2); g.closePath(); };
     shadowed(g, () => { path(); g.fillStyle = '#1a0830'; g.fill(); }, 8, 2);
     const gr = g.createLinearGradient(x0, 0, x0 + w, 0); gr.addColorStop(0, '#3b1466'); gr.addColorStop(0.5, '#7433c4'); gr.addColorStop(1, '#3b1466');
@@ -1136,16 +1137,25 @@ const HK = (() => {
   }
   // BANNER: an area name (kind 'area') or a level-up / event headline (kind 'level'), in its lane, faded by alpha.
   // A level banner with style 'mega' (`levelBanner = { text, sub, t, style: 'mega' }`, 54-megarare) is the gold-and-purple
-  // MEGA RARE banner: its words on the rarity tag, the item's name under it in pale violet.
+  // MEGA RARE banner: its words on the rarity tag, the item's name under it in pale violet. In a small lane too short for the
+  // name under the tag (a phone's), the name stands beside the tag on one line, the two centred together: the name is never left out.
   function banner(g, r, o) {
     const phone = r.w < 420 || VW < 640;
     g.save(); g.globalAlpha *= cl(o.alpha == null ? 1 : o.alpha, 0, 1);
     const cx = r.x + r.w / 2;
     if (o.style === 'mega') {
       let h = Math.min(r.h - 4, o.small ? (phone ? 20 : 24) : phone ? 28 : 38);
-      while (h > 20 && tw(g, o.title, FC(800, Math.max(10, Math.round(h * 0.6)))) + Math.min(h * 0.38, 12) * 2 + h * 0.9 > r.w) h -= 1;
-      rarityTag(g, cx, r.y, o.title, h, { align: 'center', box: r, fitId: 'banner' });
-      if (o.sub) subLines(g, o.sub, cx, r.y + h + 2, r, o.small ? 12 : 14, '#e9d5ff', 0.85);
+      while (h > 20 && rarityTagW(g, o.title, h) > r.w) h -= 1;
+      if (o.sub && o.small && r.h - h - 2 < 15) {
+        const tagW = rarityTagW(g, o.title, h), gap = 8; let sz = 14;
+        while (sz > 11 && tagW + gap + tw(g, o.sub, FS(700, sz)) > r.w - 8) sz -= 0.5;
+        const f = FS(700, sz), x0 = cx - (tagW + gap + tw(g, o.sub, f)) / 2, y = r.y + Math.max(0, (r.h - h) / 2);
+        rarityTag(g, x0, y, o.title, h, { box: r, fitId: 'banner' });
+        text(g, o.sub, x0 + tagW + gap, y + h / 2 + realPx(f) * 0.36, { font: f, color: '#e9d5ff', halo: 4, haloColor: 'rgba(10,8,6,0.85)', box: r, fitId: 'banner:sub' });
+      } else {
+        rarityTag(g, cx, r.y, o.title, h, { align: 'center', box: r, fitId: 'banner' });
+        if (o.sub) subLines(g, o.sub, cx, r.y + h + 2, r, o.small ? 12 : 14, '#e9d5ff', 0.85);
+      }
     } else if (o.kind === 'area') {
       let size = o.small ? 18 : phone ? 22 : 30; while (size > 14 && tw(g, o.title, FC(800, size)) > r.w - 8) size -= 1;
       const ty = r.y + size;
@@ -2353,8 +2363,9 @@ const HK = (() => {
       shadowed(g, () => { rr(g, lane.x, lane.y, lane.w, lane.h, 5); g.fillStyle = 'rgba(20,15,13,0.94)'; g.fill(); }, 8, 3);
       rr(g, lane.x + 3, lane.y + 3, lane.w - 6, lane.h - 6, 3); g.strokeStyle = 'rgba(217,178,92,0.55)'; g.lineWidth = 1; g.stroke();
       g.restore();
+      // a short lane drops a banner's sentence, but never a mega rare's name (its banner puts it beside the tag)
       const tall = lane.h >= 60;
-      banner(g, { x: lane.x + 6, y: lane.y + (tall ? Math.max(4, (lane.h - (b.sub ? 54 : 30)) / 2) : 2), w: lane.w - 12, h: lane.h - 4 }, { kind: b.kind, title: b.title, sub: tall ? b.sub : null, alpha: a, small: !tall, style: b.style });
+      banner(g, { x: lane.x + 6, y: lane.y + (tall ? Math.max(4, (lane.h - (b.sub ? 54 : 30)) / 2) : 2), w: lane.w - 12, h: lane.h - 4 }, { kind: b.kind, title: b.title, sub: tall || b.style === 'mega' ? b.sub : null, alpha: a, small: !tall, style: b.style });
       return;
     }
     list.slice(0, 2).forEach((b, i) => { const lane = L.banners[i]; if (lane) banner(g, lane, { kind: b.kind, title: b.title, sub: b.sub, alpha: alphaOf(b), small: i > 0, style: b.style }); });

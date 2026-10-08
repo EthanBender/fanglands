@@ -14,16 +14,22 @@
 //     { monster: '<MONSTER_DEFS type>', chance: N } rolls 1 kill in N of that monster, after its own drops. Empty, it
 //     rolls nothing and draws no random number, so nothing changes for anyone. The book reads the same rows.
 //   * Until then the owner hands it out: the admin's Give me an item (76-admin) lists every item, and a mega rare given
-//     there comes with its banner and a line in LOG. An admin can then trade it (78-trade) or drop it for a friend.
+//     there comes with its banner and a line in LOG. An admin can then trade it (78-trade) or put it on a drop party's
+//     prize table (77-dropparty). (The ground is each knight's own: a scythe dropped on the ground is not seen by friends.)
 //   * MEGA_RARE.announce(id, how, x, y) is the moment itself (the drop, the gift): the MEGA RARE banner with the
 //     item's name, gold and purple sparks where it happened, its own chime, and FLASH (54-megarareart's screen flash
 //     reads it, timed on `time`).
+//   * The knight who GETS one has the moment on his own screen, however it reaches him: MEGA_RARE.received(id, n, how,
+//     from) is called by 78-trade when a trade puts one in his pack ('trade'), by 77-dropparty when a cracker's prize is
+//     one ('party'), and by the watch below when he picks one up off the ground that he has not had the moment for yet
+//     ('pickup'; not his own kill's roll, not one he put down himself, not a trade's or a prize's overflow). Each writes
+//     a line in LOG.
 //
 // THE VOID SCYTHE: a two-handed scythe at the top of the melee table. Strength 48 is the most of any weapon (the
 // Dragon spear 45, the Fang 40), accuracy 34 (the spear 44); it swings every 0.7 s like the warhammers, against the
 // spear's 0.5, so one on one the spear still hits harder over time, and the scythe's cleave (the battleaxes' wide
 // sweep) is what makes it the best in a crowd. Its necro power, 15, is the kit's best (the Bone stave 10).
-// window.MEGA_RARE = { RARITY, SOURCES, LOG, FLASH, isMega, dropsOf, announce, given }
+// window.MEGA_RARE = { RARITY, SOURCES, LOG, FLASH, isMega, dropsOf, announce, given, received }
 // ============================================================================
 const MEGA_RARE = (() => {
   // the rarities above the rare drop: the banner's words, how long it stays up, the pack's word
@@ -56,7 +62,7 @@ const MEGA_RARE = (() => {
   const anyRows = () => { for (const id in SOURCES) if (SOURCES[id] && SOURCES[id].length) return true; return false; };
 
   // ---------- the moment ----------
-  const LOG = [];                               // { id, how: 'drop' | 'admin' | ..., n, at } for this session; never saved
+  const LOG = [];                               // { id, how: 'drop' | 'admin' | 'trade' | 'party' | 'pickup', n, at, from? } for this session; never saved
   const FLASH = { at: -1e9, id: null, x: 0, y: 0, n: 0 };
   function announce(id, how, x, y) {
     if (!isMega(id)) return false;
@@ -72,6 +78,34 @@ const MEGA_RARE = (() => {
     LOG.push({ id, how: how || 'given', n: n | 0 || 1, at: time });
     return announce(id, how || 'given', player.x, player.y);
   }
+  // one that lands with THIS knight from someone else (a trade, a drop party's prize, the ground): his banner, his line.
+  // What the full pack and bank sent to his feet this tick is marked seen, so picking it up is not a second moment.
+  function received(id, n, how, from) {
+    if (!isMega(id)) return false;
+    LOG.push({ id, how: how || 'received', n: n | 0 || 1, at: time, from: from || null });
+    if (how !== 'pickup') for (const d of drops) if (d.id === id && d.t === 0 && !d.seen) d.seen = true;
+    return announce(id, how || 'received', player.x, player.y);
+  }
+
+  // ---------- the ground: a mega rare picked up that he has not had the moment for ----------
+  // The core's pickup (07-update) marks a drop `taken` and then replaces `drops` with a filtered list, so this hook (it runs
+  // after the core update) reads last tick's list: a mega rare taken from it, not seen, that left him holding more than he
+  // held a tick ago, is his moment. One that turns up on the ground in the tick his own pack lost one is his own, put down:
+  // seen. HELD is how many of each mega rare he held at the end of the last tick.
+  const HELD = {}, CHECKED = new WeakSet();
+  let PREV = null;
+  HOOKS.update.push(() => {
+    if (PREV && PREV !== drops) for (const d of PREV) if (d.taken && !d.seen && isMega(d.id)) {
+      d.seen = true;
+      if (HELD[d.id] == null || countItem(d.id) > HELD[d.id]) received(d.id, d.qty, 'pickup');
+    }
+    for (const d of drops) if (!d.seen && !CHECKED.has(d) && isMega(d.id)) {
+      CHECKED.add(d);
+      if (HELD[d.id] != null && countItem(d.id) < HELD[d.id]) d.seen = true;
+    }
+    PREV = drops;
+    for (const id in SOURCES) HELD[id] = countItem(id);
+  });
 
   // ---------- the roll: after the monster's own drops, each SOURCES row for it, one time in `chance` ----------
   let TYPES = null;
@@ -86,7 +120,7 @@ const MEGA_RARE = (() => {
     const type = typeOf(def);
     if (type) for (const s of dropsOf(type)) {
       if (Math.random() >= 1 / s.chance) continue;
-      drops.push({ x: x + rint(-14, 14), y: y + rint(-14, 14), id: s.id, qty: 1, t: 0, rare: true, mega: true });
+      drops.push({ x: x + rint(-14, 14), y: y + rint(-14, 14), id: s.id, qty: 1, t: 0, rare: true, mega: true, seen: true });
       LOG.push({ id: s.id, how: 'drop', n: 1, at: time, monster: type });
       announce(s.id, 'drop', x, y);
     }
@@ -132,6 +166,27 @@ const MEGA_RARE = (() => {
           { plain, core, got: got.length, banner: lb && lb.text, style: lb && lb.style, rowsOk, none });
       } finally { Math.random = rnd; SOURCES.void_scythe.length = 0; drops.length = d0; levelBanner = null; if (b0) levelBanner = b0; LOG.length = l0; }
     }
+    // the ground: one he had no moment for is his moment when he picks it up; one he put down himself is not, nor his kill's roll
+    { const inv0 = player.inv, b0 = levelBanner, l0 = LOG.length;
+      const empty = () => new Array(INV_SLOTS).fill(null), at = (dx) => ({ x: player.x + dx, y: player.y, t: 0 });
+      try {
+        player.inv = empty(); levelBanner = null; F.step([]);
+        const d1 = Object.assign({ id: 'void_scythe', qty: 1 }, at(0)); drops.push(d1); F.step([]); F.step([]);
+        const lb = levelBanner, line = LOG[l0];
+        const picked = countItem('void_scythe') === 1 && !drops.includes(d1) && !!lb && lb.style === 'mega' && lb.sub === 'Void Scythe' && LOG.length === l0 + 1 && !!line && line.how === 'pickup';
+        // he puts it down (the pack's Drop: out of the pack, onto the ground a step away), then walks over it again
+        levelBanner = null; F.step([]);
+        player.inv = empty(); const d2 = Object.assign({ id: 'void_scythe', qty: 1 }, at(200)); drops.push(d2); F.step([]);
+        const own = d2.seen === true; d2.x = player.x; d2.y = player.y; F.step([]); F.step([]);
+        const back = countItem('void_scythe') === 1 && !drops.includes(d2) && !levelBanner && LOG.length === l0 + 1;
+        // his own kill's roll is already seen
+        player.inv = empty(); levelBanner = null; F.step([]);
+        const d3 = Object.assign({ id: 'void_scythe', qty: 1, mega: true, rare: true, seen: true }, at(0)); drops.push(d3); F.step([]); F.step([]);
+        const roll = countItem('void_scythe') === 1 && !levelBanner && LOG.length === l0 + 1;
+        check(P + 'off the ground: a Void Scythe he had no moment for raises the MEGA RARE banner and a "pickup" log line as he picks it up; one he put down himself, or his own kill\'s roll, picks up quietly',
+          picked && own && back && roll, { picked, own, back, roll, banner: lb && lb.text, how: line && line.how, log: LOG.length - l0 });
+      } finally { player.inv = inv0; drops = drops.filter(d => d.id !== 'void_scythe'); LOG.length = l0; levelBanner = b0 || null; }
+    }
     // the banner's words: only a mega rare announces, and the rarity's own name and time
     { const b0 = levelBanner; levelBanner = null;
       const no = announce('dragon_spear', 'test', 0, 0) === false && !levelBanner;
@@ -140,6 +195,6 @@ const MEGA_RARE = (() => {
       check(P + 'only an item marked mega rare raises the MEGA RARE banner', no && !!yes, { no, yes: !!yes }); }
   });
 
-  return { RARITY, SOURCES, LOG, FLASH, isMega, dropsOf, announce, given };
+  return { RARITY, SOURCES, LOG, FLASH, isMega, dropsOf, announce, given, received };
 })();
 window.MEGA_RARE = MEGA_RARE;

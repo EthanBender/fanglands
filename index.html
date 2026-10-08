@@ -26156,16 +26156,22 @@ window.SETTINGS = SETTINGS;
 //     { monster: '<MONSTER_DEFS type>', chance: N } rolls 1 kill in N of that monster, after its own drops. Empty, it
 //     rolls nothing and draws no random number, so nothing changes for anyone. The book reads the same rows.
 //   * Until then the owner hands it out: the admin's Give me an item (76-admin) lists every item, and a mega rare given
-//     there comes with its banner and a line in LOG. An admin can then trade it (78-trade) or drop it for a friend.
+//     there comes with its banner and a line in LOG. An admin can then trade it (78-trade) or put it on a drop party's
+//     prize table (77-dropparty). (The ground is each knight's own: a scythe dropped on the ground is not seen by friends.)
 //   * MEGA_RARE.announce(id, how, x, y) is the moment itself (the drop, the gift): the MEGA RARE banner with the
 //     item's name, gold and purple sparks where it happened, its own chime, and FLASH (54-megarareart's screen flash
 //     reads it, timed on `time`).
+//   * The knight who GETS one has the moment on his own screen, however it reaches him: MEGA_RARE.received(id, n, how,
+//     from) is called by 78-trade when a trade puts one in his pack ('trade'), by 77-dropparty when a cracker's prize is
+//     one ('party'), and by the watch below when he picks one up off the ground that he has not had the moment for yet
+//     ('pickup'; not his own kill's roll, not one he put down himself, not a trade's or a prize's overflow). Each writes
+//     a line in LOG.
 //
 // THE VOID SCYTHE: a two-handed scythe at the top of the melee table. Strength 48 is the most of any weapon (the
 // Dragon spear 45, the Fang 40), accuracy 34 (the spear 44); it swings every 0.7 s like the warhammers, against the
 // spear's 0.5, so one on one the spear still hits harder over time, and the scythe's cleave (the battleaxes' wide
 // sweep) is what makes it the best in a crowd. Its necro power, 15, is the kit's best (the Bone stave 10).
-// window.MEGA_RARE = { RARITY, SOURCES, LOG, FLASH, isMega, dropsOf, announce, given }
+// window.MEGA_RARE = { RARITY, SOURCES, LOG, FLASH, isMega, dropsOf, announce, given, received }
 // ============================================================================
 const MEGA_RARE = (() => {
   // the rarities above the rare drop: the banner's words, how long it stays up, the pack's word
@@ -26198,7 +26204,7 @@ const MEGA_RARE = (() => {
   const anyRows = () => { for (const id in SOURCES) if (SOURCES[id] && SOURCES[id].length) return true; return false; };
 
   // ---------- the moment ----------
-  const LOG = [];                               // { id, how: 'drop' | 'admin' | ..., n, at } for this session; never saved
+  const LOG = [];                               // { id, how: 'drop' | 'admin' | 'trade' | 'party' | 'pickup', n, at, from? } for this session; never saved
   const FLASH = { at: -1e9, id: null, x: 0, y: 0, n: 0 };
   function announce(id, how, x, y) {
     if (!isMega(id)) return false;
@@ -26214,6 +26220,34 @@ const MEGA_RARE = (() => {
     LOG.push({ id, how: how || 'given', n: n | 0 || 1, at: time });
     return announce(id, how || 'given', player.x, player.y);
   }
+  // one that lands with THIS knight from someone else (a trade, a drop party's prize, the ground): his banner, his line.
+  // What the full pack and bank sent to his feet this tick is marked seen, so picking it up is not a second moment.
+  function received(id, n, how, from) {
+    if (!isMega(id)) return false;
+    LOG.push({ id, how: how || 'received', n: n | 0 || 1, at: time, from: from || null });
+    if (how !== 'pickup') for (const d of drops) if (d.id === id && d.t === 0 && !d.seen) d.seen = true;
+    return announce(id, how || 'received', player.x, player.y);
+  }
+
+  // ---------- the ground: a mega rare picked up that he has not had the moment for ----------
+  // The core's pickup (07-update) marks a drop `taken` and then replaces `drops` with a filtered list, so this hook (it runs
+  // after the core update) reads last tick's list: a mega rare taken from it, not seen, that left him holding more than he
+  // held a tick ago, is his moment. One that turns up on the ground in the tick his own pack lost one is his own, put down:
+  // seen. HELD is how many of each mega rare he held at the end of the last tick.
+  const HELD = {}, CHECKED = new WeakSet();
+  let PREV = null;
+  HOOKS.update.push(() => {
+    if (PREV && PREV !== drops) for (const d of PREV) if (d.taken && !d.seen && isMega(d.id)) {
+      d.seen = true;
+      if (HELD[d.id] == null || countItem(d.id) > HELD[d.id]) received(d.id, d.qty, 'pickup');
+    }
+    for (const d of drops) if (!d.seen && !CHECKED.has(d) && isMega(d.id)) {
+      CHECKED.add(d);
+      if (HELD[d.id] != null && countItem(d.id) < HELD[d.id]) d.seen = true;
+    }
+    PREV = drops;
+    for (const id in SOURCES) HELD[id] = countItem(id);
+  });
 
   // ---------- the roll: after the monster's own drops, each SOURCES row for it, one time in `chance` ----------
   let TYPES = null;
@@ -26228,7 +26262,7 @@ const MEGA_RARE = (() => {
     const type = typeOf(def);
     if (type) for (const s of dropsOf(type)) {
       if (Math.random() >= 1 / s.chance) continue;
-      drops.push({ x: x + rint(-14, 14), y: y + rint(-14, 14), id: s.id, qty: 1, t: 0, rare: true, mega: true });
+      drops.push({ x: x + rint(-14, 14), y: y + rint(-14, 14), id: s.id, qty: 1, t: 0, rare: true, mega: true, seen: true });
       LOG.push({ id: s.id, how: 'drop', n: 1, at: time, monster: type });
       announce(s.id, 'drop', x, y);
     }
@@ -26274,6 +26308,27 @@ const MEGA_RARE = (() => {
           { plain, core, got: got.length, banner: lb && lb.text, style: lb && lb.style, rowsOk, none });
       } finally { Math.random = rnd; SOURCES.void_scythe.length = 0; drops.length = d0; levelBanner = null; if (b0) levelBanner = b0; LOG.length = l0; }
     }
+    // the ground: one he had no moment for is his moment when he picks it up; one he put down himself is not, nor his kill's roll
+    { const inv0 = player.inv, b0 = levelBanner, l0 = LOG.length;
+      const empty = () => new Array(INV_SLOTS).fill(null), at = (dx) => ({ x: player.x + dx, y: player.y, t: 0 });
+      try {
+        player.inv = empty(); levelBanner = null; F.step([]);
+        const d1 = Object.assign({ id: 'void_scythe', qty: 1 }, at(0)); drops.push(d1); F.step([]); F.step([]);
+        const lb = levelBanner, line = LOG[l0];
+        const picked = countItem('void_scythe') === 1 && !drops.includes(d1) && !!lb && lb.style === 'mega' && lb.sub === 'Void Scythe' && LOG.length === l0 + 1 && !!line && line.how === 'pickup';
+        // he puts it down (the pack's Drop: out of the pack, onto the ground a step away), then walks over it again
+        levelBanner = null; F.step([]);
+        player.inv = empty(); const d2 = Object.assign({ id: 'void_scythe', qty: 1 }, at(200)); drops.push(d2); F.step([]);
+        const own = d2.seen === true; d2.x = player.x; d2.y = player.y; F.step([]); F.step([]);
+        const back = countItem('void_scythe') === 1 && !drops.includes(d2) && !levelBanner && LOG.length === l0 + 1;
+        // his own kill's roll is already seen
+        player.inv = empty(); levelBanner = null; F.step([]);
+        const d3 = Object.assign({ id: 'void_scythe', qty: 1, mega: true, rare: true, seen: true }, at(0)); drops.push(d3); F.step([]); F.step([]);
+        const roll = countItem('void_scythe') === 1 && !levelBanner && LOG.length === l0 + 1;
+        check(P + 'off the ground: a Void Scythe he had no moment for raises the MEGA RARE banner and a "pickup" log line as he picks it up; one he put down himself, or his own kill\'s roll, picks up quietly',
+          picked && own && back && roll, { picked, own, back, roll, banner: lb && lb.text, how: line && line.how, log: LOG.length - l0 });
+      } finally { player.inv = inv0; drops = drops.filter(d => d.id !== 'void_scythe'); LOG.length = l0; levelBanner = b0 || null; }
+    }
     // the banner's words: only a mega rare announces, and the rarity's own name and time
     { const b0 = levelBanner; levelBanner = null;
       const no = announce('dragon_spear', 'test', 0, 0) === false && !levelBanner;
@@ -26282,7 +26337,7 @@ const MEGA_RARE = (() => {
       check(P + 'only an item marked mega rare raises the MEGA RARE banner', no && !!yes, { no, yes: !!yes }); }
   });
 
-  return { RARITY, SOURCES, LOG, FLASH, isMega, dropsOf, announce, given };
+  return { RARITY, SOURCES, LOG, FLASH, isMega, dropsOf, announce, given, received };
 })();
 window.MEGA_RARE = MEGA_RARE;
 
@@ -26424,6 +26479,24 @@ window.MEGA_RARE = MEGA_RARE;
       const wide = run(560, false), narrow = run(300, true);
       const ok = L => L.some(r => r.s === 'MEGA RARE' && r.fill === '#ffd76a') && L.some(r => r.s === 'Void Scythe' && r.fill === '#e9d5ff') && L.every(r => r.x - (r.w || 0) / 2 >= -1);
       check(P + 'the MEGA RARE banner draws its gold words and the item\'s name, wide and on a phone', ok(wide) && ok(narrow), { wide: wide.map(r => r.s + ' ' + r.fill), narrow: narrow.map(r => r.s) });
+    }
+    // the live path on phones: drawBanners with the real phone layouts (the scroll slot, a short lane that drops other banners'
+    // sentences) still says the item's name, beside the tag, inside the lane
+    if (window.HK && HK.drawBanners && HK.layoutFor && HK.audit) {
+      const b0 = levelBanner, out = {};
+      try {
+        levelBanner = { text: 'MEGA RARE', sub: 'Void Scythe', t: 4.5, style: 'mega' };
+        for (const [w, h] of [[390, 844], [844, 390], [360, 640]]) {
+          const L = HK.layoutFor(w, h, { touch: true, online: true, minimap: true }), lane = L.banners && L.banners[0], log = [];
+          if (!lane) { out[w + 'x' + h] = 'no lane'; continue; }
+          HK.drawBanners(HK.audit.fitCtx(log), L);
+          const tag = log.find(r => r.s === 'MEGA RARE'), name = log.find(r => r.s === 'Void Scythe');
+          out[w + 'x' + h] = { fam: L.fam, laneH: lane.h, tag: !!tag && tag.fill === '#ffd76a', name: !!name && name.fill === '#e9d5ff', inLane: !!name && name.x >= lane.x && name.x < lane.x + lane.w && name.y > lane.y && name.y <= lane.y + lane.h };
+        }
+      } finally { levelBanner = b0; }
+      const vals = Object.values(out);
+      check(P + 'on a phone the live banner (drawBanners, the real phone layouts) shows MEGA RARE and the item\'s name inside its lane',
+        vals.length === 3 && vals.every(v => v && v.tag && v.name && v.inLane), out);
     }
     // on the ground: drawn as itself without a throw; a plain drop goes on to the old drawing
     { let threw = null; try { const L = []; const c = HK.audit.fitCtx(L); const at = { x: player.x, y: player.y }; drawDrop(c, Object.assign({ id: 'void_scythe', qty: 1, t: 0.4, mega: true }, at)); drawDrop(c, Object.assign({ id: 'iron_sword', qty: 1, t: 0 }, at)); } catch (e) { threw = String(e && e.message || e); }
@@ -28369,9 +28442,10 @@ const HK = (() => {
   // RARITY TAG: the gold-and-purple plate a rarity above the rare drop wears (54-megarare's MEGA RARE): a purple
   // swallowtail ribbon with a gold edge and gold words, `h` tall, starting at x (align 'center': centred on x). It is what
   // the MEGA RARE banner stands on, and the wiki's tag on such an item's page. Returns its width.
+  const rarityTagW = (g, label, h) => tw(g, label, FC(800, Math.max(10, Math.round(h * 0.6)))) + Math.min(h * 0.38, 12) * 2 + h * 0.9;
   function rarityTag(g, x, y, label, h, o = {}) {
     const size = Math.max(10, Math.round(h * 0.6)), f = FC(800, size), n = Math.min(h * 0.38, 12);
-    const w = tw(g, label, f) + n * 2 + h * 0.9, x0 = o.align === 'center' ? x - w / 2 : x;
+    const w = rarityTagW(g, label, h), x0 = o.align === 'center' ? x - w / 2 : x;
     const path = () => { g.beginPath(); g.moveTo(x0, y); g.lineTo(x0 + w, y); g.lineTo(x0 + w - n, y + h / 2); g.lineTo(x0 + w, y + h); g.lineTo(x0, y + h); g.lineTo(x0 + n, y + h / 2); g.closePath(); };
     shadowed(g, () => { path(); g.fillStyle = '#1a0830'; g.fill(); }, 8, 2);
     const gr = g.createLinearGradient(x0, 0, x0 + w, 0); gr.addColorStop(0, '#3b1466'); gr.addColorStop(0.5, '#7433c4'); gr.addColorStop(1, '#3b1466');
@@ -28385,16 +28459,25 @@ const HK = (() => {
   }
   // BANNER: an area name (kind 'area') or a level-up / event headline (kind 'level'), in its lane, faded by alpha.
   // A level banner with style 'mega' (`levelBanner = { text, sub, t, style: 'mega' }`, 54-megarare) is the gold-and-purple
-  // MEGA RARE banner: its words on the rarity tag, the item's name under it in pale violet.
+  // MEGA RARE banner: its words on the rarity tag, the item's name under it in pale violet. In a small lane too short for the
+  // name under the tag (a phone's), the name stands beside the tag on one line, the two centred together: the name is never left out.
   function banner(g, r, o) {
     const phone = r.w < 420 || VW < 640;
     g.save(); g.globalAlpha *= cl(o.alpha == null ? 1 : o.alpha, 0, 1);
     const cx = r.x + r.w / 2;
     if (o.style === 'mega') {
       let h = Math.min(r.h - 4, o.small ? (phone ? 20 : 24) : phone ? 28 : 38);
-      while (h > 20 && tw(g, o.title, FC(800, Math.max(10, Math.round(h * 0.6)))) + Math.min(h * 0.38, 12) * 2 + h * 0.9 > r.w) h -= 1;
-      rarityTag(g, cx, r.y, o.title, h, { align: 'center', box: r, fitId: 'banner' });
-      if (o.sub) subLines(g, o.sub, cx, r.y + h + 2, r, o.small ? 12 : 14, '#e9d5ff', 0.85);
+      while (h > 20 && rarityTagW(g, o.title, h) > r.w) h -= 1;
+      if (o.sub && o.small && r.h - h - 2 < 15) {
+        const tagW = rarityTagW(g, o.title, h), gap = 8; let sz = 14;
+        while (sz > 11 && tagW + gap + tw(g, o.sub, FS(700, sz)) > r.w - 8) sz -= 0.5;
+        const f = FS(700, sz), x0 = cx - (tagW + gap + tw(g, o.sub, f)) / 2, y = r.y + Math.max(0, (r.h - h) / 2);
+        rarityTag(g, x0, y, o.title, h, { box: r, fitId: 'banner' });
+        text(g, o.sub, x0 + tagW + gap, y + h / 2 + realPx(f) * 0.36, { font: f, color: '#e9d5ff', halo: 4, haloColor: 'rgba(10,8,6,0.85)', box: r, fitId: 'banner:sub' });
+      } else {
+        rarityTag(g, cx, r.y, o.title, h, { align: 'center', box: r, fitId: 'banner' });
+        if (o.sub) subLines(g, o.sub, cx, r.y + h + 2, r, o.small ? 12 : 14, '#e9d5ff', 0.85);
+      }
     } else if (o.kind === 'area') {
       let size = o.small ? 18 : phone ? 22 : 30; while (size > 14 && tw(g, o.title, FC(800, size)) > r.w - 8) size -= 1;
       const ty = r.y + size;
@@ -29602,8 +29685,9 @@ const HK = (() => {
       shadowed(g, () => { rr(g, lane.x, lane.y, lane.w, lane.h, 5); g.fillStyle = 'rgba(20,15,13,0.94)'; g.fill(); }, 8, 3);
       rr(g, lane.x + 3, lane.y + 3, lane.w - 6, lane.h - 6, 3); g.strokeStyle = 'rgba(217,178,92,0.55)'; g.lineWidth = 1; g.stroke();
       g.restore();
+      // a short lane drops a banner's sentence, but never a mega rare's name (its banner puts it beside the tag)
       const tall = lane.h >= 60;
-      banner(g, { x: lane.x + 6, y: lane.y + (tall ? Math.max(4, (lane.h - (b.sub ? 54 : 30)) / 2) : 2), w: lane.w - 12, h: lane.h - 4 }, { kind: b.kind, title: b.title, sub: tall ? b.sub : null, alpha: a, small: !tall, style: b.style });
+      banner(g, { x: lane.x + 6, y: lane.y + (tall ? Math.max(4, (lane.h - (b.sub ? 54 : 30)) / 2) : 2), w: lane.w - 12, h: lane.h - 4 }, { kind: b.kind, title: b.title, sub: tall || b.style === 'mega' ? b.sub : null, alpha: a, small: !tall, style: b.style });
       return;
     }
     list.slice(0, 2).forEach((b, i) => { const lane = L.banners[i]; if (lane) banner(g, lane, { kind: b.kind, title: b.title, sub: b.sub, alpha: alphaOf(b), small: i > 0, style: b.style }); });
@@ -42155,6 +42239,8 @@ window.RETALIATE = RETALIATE;
     let left = r.qty - inPack, where = 'pack';
     if (left > 0 && bankAdd(r.id, left)) { left = 0; where = 'bank'; }
     if (left > 0) { drops.push({ x: player.x + rint(-10, 10), y: player.y + rint(-10, 10), id: r.id, qty: left, t: 0 }); where = 'feet'; }
+    // a mega rare (54-megarare) as the prize: its MEGA RARE banner, flash and chime for the knight who lit it, and a log line
+    if (window.MEGA_RARE) MEGA_RARE.received(r.id, r.qty, 'party');
     pr.claimed.push(id);
     while (pr.claimed.length > KEEP) pr.claimed.shift();
     if (how === 'prize') note('From a cracker you lit: ' + prizeWords(r) + '.');
@@ -43046,6 +43132,16 @@ window.RETALIATE = RETALIATE;
         const hat = countItem('party_hat_purple') === 1 && said('You found a purple party hat! Open your pack to wear it.') && !!levelBanner && levelBanner.text === 'Purple party hat!';
         player.inv = empty(); levelBanner = null;
         check(P + 'a prize this game does not know is not added and not claimed (the reload sentence), nor is one that comes while the title screen is up; a full pack sends it to the bank, in words; a party hat lands in the pack with its sentence and a gold banner', unknown && later && banked && hat, { unknown, later, banked, hat }); }
+      // a mega rare as the prize (54-megarare): the knight who lit it gets its MEGA RARE banner and a log line, once
+      if (window.MEGA_RARE) { quiet(); player.inv = empty(); levelBanner = null; const l0 = MEGA_RARE.LOG.length, f0 = MEGA_RARE.FLASH.n;
+        feed({ t: 'prize', id: 'p8.8', reward: { id: 'void_scythe', qty: 1 } });
+        const lb = levelBanner, line = MEGA_RARE.LOG[l0];
+        const mega = countItem('void_scythe') === 1 && !!lb && lb.style === 'mega' && lb.text === 'MEGA RARE' && lb.sub === 'Void Scythe' && MEGA_RARE.FLASH.n === f0 + 1
+          && MEGA_RARE.LOG.length === l0 + 1 && !!line && line.how === 'party' && line.id === 'void_scythe';
+        levelBanner = null; feed({ t: 'prize', id: 'p8.8', reward: { id: 'void_scythe', qty: 1 } });
+        const onceOnly = countItem('void_scythe') === 1 && !levelBanner && MEGA_RARE.LOG.length === l0 + 1;
+        MEGA_RARE.LOG.length = l0; player.inv = empty(); levelBanner = null; quiet();
+        check(P + 'a Void Scythe won from a cracker raises the MEGA RARE banner (with its name) on the lighter\'s own screen and writes a "party" line in its log; the same prize again gives nothing and no second banner', mega && onceOnly, { mega, onceOnly, banner: lb && lb.text, sub: lb && lb.sub, how: line && line.how }); }
 
       // 10. with the cloud save on, the claim waits for a push that holds the cracker id
       if (LG && window.CLOUD) {
@@ -49076,6 +49172,8 @@ window.MONSTER_LOOK = MONSTER_LOOK;
       if (left > 0 && bankAdd(it.id, left)) { left = 0; banked = true; }
       if (left > 0) { drops.push({ x: player.x + rint(-10, 10), y: player.y + rint(-10, 10), id: it.id, qty: left, t: 0 }); dropped = true; }
     }
+    // a mega rare (54-megarare) that came in this trade: its MEGA RARE banner, flash and chime here, and a line in its log
+    if (window.MEGA_RARE) for (const it of got) MEGA_RARE.received(it.id, it.qty, 'trade', withN);
     d.done.push(key); while (d.done.length > KEEP) d.done.shift();
     notify(`Traded with ${withN || 'a friend'}: you gave ${words(gave)} and got ${words(got)}.`);
     if (got.length) floatText(player.x, player.y - 30, '+' + words(got), ITEMS[got[0].id].color || '#f5c542');
@@ -49498,6 +49596,29 @@ window.MONSTER_LOOK = MONSTER_LOOK;
         const once2 = countItem('bread') === 3 && countItem('coins') === 23 && since(k1, 'trade_ack').length === 2;
         check(P + 'the trade window with a fake wire: Accept answers the ask; your pack offers (Add 1 / Add all), your offer takes back; Accept sends the version shown and waits; a change un-accepts; "Are you sure?" confirms; trade_done takes out and puts in exactly once (a repeat only acks)',
           answered && open && amounts && offerSent && packGone && took && accepted && waits && unaccepted && sure && confirmed && nothingYet && once1 && once2, { answered, open, amounts, offerSent, packGone, took, accepted, waits, unaccepted, sure, confirmed, nothingYet, once1, once2, bread: countItem('bread'), coins: countItem('coins') }); }
+      // 5b. a mega rare that comes in a trade (54-megarare): the knight who GETS it has the MEGA RARE banner, the flash and a
+      // "trade" line in its log on his own screen, once; a full pack and bank put it at his feet without a second moment on pickup
+      if (window.MEGA_RARE) { player.inv = empty(); addItem('coins', 3); player.trades = { done: [] }; levelBanner = null; const l0 = MEGA_RARE.LOG.length, f0 = MEGA_RARE.FLASH.n;
+        feed({ t: 'trade_done', tid: 61, id: null, with: 'Ethan', gave: [{ id: 'coins', qty: 3 }], got: [{ id: 'void_scythe', qty: 1 }] });
+        const lb = levelBanner, line = MEGA_RARE.LOG[l0];
+        const got = countItem('void_scythe') === 1 && countItem('coins') === 0 && !!lb && lb.style === 'mega' && lb.text === 'MEGA RARE' && lb.sub === 'Void Scythe'
+          && MEGA_RARE.FLASH.n === f0 + 1 && MEGA_RARE.LOG.length === l0 + 1 && !!line && line.how === 'trade' && line.from === 'Ethan' && line.id === 'void_scythe';
+        levelBanner = null; feed({ t: 'trade_done', tid: 61, id: null, with: 'Ethan', gave: [{ id: 'coins', qty: 3 }], got: [{ id: 'void_scythe', qty: 1 }] });
+        const once = countItem('void_scythe') === 1 && !levelBanner && MEGA_RARE.LOG.length === l0 + 1;
+        // a plain trade raises no banner and writes no line
+        feed({ t: 'trade_done', tid: 62, id: null, with: 'Ava', gave: [], got: [{ id: 'bread', qty: 2 }] });
+        const plain = !levelBanner && MEGA_RARE.LOG.length === l0 + 1;
+        // pack and bank full: at his feet, one moment on arrival, none when he picks it up
+        const bank0 = player.bank; player.bank = new Array(BANK_SLOTS).fill(null).map(() => ({ id: 'wood', qty: 1 }));
+        player.inv = empty().map(() => ({ id: 'iron_dagger', qty: 1 }));
+        feed({ t: 'trade_done', tid: 63, id: null, with: 'Ethan', gave: [], got: [{ id: 'void_scythe', qty: 1 }] });
+        const d = drops.find(x => x.id === 'void_scythe'), atFeet = !!d && d.seen === true && MEGA_RARE.LOG.length === l0 + 2;
+        player.bank = bank0; player.inv = empty(); levelBanner = null; if (d) { d.x = player.x; d.y = player.y; }
+        F.step([]); F.step([]);
+        const picked = countItem('void_scythe') === 1 && !drops.includes(d) && !levelBanner && MEGA_RARE.LOG.length === l0 + 2;
+        MEGA_RARE.LOG.length = l0; player.inv = empty(); levelBanner = null; drops = drops.filter(x => x.id !== 'void_scythe');
+        check(P + 'a Void Scythe received in a trade raises the MEGA RARE banner with its name, the flash and a "trade" log line (from the giver) on the receiver\'s screen, once; a plain trade does not; a full pack and bank put it at his feet with the one moment, and picking it up is not a second',
+          got && once && plain && atFeet && picked, { got, once, plain, atFeet, picked, banner: lb && lb.text, sub: lb && lb.sub, how: line && line.how, from: line && line.from }); }
       // 6. cancellation moves nothing: the world's trade_end, and the window closed by hand (trade_close goes out)
       { player.inv = empty(); addItem('bread', 5); addItem('coins', 3); const snap = JSON.stringify(player.inv);
         feed({ t: 'trade_open', id: 8, with: 'Ava', ver: 1 }); feed({ t: 'trade_state', id: 8, ver: 2, stage: 'confirm', mine: [{ id: 'bread', qty: 5 }], theirs: [{ id: 'coins', qty: 20 }], acc: [true, true], conf: [false, true] });
