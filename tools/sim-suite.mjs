@@ -150,6 +150,8 @@ export const UI_ONLY = [
   { file: '91-cloudkingdom', re: /^kingdom: K13b the gold stones are explained the same way everywhere a child reads about them/, why: 'one of the places is the book (44-wiki), a stand-in' },
   { file: '91-cloudkingdom', re: /^kingdom: K20 the wiki/, why: 'the book (44-wiki) is a stand-in' },
   { file: '91-royalmine', re: /^royalmine: audits: every new XP source is declared; progression has no dead gate; the book has pages/, why: 'the book\'s pages (44-wiki) and the item icons (80-icons) are stand-ins' },
+  { file: '89-necromancy', re: /^necro: N17 the teacher view/, why: 'it draws a friend\'s helpers, ward and Ghostlight through Necromancy\'s pictures (89-necroart) and the night\'s lights (35-night\'s HOOKS.nightLights pass): the drawing, stand-ins in a copy' },
+  { file: '89-oldbarrow', re: /^barrow: N18 the book/, why: 'the book (44-wiki) is a stand-in' },
   { file: '71-login', re: /^login \(teacher\): a knight loaded on the page \(title\.startSlot\) makes it no longer pristine/, why: 'the page\'s pristine flag is kept by the teacher screen (79-teacherscreen), a stand-in in a copy, which never signs anyone in' },
 ];
 if (want('selftest') || want('strippedtests')) {
