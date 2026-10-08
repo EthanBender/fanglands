@@ -801,10 +801,11 @@ const NECRO = (() => {
         // a helper hits with source 'necro' and pays 1 xp a damage; it times out
         HELPERS.length = 0; setLv(5); const hh = makeHelper('sq', { x: player.x + 40, y: player.y });
         const gob = mon('goblin', hh.x + 30, hh.y); gob.hp = 999; gob.maxHp = 999; solo([gob]); LAST.target = gob;
-        const srcs = []; const spy = (m, d, src) => { if (m === gob) srcs.push(src); }; HOOKS.hit.push(spy);
+        // (only the helper's own blows: a companion out with the knight, the --play bot's, may hit the goblin too)
+        const srcs = []; let necroDmg = 0; const spy = (m, d, src) => { if (m !== gob || src === 'companion') return; srcs.push(src); if (src === 'necro') necroDmg += d; }; HOOKS.hit.push(spy);
         sure(); const xh = player.skills.necromancy.xp, g0 = gob.hp; hh.cd = 0; tick(70); ROLL.sure = false;
         HOOKS.hit.splice(HOOKS.hit.indexOf(spy), 1);
-        const helperDmg = g0 - gob.hp, helperXp = player.skills.necromancy.xp - xh;
+        const helperDmg = necroDmg, helperXp = player.skills.necromancy.xp - xh;
         hh.life = 0.05; tick(10); const gone = !HELPERS.includes(hh);
         check(P + 'N5 Raise: on his own wood cross a Bone Squire stands, the marker is gone (that grave never rises), 25 xp is paid; from 5 bones too; 1 helper from 5, 2 from 50, 3 from 80, a brute counts two; a helper is no monster (nothing can hit it), hits with source \'necro\' for 1 xp a damage, and times out',
           laid && ok && !!sq && markerGone && paid === 25 && notAMonster && caps.join() === '0,1,2,3' && second === false && brute && load3 === 3 && over === false && helperDmg > 0 && srcs.every(s => s === 'necro') && srcs.length > 0 && helperXp === helperDmg && gone,
