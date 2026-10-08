@@ -259,6 +259,7 @@ const KNIGHTGEAR = (() => {
     else if (k === 'smithing') { g.fillRect(-2.2, -2.2, 4.4, 1.8); line(0, -0.6, 0, 2.6); }
     else if (k === 'crafting') { line(-2.2, 2.2, 2.2, -2.2); g.beginPath(); g.arc(1.6, -1.6, 0.8, 0, 7); g.stroke(); }
     else if (k === 'hitpoints') { g.beginPath(); g.moveTo(0, 2.6); g.bezierCurveTo(-3.4, 0, -1.6, -2.8, 0, -1); g.bezierCurveTo(1.6, -2.8, 3.4, 0, 0, 2.6); g.fill(); }
+    else if (k === 'necromancy') { ell(g, 0, -0.4, 2.3, 2.1); g.fill(); g.fillRect(-1.4, 1.2, 2.8, 1.4); g.fillStyle = shade(col, 0.7); ell(g, -0.9, -0.5, 0.6, 0.7); g.fill(); ell(g, 0.9, -0.5, 0.6, 0.7); g.fill(); }
     else if (k === 'agility') { for (let i = 0; i < 3; i++) { g.beginPath(); g.ellipse(-1 + i * 1.2, 0.6 - i * 0.9, 0.9, 2.2, 0.7, 0, 7); g.fill(); } }
     else { for (let i = 0; i < 5; i++) { const a = -Math.PI / 2 + i * Math.PI * 2 / 5; g.beginPath(); g.moveTo(0, 0); g.lineTo(Math.cos(a) * 2.7, Math.sin(a) * 2.7); g.stroke(); } }
     g.restore();

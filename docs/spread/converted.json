@@ -120,5 +120,6 @@
 "tools/ride-browser.mjs",
 "89-necroart.js",
 "89-necromancy.js",
-"89-oldbarrow.js"
+"89-oldbarrow.js",
+"tools/mmo-sim-necro.js"
 ]

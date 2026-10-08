@@ -1804,16 +1804,23 @@ const HK = (() => {
     const cr = fam === 'tab' ? 25 : 22;
     L.close = Cc('book:close', x + w - cr - 8, y + cr + 8, cr, true);
     const rowH = fam === 'desk' ? 44 : 48;
-    const nT = Math.max(12, o.tiles), nRows = Math.ceil(nT / 3);
+    const nT = Math.max(12, o.tiles);
+    // three tiles a row; a feature's extra tile (89-necromancy's SPELLS is the first) grows a fourth column instead of a fifth
+    // row where a row would shrink every tile under the 44 px tap (a landscape phone)
+    let cols = 3, nRows = Math.ceil(nT / 3);
     // Resume, Settings, one row per HOOKS.pauseMenu entry (Title screen is the first), New game
     const rows = ['resume', 'settings'].concat(Array.from({ length: Math.max(1, o.extraRows) }, (_, i) => i ? 'extra' + i : 'title'), ['newgame']);
     const grid = (gx, gy, gw, gh) => {
-      const tw_ = (gw - 2 * 12) / 3, keyH = fam === 'desk' ? 18 : 0;
-      const Dd = Math.min(fam === 'phoneL' ? 46 : 56, tw_ - 10, (gh - (nRows - 1) * 8) / nRows - 16 - keyH);
+      const keyH = fam === 'desk' ? 18 : 0;
+      const dOf = c => { const r = Math.ceil(nT / c), tw = (gw - (c - 1) * 12) / c; return Math.min(fam === 'phoneL' ? 46 : 56, tw - 10, (gh - (r - 1) * 8) / r - 16 - keyH); };
+      // (four across: the grid starts a little lower, so its corner tile keeps 8 px off the book's close seal)
+      if (nT > 12 && dOf(3) < 44 && dOf(4) > dOf(3)) { cols = 4; nRows = Math.ceil(nT / 4); gy += 6; gh -= 6; }
+      const tw_ = (gw - (cols - 1) * 12) / cols;
+      const Dd = dOf(cols);
       const th = Dd + 16 + keyH;
       // spread the rows down the page when there is room (a tall phone), never closer than the spec's pitch
       const pitch = Math.max(th + 8, Math.min(th + 40, (gh - th) / Math.max(1, nRows - 1)));
-      for (let i = 0; i < nT; i++) { const cx = gx + (i % 3) * (tw_ + 12) + tw_ / 2, cy = gy + Math.floor(i / 3) * pitch + Dd / 2; L.tiles.push(Cc('tile' + i, cx, cy, Dd / 2, true)); }
+      for (let i = 0; i < nT; i++) { const cx = gx + (i % cols) * (tw_ + 12) + tw_ / 2, cy = gy + Math.floor(i / cols) * pitch + Dd / 2; L.tiles.push(Cc('tile' + i, cx, cy, Dd / 2, true)); }
       L.tileD = Dd; L.tileW = tw_; L.grid = { x: gx, y: gy, w: gw, h: gh }; return gy + (nRows - 1) * pitch + th + 8;
     };
     const rowList = (rx, ry, rw) => {
@@ -3227,7 +3234,7 @@ HOOKS.selfTest.push((check, F, h) => {
       };
       const desk = paint(false), tch = paint(true);
       const split = typeof deskKeys === 'function' ? {
-        paren: JSON.stringify(deskKeys('Open your pack (I).')), to: JSON.stringify(deskKeys('X to climb out')), none: deskKeys('A goblin drops 3 coins (2).'), fake: deskKeys('Press Z to fly.'),
+        paren: JSON.stringify(deskKeys('Open your pack (I).')), to: JSON.stringify(deskKeys('X to climb out')), none: deskKeys('A goblin drops 3 coins (2).'), fake: deskKeys('Press 9 to fly.'),   // (a key no table lists: every letter is a key since 89-necromancy took Z and U)
       } : null;
       notice = null; window.__forceTouch = false;
       const ok = desk.cap && desk.text === 'Press E to climb in.' && desk.words.includes('Press ') && desk.words.includes(' to climb in.') && !desk.words.includes('Press E to climb in.')

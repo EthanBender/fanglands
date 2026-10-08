@@ -668,6 +668,8 @@
         stormstone_golem: () => giants.some(gi => gi.golem === 'stormstone_golem' && gi.regrow > 0 && gi.wakeChance > 0),
         mithril_golem: () => giants.some(gi => gi.golem === 'mithril_golem' && gi.regrow > 0 && gi.wakeChance > 0),
         ginormous_golem: () => !!(RM && RM.NUM && RM.NUM.REVIVE > 0),
+        // the Lantern Watch's (89-oldbarrow): a Deep Snuffer and Barrow brutes come with every Deep Watch a rope rings
+        deep_snuffer: () => !!(HOOKS.bossCall && HOOKS.bossCall.watch_deep), barrow_brute: () => !!(HOOKS.bossCall && HOOKS.bossCall.watch_deep),
       };
       const ways = {}, none = [], HELD = new Set(['the_fang', 'barrelbeast']);
       for (const t of types) {

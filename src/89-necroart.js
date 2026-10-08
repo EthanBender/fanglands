@@ -399,24 +399,33 @@ const NECRO_ART = (() => {
     g.restore();
     g.restore();
   }
-  function drawNameWisp(g, v) { const hov = Math.sin(time * 5 + (v.x || 0)) * 2; glow(g, 0, -6 + hov, 14, '232,246,255', 0.6); g.fillStyle = '#ffffff'; for (let k = 0; k < 4; k++) g.fillRect(-6 + k * 3.5, -7 + hov + (k % 2), 2.4, 2); }
+  function drawNameWisp(g, v) {
+    const hov = Math.sin(time * 5 + (v.x || 0)) * 2;
+    glow(g, 0, -6 + hov, 14, '232,246,255', 0.6);
+    // a ribbon of light with a name written on it, its tail streaming behind
+    g.fillStyle = hurtOf(v) ? 'rgba(255,220,220,0.85)' : 'rgba(240,248,255,0.85)';
+    g.beginPath(); g.moveTo(-9, -9 + hov); g.quadraticCurveTo(0, -12 + hov, 9, -9 + hov); g.lineTo(9, -4 + hov); g.quadraticCurveTo(0, -7 + hov, -9, -4 + hov); g.closePath(); g.fill();
+    g.strokeStyle = 'rgba(200,220,255,0.5)'; g.lineWidth = 1.2; g.beginPath(); g.moveTo(-9, -6 + hov); g.quadraticCurveTo(-14, -3 + hov + Math.sin(time * 7) * 2, -17, -6 + hov); g.stroke();
+    g.fillStyle = '#4a6a9a'; for (let k = 0; k < 5; k++) g.fillRect(-6.5 + k * 3, -8.4 + hov + (k % 2) * 0.6, 1.8, 2.6);
+    g.fillStyle = '#ffffff'; for (let k = 0; k < 3; k++) { g.beginPath(); g.arc(-4 + k * 4, -13 + hov - (time * 3 + k) % 3, 0.9, 0, TAU); g.fill(); }
+  }
   // boxes: [x0, y0, x1, y1] standing, then swinging, in game pixels round the middle (measured in Chromium: every 16th of
   // a turn, standing, walking and swinging, 3 px all round; ~/.fanglands/work/necromancy/measure.cjs)
   const LOOKS = {
-    watch_candle: { draw: drawCandle, r: 12, pic: false, box: [-21, -55, 21, 15, -21, -55, 21, 15] },
-    watch_bell: { draw: drawBell, r: 18, pic: false, box: [-33, -63, 33, 25, -33, -63, 33, 25] },
-    barrow_wisp: { draw: drawWisp(1, TEAL, '#bff6e8'), r: 11, pic: false, box: [-22, -42, 22, 15, -22, -42, 22, 15] },
-    shade_wisp: { draw: drawWisp(1.15, '120,130,200', '#b8c0f0'), r: 12, pic: false, box: [-25, -46, 25, 16, -25, -46, 25, 16] },
-    void_wisp: { draw: drawWisp(1.3, VIOLET, '#c8b0ff'), r: 13, pic: false, box: [-28, -50, 28, 17, -28, -50, 28, 17] },
-    old_snuffer: { draw: drawWisp(1.7, '180,200,180', '#d8e8d8'), r: 18, pic: false, box: [-36, -62, 36, 18, -36, -62, 36, 18] },
-    snuffer: { draw: drawWisp(1.9, '120,130,200', '#b8c0f0'), r: 20, pic: false, box: [-40, -68, 40, 19, -40, -68, 40, 19] },
-    deep_snuffer: { draw: drawWisp(2.1, VIOLET, '#c8b0ff'), r: 22, pic: false, box: [-44, -74, 44, 20, -44, -74, 44, 20] },
-    barrow_bones: { draw: drawBones, r: 12, pic: true, box: [-14, -26, 14, 20, -26, -30, 26, 26] },
-    barrow_guard: { draw: drawGuard, r: 13, pic: true, box: [-15, -29, 15, 20, -30, -37, 30, 28] },
-    barrow_brute: { draw: drawBrute, r: 30, pic: false, box: [-30, -52, 30, 41, -56, -66, 56, 52] },
-    barrow_king: { draw: drawKing, r: 20, pic: false, box: [-24, -48, 24, 30, -147, -48, 147, 87] },
-    the_hollow: { draw: drawHollow, r: 22, pic: false, box: [-42, -76, 42, 33, -147, -147, 147, 157] },
-    name_wisp: { draw: drawNameWisp, r: 10, pic: false, box: [-17, -23, 17, 11, -17, -23, 17, 11] },
+    watch_candle: { draw: drawCandle, r: 12, pic: false, box: [-20, -55, 20, 17, -20, -55, 20, 17] },
+    watch_bell: { draw: drawBell, r: 18, pic: false, box: [-30, -44, 30, 25, -30, -44, 30, 25] },
+    barrow_wisp: { draw: drawWisp(1, TEAL, '#bff6e8'), r: 11, pic: false, box: [-20, -25, 20, 14, -20, -25, 20, 14] },
+    shade_wisp: { draw: drawWisp(1.15, '120,130,200', '#b8c0f0'), r: 12, pic: false, box: [-23, -28, 22, 17, -23, -28, 22, 17] },
+    void_wisp: { draw: drawWisp(1.3, VIOLET, '#c8b0ff'), r: 13, pic: false, box: [-25, -30, 25, 19, -25, -30, 25, 19] },
+    old_snuffer: { draw: drawWisp(1.7, '180,200,180', '#d8e8d8'), r: 18, pic: false, box: [-32, -37, 31, 26, -32, -37, 31, 26] },
+    snuffer: { draw: drawWisp(1.9, '120,130,200', '#b8c0f0'), r: 20, pic: false, box: [-35, -40, 35, 29, -35, -40, 35, 29] },
+    deep_snuffer: { draw: drawWisp(2.1, VIOLET, '#c8b0ff'), r: 22, pic: false, box: [-38, -44, 38, 33, -38, -44, 38, 33] },
+    barrow_bones: { draw: drawBones, r: 12, pic: true, box: [-17, -23, 16, 21, -22, -23, 22, 21] },
+    barrow_guard: { draw: drawGuard, r: 13, pic: true, box: [-21, -27, 21, 22, -23, -27, 23, 22] },
+    barrow_brute: { draw: drawBrute, r: 30, pic: false, box: [-42, -45, 41, 40, -42, -45, 41, 40] },
+    barrow_king: { draw: drawKing, r: 20, pic: false, box: [-29, -48, 29, 31, -149, -52, 149, 87] },
+    the_hollow: { draw: drawHollow, r: 22, pic: false, box: [-43, -43, 42, 33, -149, -139, 148, 153] },
+    name_wisp: { draw: drawNameWisp, r: 10, pic: false, box: [-21, -24, 16, 9, -21, -24, 16, 9] },
   };
   if (window.MONSTER_LOOK && MONSTER_LOOK.addType) for (const t in LOOKS) MONSTER_LOOK.addType(t, LOOKS[t]);
   // their deaths: the undead crumble (79-deaths' kind, from MONSTER_DEFS `death: 'undead'`); the candles and the bell never die
@@ -446,7 +455,7 @@ const NECRO_ART = (() => {
       g.save(); g.rotate(-0.7); g.strokeStyle = item.color; g.lineWidth = 2.6; g.lineCap = 'round';
       g.beginPath(); g.moveTo(-9, 0); for (let x = -9; x <= 4; x += 1) g.lineTo(x, Math.sin(x * 1.1) * 1.2); g.stroke();
       g.fillStyle = '#e9e4d2'; g.beginPath(); g.arc(6.5, 0, 3.2, 0, TAU); g.fill(); ol(g);
-      g.fillStyle = '#1a1814'; g.fillRect(5.4, -1.8, 1.4, 1.4); g.fillRect(5.4, 0.6, 1.4, 1.4);
+      g.fillStyle = '#1a1814'; g.fillRect(5.6, -1.6, 2, 2);
       g.restore();
     });
     ICONS.set('tobias_stone', (g, size, item) => {        // an old grave slab, a curved scrape where the name was
@@ -479,9 +488,11 @@ const NECRO_ART = (() => {
   // =====================================================================================================================
   // GRANNY WICK: the townsfolk sample's own parts (83-townsart), an old woman in a dark shawl with a candle in her hand
   // =====================================================================================================================
-  if (window.TOWNSFOLK_ART && TOWNSFOLK_ART.addPeople) {
-    const S = TOWNSFOLK_ART.SKIN;
-    TOWNSFOLK_ART.addPeople('oldbarrow', {
+  if (typeof TOWNSFOLK_ART !== 'undefined' && TOWNSFOLK_ART.npc && TOWNSFOLK_ART.NEW_NPC) {
+    const S = TOWNSFOLK_ART.SKIN, TA = TOWNSFOLK_ART;
+    // (as 83-townsart's own addPeople registers a family: the drawing, the family's name, the spec)
+    const add = (family, specs) => { for (const [id, sp] of Object.entries(specs)) { TA.NEW_NPC[id] = TA.npc(sp); TA.NPC_FAMILY[id] = family; TA.NPC_SPEC[id] = sp; } };
+    add('oldbarrow', {
       granny_wick: {
         build: 'adult', size: 0.94, skin: S.fair,
         face: { eye: '#3a5a4a', lash: '#2a1a10', brow: '#d8d4cc', lines: true, age: 'elder', eyes: 'sleepy', mouth: 'smile', lip: '#a05a5a', nose: 'long', blush: 'rgba(220,140,140,0.35)' },

@@ -162,7 +162,10 @@ const NECRO = (() => {
   const boltMax = (lv = L(), p = power()) => 1 + Math.floor((lv + 8) * (p + 40) / 260);
   const attRoll = (lv = L(), p = power()) => (lv + 8) * (64 + 2 * p);
   const defRoll = m => ((MONSTER_DEFS[m.type] && MONSTER_DEFS[m.type].def) || 0) * 64 + 8 * 64;
-  const rollSpell = (m, max) => Math.min(MAX_DMG, rollHit(attRoll(), defRoll(m), max));
+  // every spell and helper roll goes through ROLL (the self-tests pin it to a sure hit for the most: ROLL.sure = true)
+  const ROLL = { sure: false };
+  const roll = (att, def, max) => ROLL.sure ? max : rollHit(att, def, max);
+  const rollSpell = (m, max) => Math.min(MAX_DMG, roll(attRoll(), defRoll(m), max));
 
   // ---------- who a spell may touch: never a knight (they are not monsters), a townsperson, a companion or livestock ----------
   const NEVER = new Set(['sheep', 'cow', 'chicken', 'pig', 'goat', 'horse', 'ally_knight', 'watch_candle', 'watch_bell']);
@@ -304,9 +307,9 @@ const NECRO = (() => {
       h.cd = H.every; h.attackT = 0.22;
       const max = h.maxHit || Math.max(1, Math.floor(H.max(L(), power())));
       if (H.slam) {
-        for (const m of monsters.slice()) if (fair(m) && dist(m.x, m.y, h.x, h.y) <= px(1.5) + m.r) necroHit(m, rollHit((H.lv(L()) + 8) * 64, defRoll(m), max), 'helper');
+        for (const m of monsters.slice()) if (fair(m) && dist(m.x, m.y, h.x, h.y) <= px(1.5) + m.r) necroHit(m, roll((H.lv(L()) + 8) * 64, defRoll(m), max), 'helper');
         FLASHES.push({ kind: 'slam', x: h.x, y: h.y + 10, t: 0, life: 0.5, map: here });
-      } else necroHit(t, rollHit((H.lv(L()) + 8) * 64, defRoll(t), max), 'helper');
+      } else necroHit(t, roll((H.lv(L()) + 8) * 64, defRoll(t), max), 'helper');
     }
   }
 
@@ -722,7 +725,7 @@ const NECRO = (() => {
     const open = () => { const s = h.openSpot ? h.openSpot(Math.floor(player.x / TILE), Math.floor(player.y / TILE)) : null; if (s) F.tp(s.x !== undefined ? s.x : s[0], s.y !== undefined ? s.y : s[1]); };
     const tick = n => { for (let i = 0; i < n; i++) F.step([]); };
     // the dice pinned for a sure hit for the most: the accuracy roll (under the chance) then the damage roll (the top)
-    const sure = () => { let k = 0; Math.random = () => (k++ % 2 === 0 ? 0 : 0.999); };
+    const sure = () => { ROLL.sure = true; };
     try {
       h.peace(true);
       if (window.INSTANCES && INSTANCES.active()) INSTANCES.leave();
@@ -758,7 +761,7 @@ const NECRO = (() => {
         BOLTS.length = 0; for (const k in CD) delete CD[k]; const nx = player.skills.necromancy.xp, hx = player.skills.hitpoints.xp, hp0 = gob.hp;
         cast('bolt'); for (let i = 0; i < 60 && BOLTS.length; i++) tick(1);
         const dmg = hp0 - gob.hp, xpN = player.skills.necromancy.xp - nx, xpH = player.skills.hitpoints.xp - hx;
-        Math.random = keep.rnd;
+        ROLL.sure = false;
         // never a townsperson (they are not monsters), a companion, livestock, the Watch's candles
         const never = ['sheep', 'cow', 'ally_knight', 'watch_candle', 'watch_bell'].filter(t => MONSTER_DEFS[t]).map(t => { const m = mon(t, player.x + 60, player.y); if (t === 'ally_knight') m.ally = true; solo([m]); return [t, !fair(m) && !boltTarget()]; });
         check(P + 'N3 Soul Bolt: refused with no focus; 2 spirit and a 1.2 s cooldown; the max hit at the five checkpoints (2, 7, 12, 24, 35: the spec\'s 22 at level 70 with power 38 is its arithmetic slip, the formula gives 24); a landed bolt pays 2 xp a damage and two thirds of that to Hitpoints; never a sheep, a cow, a companion or a candle',
@@ -797,7 +800,7 @@ const NECRO = (() => {
         HELPERS.length = 0; setLv(5); const hh = makeHelper('sq', { x: player.x + 40, y: player.y });
         const gob = mon('goblin', hh.x + 30, hh.y); gob.hp = 999; gob.maxHp = 999; solo([gob]); LAST.target = gob;
         const srcs = []; const spy = (m, d, src) => { if (m === gob) srcs.push(src); }; HOOKS.hit.push(spy);
-        sure(); const xh = player.skills.necromancy.xp, g0 = gob.hp; hh.cd = 0; tick(70); Math.random = keep.rnd;
+        sure(); const xh = player.skills.necromancy.xp, g0 = gob.hp; hh.cd = 0; tick(70); ROLL.sure = false;
         HOOKS.hit.splice(HOOKS.hit.indexOf(spy), 1);
         const helperDmg = g0 - gob.hp, helperXp = player.skills.necromancy.xp - xh;
         hh.life = 0.05; tick(10); const gone = !HELPERS.includes(hh);
@@ -830,12 +833,13 @@ const NECRO = (() => {
         const C = window.OLD_BARROW && OLD_BARROW.COTTAGE; let wallOk = true;
         if (C) { F.tp(C.x - 1, C.y + 1); player.facing = { x: 1, y: 0 }; const x0 = player.x; notice = null; const ok = cast('step'); wallOk = !ok && player.x === x0; }
         // open ground: 3 tiles (4 with the lantern), never into water
-        open(); player.facing = { x: 0, y: 1 }; for (const k in CD) delete CD[k]; N().spirit = 30;
+        { const sp = h.openSpot(Math.floor(player.x / TILE), Math.floor(player.y / TILE), (x, y) => [1, 2, 3, 4, 5].every(d => !SOLID.has(tileAt(x, y + d)) && tileAt(x, y + d) !== T.WATER)); F.tp(sp.x, sp.y); } player.facing = { x: 0, y: 1 }; for (const k in CD) delete CD[k]; N().spirit = 30;
         const sx = player.x, sy = player.y; const ok3 = cast('step'); const moved = Math.round((player.y - sy) / TILE);
         const onFixed = window.ATLAS && ATLAS.solidAt ? ATLAS.solidAt('over', Math.floor(player.x / TILE), Math.floor(player.y / TILE)) : false;
         r.wall = wallOk; r.ok3 = ok3; r.moved = moved; r.fixed = onFixed; r.x = player.x === sx;
+        F.tp(Math.floor(sx / TILE), Math.floor(sy / TILE)); player.equip.shield = 'soul_lantern'; for (const k in CD) delete CD[k]; N().spirit = 30; cast('step'); const lantern = Math.round((player.y - sy) / TILE); player.equip.shield = null;
         check(P + 'N8 Ghost Step: facing a wall he does not move (never through it); on open ground he blinks up to 3 tiles the way he faces (4 with the Soul lantern), never onto anything fixed-solid',
-          r.wall && (!ok3 || (moved >= 1 && moved <= 3 && r.x && !onFixed)), r); }
+          r.wall && ok3 && moved === 3 && r.x && !onFixed && lantern === 4, Object.assign(r, { lantern })); }
       freshState(); solo([]); empty();
       // ---- N9 Spikes, Siphon, Banish ----
       { setLv(60); wear('bone_stave'); open(); player.facing = { x: 1, y: 0 }; N().spirit = 99;
@@ -848,7 +852,7 @@ const NECRO = (() => {
         const a = mon('goblin', player.x + 50, player.y), b = mon('goblin', player.x - 60, player.y + 20), c = mon('goblin', player.x + px(5), player.y); for (const m of [a, b, c]) { m.hp = m.maxHp = 999; }
         solo([a, b, c]); for (const k in CD) delete CD[k]; addItem('bone', 3); sure(); cast('spikes'); const spk = [999 - a.hp, 999 - b.hp, 999 - c.hp];
         Math.random = keep.rnd;
-        const capOk = necroHit(mon('goblin', player.x, player.y), 9999, 'spell') === MAX_DMG;
+        ROLL.sure = false; const capOk = necroHit(mon('goblin', player.x, player.y), 9999, 'spell') === MAX_DMG;
         check(P + 'N9 Banish does two and a half times the damage to the undead and plain damage to anything else; Soul Siphon heals half the damage it lands; Bone Spikes hit every monster within 2 tiles and none further; no hit is ever more than 500',
           bz === Math.floor(max * 2.5) && bg === max && healed === Math.floor(sd / 2) && sd > 0 && spk[0] > 0 && spk[1] > 0 && spk[2] === 0 && capOk, { bz, bg, max, healed, sd, spk, capOk }); }
       freshState(); solo([]); empty();
@@ -892,7 +896,7 @@ const NECRO = (() => {
             const pup = monsters.find(m => m.nid === 's9999');
             res.puppet = !!pup && !!pup.remote;
             player.facing = { x: 1, y: 0 }; N().spirit = 999; for (const k in CD) delete CD[k]; BOLTS.length = 0; sure();
-            cast('bolt'); for (let i = 0; i < 60 && BOLTS.length; i++) { push({ t: 'mon', n: 'Ann', list: [row] }); F.step([]); }
+            cast('bolt'); for (let i = 0; i < 60 && BOLTS.length; i++) { push({ t: 'mon', n: 'Ann', list: [row] }); F.step([]); } ROLL.sure = false;
             const hits = sent.filter(m => m.t === 'hit'); res.hit = hits.length >= 1 && hits[0].nid === 's9999' && hits[0].knock === 0 && hits[0].dmg > 0 && hits[0].dmg <= MAX_DMG;
             // 60 s of casting and raising (helpers, the ward, the Ghostlight, bolts and spikes)
             sent.length = 0; addItem('bone', 50); addItem('grave_dust', 10); addItem('soul_shard', 10);
@@ -901,7 +905,6 @@ const NECRO = (() => {
               if (s % 90 === 0) { N().spirit = 999; for (const id of ['bolt', 'ward', 'raise', 'spikes', 'light', 'siphon']) { for (const k in CD) delete CD[k]; cast(id); } }
               F.step([]);
             }
-            Math.random = keep.rnd;
             const kinds = [...new Set(sent.map(m => m.t))].sort(); res.kinds = kinds; res.onlyPHit = kinds.every(t => t === 'p' || t === 'hit');
             const ps = sent.filter(m => m.t === 'p'); res.presences = ps.length; res.necroOn = ps.some(m => m.look && m.look.necro && m.look.necro.h);
           } catch (e) { res.threw = String(e && e.stack || e).slice(0, 300); }
@@ -955,7 +958,7 @@ const NECRO = (() => {
       if (window.ICONS && ICONS.audit) { const a = ICONS.audit(), mine = ['soul_shard', 'brute_bone', 'barrow_wand', 'gravewood_stave', 'cape_necromancy', 'tobias_stone', 'bramble_collar', 'little_bell', 'neds_turnip', 'kings_seal'];
         check(P + 'N19 every new item has an icon of its own: ICONS.audit() is still 0 shared and 0 missing', a.duplicates.length === 0 && a.missing.length === 0 && mine.every(id => ICONS.has(id)), { dup: a.duplicates.slice(0, 4), missing: a.missing.slice(0, 6), mine: mine.filter(id => !ICONS.has(id)) }); }
     } finally {
-      Math.random = keep.rnd; monsters = keep.mons;
+      ROLL.sure = false; Math.random = keep.rnd; monsters = keep.mons;
       player.equip = keep.equip; player.inv = keep.inv; for (const s of SKILL_DEFS) if (player.skills[s.key]) player.skills[s.key].xp = keep.xp[s.key];
       player.necro = JSON.parse(keep.necro); quest.necro = JSON.parse(keep.q); quest.barrow = JSON.parse(keep.barrow); quest.graves = JSON.parse(keep.graves);
       player.x = keep.x; player.y = keep.y; player.facing = keep.facing; player.hp = keep.hp; player.dayTime = keep.day; player.mech = keep.mech; player.attackCd = keep.cd;
@@ -973,7 +976,7 @@ const NECRO = (() => {
     power, spiritMax, spirit, addSpirit, refillRate, inCircle, circles, boltMax, attRoll, cast, castReady, canKnow, lockedWhy, costOf, coolLeft,
     isUndead, addUndead, fair, boltTarget, focusInHand, castFocus, fullSet, wearing, capOf, helperLoad, lifeMul, makeHelper, helpersHere, raise, ownGrave,
     ITEM_USE, itemUse: (id, fn, label) => { fn.label = label; ITEM_USE[id] = fn; },
-    seesGhost, lightsNear, remotes, readLook, lookNecro, lookKey, gates, landing, dummies, N, Q, HIT, mapNow,
+    ROLL, seesGhost, lightsNear, remotes, readLook, lookNecro, lookKey, gates, landing, dummies, N, Q, HIT, mapNow,
     learn: id => { if (SPELL[id]) { N().known[id] = true; return true; } return false; },
     blow: () => { lastBlow = time; }, quiet: () => { lastBlow = -1e9; }, sinceBlow: () => time - lastBlow,
     endWalk: () => { CH.walk = null; }, walking: () => CH.walk, clearHelpers: () => { HELPERS.length = 0; },

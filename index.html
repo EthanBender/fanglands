@@ -19605,6 +19605,8 @@ window.PLACE_KIT = PLACE_KIT;
         stormstone_golem: () => giants.some(gi => gi.golem === 'stormstone_golem' && gi.regrow > 0 && gi.wakeChance > 0),
         mithril_golem: () => giants.some(gi => gi.golem === 'mithril_golem' && gi.regrow > 0 && gi.wakeChance > 0),
         ginormous_golem: () => !!(RM && RM.NUM && RM.NUM.REVIVE > 0),
+        // the Lantern Watch's (89-oldbarrow): a Deep Snuffer and Barrow brutes come with every Deep Watch a rope rings
+        deep_snuffer: () => !!(HOOKS.bossCall && HOOKS.bossCall.watch_deep), barrow_brute: () => !!(HOOKS.bossCall && HOOKS.bossCall.watch_deep),
       };
       const ways = {}, none = [], HELD = new Set(['the_fang', 'barrelbeast']);
       for (const t of types) {
@@ -26557,8 +26559,9 @@ window.MEGA_RARE = MEGA_RARE;
       { icon, reach: m && +m.reach.toFixed(2), tier: tier && tier.key, alone, broken: window.ICONS ? ICONS.broken() : null });
     // the words: the pack's sentence, the book's blurb and tag
     const blurb = itemBlurb(ITEMS.void_scythe), page = window.WIKI ? WIKI.get('items', 'void_scythe') : null;
-    check(P + 'the pack says "Mega rare." first; the book\'s page has its blurb and no source yet; a plain item\'s sentence is unchanged',
-      blurb === 'Mega rare. Weapon: strength +48, accuracy +34, cleave.' && !!page && /held in both hands/.test(page.blurb || '') && page.sources.length === 0 && itemBlurb(ITEMS.iron_sword) === 'Weapon: strength +9, accuracy +8.',
+    // (its one source since Necromancy: the Hollow, 1 in 250; 54-megarare's SOURCES row, set from 89-necromancy's CHOICES)
+    check(P + 'the pack says "Mega rare." first; the book\'s page has its blurb and its one source (the Hollow); a plain item\'s sentence is unchanged',
+      blurb === 'Mega rare. Weapon: strength +48, accuracy +34, cleave.' && !!page && /held in both hands/.test(page.blurb || '') && page.sources.length === 1 && itemBlurb(ITEMS.iron_sword) === 'Weapon: strength +9, accuracy +8.',
       { blurb, page: !!page, sources: page && page.sources.length });
     // the banner: gold words on the purple tag, the item's name under it in pale violet; it fits a phone's lane
     if (window.HK && HK.banner && HK.audit) {
@@ -29213,16 +29216,23 @@ const HK = (() => {
     const cr = fam === 'tab' ? 25 : 22;
     L.close = Cc('book:close', x + w - cr - 8, y + cr + 8, cr, true);
     const rowH = fam === 'desk' ? 44 : 48;
-    const nT = Math.max(12, o.tiles), nRows = Math.ceil(nT / 3);
+    const nT = Math.max(12, o.tiles);
+    // three tiles a row; a feature's extra tile (89-necromancy's SPELLS is the first) grows a fourth column instead of a fifth
+    // row where a row would shrink every tile under the 44 px tap (a landscape phone)
+    let cols = 3, nRows = Math.ceil(nT / 3);
     // Resume, Settings, one row per HOOKS.pauseMenu entry (Title screen is the first), New game
     const rows = ['resume', 'settings'].concat(Array.from({ length: Math.max(1, o.extraRows) }, (_, i) => i ? 'extra' + i : 'title'), ['newgame']);
     const grid = (gx, gy, gw, gh) => {
-      const tw_ = (gw - 2 * 12) / 3, keyH = fam === 'desk' ? 18 : 0;
-      const Dd = Math.min(fam === 'phoneL' ? 46 : 56, tw_ - 10, (gh - (nRows - 1) * 8) / nRows - 16 - keyH);
+      const keyH = fam === 'desk' ? 18 : 0;
+      const dOf = c => { const r = Math.ceil(nT / c), tw = (gw - (c - 1) * 12) / c; return Math.min(fam === 'phoneL' ? 46 : 56, tw - 10, (gh - (r - 1) * 8) / r - 16 - keyH); };
+      // (four across: the grid starts a little lower, so its corner tile keeps 8 px off the book's close seal)
+      if (nT > 12 && dOf(3) < 44 && dOf(4) > dOf(3)) { cols = 4; nRows = Math.ceil(nT / 4); gy += 6; gh -= 6; }
+      const tw_ = (gw - (cols - 1) * 12) / cols;
+      const Dd = dOf(cols);
       const th = Dd + 16 + keyH;
       // spread the rows down the page when there is room (a tall phone), never closer than the spec's pitch
       const pitch = Math.max(th + 8, Math.min(th + 40, (gh - th) / Math.max(1, nRows - 1)));
-      for (let i = 0; i < nT; i++) { const cx = gx + (i % 3) * (tw_ + 12) + tw_ / 2, cy = gy + Math.floor(i / 3) * pitch + Dd / 2; L.tiles.push(Cc('tile' + i, cx, cy, Dd / 2, true)); }
+      for (let i = 0; i < nT; i++) { const cx = gx + (i % cols) * (tw_ + 12) + tw_ / 2, cy = gy + Math.floor(i / cols) * pitch + Dd / 2; L.tiles.push(Cc('tile' + i, cx, cy, Dd / 2, true)); }
       L.tileD = Dd; L.tileW = tw_; L.grid = { x: gx, y: gy, w: gw, h: gh }; return gy + (nRows - 1) * pitch + th + 8;
     };
     const rowList = (rx, ry, rw) => {
@@ -30636,7 +30646,7 @@ HOOKS.selfTest.push((check, F, h) => {
       };
       const desk = paint(false), tch = paint(true);
       const split = typeof deskKeys === 'function' ? {
-        paren: JSON.stringify(deskKeys('Open your pack (I).')), to: JSON.stringify(deskKeys('X to climb out')), none: deskKeys('A goblin drops 3 coins (2).'), fake: deskKeys('Press Z to fly.'),
+        paren: JSON.stringify(deskKeys('Open your pack (I).')), to: JSON.stringify(deskKeys('X to climb out')), none: deskKeys('A goblin drops 3 coins (2).'), fake: deskKeys('Press 9 to fly.'),   // (a key no table lists: every letter is a key since 89-necromancy took Z and U)
       } : null;
       notice = null; window.__forceTouch = false;
       const ok = desk.cap && desk.text === 'Press E to climb in.' && desk.words.includes('Press ') && desk.words.includes(' to climb in.') && !desk.words.includes('Press E to climb in.')
@@ -58185,6 +58195,7 @@ const KNIGHTGEAR = (() => {
     else if (k === 'smithing') { g.fillRect(-2.2, -2.2, 4.4, 1.8); line(0, -0.6, 0, 2.6); }
     else if (k === 'crafting') { line(-2.2, 2.2, 2.2, -2.2); g.beginPath(); g.arc(1.6, -1.6, 0.8, 0, 7); g.stroke(); }
     else if (k === 'hitpoints') { g.beginPath(); g.moveTo(0, 2.6); g.bezierCurveTo(-3.4, 0, -1.6, -2.8, 0, -1); g.bezierCurveTo(1.6, -2.8, 3.4, 0, 0, 2.6); g.fill(); }
+    else if (k === 'necromancy') { ell(g, 0, -0.4, 2.3, 2.1); g.fill(); g.fillRect(-1.4, 1.2, 2.8, 1.4); g.fillStyle = shade(col, 0.7); ell(g, -0.9, -0.5, 0.6, 0.7); g.fill(); ell(g, 0.9, -0.5, 0.6, 0.7); g.fill(); }
     else if (k === 'agility') { for (let i = 0; i < 3; i++) { g.beginPath(); g.ellipse(-1 + i * 1.2, 0.6 - i * 0.9, 0.9, 2.2, 0.7, 0, 7); g.fill(); } }
     else { for (let i = 0; i < 5; i++) { const a = -Math.PI / 2 + i * Math.PI * 2 / 5; g.beginPath(); g.moveTo(0, 0); g.lineTo(Math.cos(a) * 2.7, Math.sin(a) * 2.7); g.stroke(); } }
     g.restore();
@@ -72327,24 +72338,33 @@ const NECRO_ART = (() => {
     g.restore();
     g.restore();
   }
-  function drawNameWisp(g, v) { const hov = Math.sin(time * 5 + (v.x || 0)) * 2; glow(g, 0, -6 + hov, 14, '232,246,255', 0.6); g.fillStyle = '#ffffff'; for (let k = 0; k < 4; k++) g.fillRect(-6 + k * 3.5, -7 + hov + (k % 2), 2.4, 2); }
+  function drawNameWisp(g, v) {
+    const hov = Math.sin(time * 5 + (v.x || 0)) * 2;
+    glow(g, 0, -6 + hov, 14, '232,246,255', 0.6);
+    // a ribbon of light with a name written on it, its tail streaming behind
+    g.fillStyle = hurtOf(v) ? 'rgba(255,220,220,0.85)' : 'rgba(240,248,255,0.85)';
+    g.beginPath(); g.moveTo(-9, -9 + hov); g.quadraticCurveTo(0, -12 + hov, 9, -9 + hov); g.lineTo(9, -4 + hov); g.quadraticCurveTo(0, -7 + hov, -9, -4 + hov); g.closePath(); g.fill();
+    g.strokeStyle = 'rgba(200,220,255,0.5)'; g.lineWidth = 1.2; g.beginPath(); g.moveTo(-9, -6 + hov); g.quadraticCurveTo(-14, -3 + hov + Math.sin(time * 7) * 2, -17, -6 + hov); g.stroke();
+    g.fillStyle = '#4a6a9a'; for (let k = 0; k < 5; k++) g.fillRect(-6.5 + k * 3, -8.4 + hov + (k % 2) * 0.6, 1.8, 2.6);
+    g.fillStyle = '#ffffff'; for (let k = 0; k < 3; k++) { g.beginPath(); g.arc(-4 + k * 4, -13 + hov - (time * 3 + k) % 3, 0.9, 0, TAU); g.fill(); }
+  }
   // boxes: [x0, y0, x1, y1] standing, then swinging, in game pixels round the middle (measured in Chromium: every 16th of
   // a turn, standing, walking and swinging, 3 px all round; ~/.fanglands/work/necromancy/measure.cjs)
   const LOOKS = {
-    watch_candle: { draw: drawCandle, r: 12, pic: false, box: [-21, -55, 21, 15, -21, -55, 21, 15] },
-    watch_bell: { draw: drawBell, r: 18, pic: false, box: [-33, -63, 33, 25, -33, -63, 33, 25] },
-    barrow_wisp: { draw: drawWisp(1, TEAL, '#bff6e8'), r: 11, pic: false, box: [-22, -42, 22, 15, -22, -42, 22, 15] },
-    shade_wisp: { draw: drawWisp(1.15, '120,130,200', '#b8c0f0'), r: 12, pic: false, box: [-25, -46, 25, 16, -25, -46, 25, 16] },
-    void_wisp: { draw: drawWisp(1.3, VIOLET, '#c8b0ff'), r: 13, pic: false, box: [-28, -50, 28, 17, -28, -50, 28, 17] },
-    old_snuffer: { draw: drawWisp(1.7, '180,200,180', '#d8e8d8'), r: 18, pic: false, box: [-36, -62, 36, 18, -36, -62, 36, 18] },
-    snuffer: { draw: drawWisp(1.9, '120,130,200', '#b8c0f0'), r: 20, pic: false, box: [-40, -68, 40, 19, -40, -68, 40, 19] },
-    deep_snuffer: { draw: drawWisp(2.1, VIOLET, '#c8b0ff'), r: 22, pic: false, box: [-44, -74, 44, 20, -44, -74, 44, 20] },
-    barrow_bones: { draw: drawBones, r: 12, pic: true, box: [-14, -26, 14, 20, -26, -30, 26, 26] },
-    barrow_guard: { draw: drawGuard, r: 13, pic: true, box: [-15, -29, 15, 20, -30, -37, 30, 28] },
-    barrow_brute: { draw: drawBrute, r: 30, pic: false, box: [-30, -52, 30, 41, -56, -66, 56, 52] },
-    barrow_king: { draw: drawKing, r: 20, pic: false, box: [-24, -48, 24, 30, -147, -48, 147, 87] },
-    the_hollow: { draw: drawHollow, r: 22, pic: false, box: [-42, -76, 42, 33, -147, -147, 147, 157] },
-    name_wisp: { draw: drawNameWisp, r: 10, pic: false, box: [-17, -23, 17, 11, -17, -23, 17, 11] },
+    watch_candle: { draw: drawCandle, r: 12, pic: false, box: [-20, -55, 20, 17, -20, -55, 20, 17] },
+    watch_bell: { draw: drawBell, r: 18, pic: false, box: [-30, -44, 30, 25, -30, -44, 30, 25] },
+    barrow_wisp: { draw: drawWisp(1, TEAL, '#bff6e8'), r: 11, pic: false, box: [-20, -25, 20, 14, -20, -25, 20, 14] },
+    shade_wisp: { draw: drawWisp(1.15, '120,130,200', '#b8c0f0'), r: 12, pic: false, box: [-23, -28, 22, 17, -23, -28, 22, 17] },
+    void_wisp: { draw: drawWisp(1.3, VIOLET, '#c8b0ff'), r: 13, pic: false, box: [-25, -30, 25, 19, -25, -30, 25, 19] },
+    old_snuffer: { draw: drawWisp(1.7, '180,200,180', '#d8e8d8'), r: 18, pic: false, box: [-32, -37, 31, 26, -32, -37, 31, 26] },
+    snuffer: { draw: drawWisp(1.9, '120,130,200', '#b8c0f0'), r: 20, pic: false, box: [-35, -40, 35, 29, -35, -40, 35, 29] },
+    deep_snuffer: { draw: drawWisp(2.1, VIOLET, '#c8b0ff'), r: 22, pic: false, box: [-38, -44, 38, 33, -38, -44, 38, 33] },
+    barrow_bones: { draw: drawBones, r: 12, pic: true, box: [-17, -23, 16, 21, -22, -23, 22, 21] },
+    barrow_guard: { draw: drawGuard, r: 13, pic: true, box: [-21, -27, 21, 22, -23, -27, 23, 22] },
+    barrow_brute: { draw: drawBrute, r: 30, pic: false, box: [-42, -45, 41, 40, -42, -45, 41, 40] },
+    barrow_king: { draw: drawKing, r: 20, pic: false, box: [-29, -48, 29, 31, -149, -52, 149, 87] },
+    the_hollow: { draw: drawHollow, r: 22, pic: false, box: [-43, -43, 42, 33, -149, -139, 148, 153] },
+    name_wisp: { draw: drawNameWisp, r: 10, pic: false, box: [-21, -24, 16, 9, -21, -24, 16, 9] },
   };
   if (window.MONSTER_LOOK && MONSTER_LOOK.addType) for (const t in LOOKS) MONSTER_LOOK.addType(t, LOOKS[t]);
   // their deaths: the undead crumble (79-deaths' kind, from MONSTER_DEFS `death: 'undead'`); the candles and the bell never die
@@ -72374,7 +72394,7 @@ const NECRO_ART = (() => {
       g.save(); g.rotate(-0.7); g.strokeStyle = item.color; g.lineWidth = 2.6; g.lineCap = 'round';
       g.beginPath(); g.moveTo(-9, 0); for (let x = -9; x <= 4; x += 1) g.lineTo(x, Math.sin(x * 1.1) * 1.2); g.stroke();
       g.fillStyle = '#e9e4d2'; g.beginPath(); g.arc(6.5, 0, 3.2, 0, TAU); g.fill(); ol(g);
-      g.fillStyle = '#1a1814'; g.fillRect(5.4, -1.8, 1.4, 1.4); g.fillRect(5.4, 0.6, 1.4, 1.4);
+      g.fillStyle = '#1a1814'; g.fillRect(5.6, -1.6, 2, 2);
       g.restore();
     });
     ICONS.set('tobias_stone', (g, size, item) => {        // an old grave slab, a curved scrape where the name was
@@ -72407,9 +72427,11 @@ const NECRO_ART = (() => {
   // =====================================================================================================================
   // GRANNY WICK: the townsfolk sample's own parts (83-townsart), an old woman in a dark shawl with a candle in her hand
   // =====================================================================================================================
-  if (window.TOWNSFOLK_ART && TOWNSFOLK_ART.addPeople) {
-    const S = TOWNSFOLK_ART.SKIN;
-    TOWNSFOLK_ART.addPeople('oldbarrow', {
+  if (typeof TOWNSFOLK_ART !== 'undefined' && TOWNSFOLK_ART.npc && TOWNSFOLK_ART.NEW_NPC) {
+    const S = TOWNSFOLK_ART.SKIN, TA = TOWNSFOLK_ART;
+    // (as 83-townsart's own addPeople registers a family: the drawing, the family's name, the spec)
+    const add = (family, specs) => { for (const [id, sp] of Object.entries(specs)) { TA.NEW_NPC[id] = TA.npc(sp); TA.NPC_FAMILY[id] = family; TA.NPC_SPEC[id] = sp; } };
+    add('oldbarrow', {
       granny_wick: {
         build: 'adult', size: 0.94, skin: S.fair,
         face: { eye: '#3a5a4a', lash: '#2a1a10', brow: '#d8d4cc', lines: true, age: 'elder', eyes: 'sleepy', mouth: 'smile', lip: '#a05a5a', nose: 'long', blush: 'rgba(220,140,140,0.35)' },
@@ -72595,7 +72617,10 @@ const NECRO = (() => {
   const boltMax = (lv = L(), p = power()) => 1 + Math.floor((lv + 8) * (p + 40) / 260);
   const attRoll = (lv = L(), p = power()) => (lv + 8) * (64 + 2 * p);
   const defRoll = m => ((MONSTER_DEFS[m.type] && MONSTER_DEFS[m.type].def) || 0) * 64 + 8 * 64;
-  const rollSpell = (m, max) => Math.min(MAX_DMG, rollHit(attRoll(), defRoll(m), max));
+  // every spell and helper roll goes through ROLL (the self-tests pin it to a sure hit for the most: ROLL.sure = true)
+  const ROLL = { sure: false };
+  const roll = (att, def, max) => ROLL.sure ? max : rollHit(att, def, max);
+  const rollSpell = (m, max) => Math.min(MAX_DMG, roll(attRoll(), defRoll(m), max));
 
   // ---------- who a spell may touch: never a knight (they are not monsters), a townsperson, a companion or livestock ----------
   const NEVER = new Set(['sheep', 'cow', 'chicken', 'pig', 'goat', 'horse', 'ally_knight', 'watch_candle', 'watch_bell']);
@@ -72737,9 +72762,9 @@ const NECRO = (() => {
       h.cd = H.every; h.attackT = 0.22;
       const max = h.maxHit || Math.max(1, Math.floor(H.max(L(), power())));
       if (H.slam) {
-        for (const m of monsters.slice()) if (fair(m) && dist(m.x, m.y, h.x, h.y) <= px(1.5) + m.r) necroHit(m, rollHit((H.lv(L()) + 8) * 64, defRoll(m), max), 'helper');
+        for (const m of monsters.slice()) if (fair(m) && dist(m.x, m.y, h.x, h.y) <= px(1.5) + m.r) necroHit(m, roll((H.lv(L()) + 8) * 64, defRoll(m), max), 'helper');
         FLASHES.push({ kind: 'slam', x: h.x, y: h.y + 10, t: 0, life: 0.5, map: here });
-      } else necroHit(t, rollHit((H.lv(L()) + 8) * 64, defRoll(t), max), 'helper');
+      } else necroHit(t, roll((H.lv(L()) + 8) * 64, defRoll(t), max), 'helper');
     }
   }
 
@@ -73155,7 +73180,7 @@ const NECRO = (() => {
     const open = () => { const s = h.openSpot ? h.openSpot(Math.floor(player.x / TILE), Math.floor(player.y / TILE)) : null; if (s) F.tp(s.x !== undefined ? s.x : s[0], s.y !== undefined ? s.y : s[1]); };
     const tick = n => { for (let i = 0; i < n; i++) F.step([]); };
     // the dice pinned for a sure hit for the most: the accuracy roll (under the chance) then the damage roll (the top)
-    const sure = () => { let k = 0; Math.random = () => (k++ % 2 === 0 ? 0 : 0.999); };
+    const sure = () => { ROLL.sure = true; };
     try {
       h.peace(true);
       if (window.INSTANCES && INSTANCES.active()) INSTANCES.leave();
@@ -73191,7 +73216,7 @@ const NECRO = (() => {
         BOLTS.length = 0; for (const k in CD) delete CD[k]; const nx = player.skills.necromancy.xp, hx = player.skills.hitpoints.xp, hp0 = gob.hp;
         cast('bolt'); for (let i = 0; i < 60 && BOLTS.length; i++) tick(1);
         const dmg = hp0 - gob.hp, xpN = player.skills.necromancy.xp - nx, xpH = player.skills.hitpoints.xp - hx;
-        Math.random = keep.rnd;
+        ROLL.sure = false;
         // never a townsperson (they are not monsters), a companion, livestock, the Watch's candles
         const never = ['sheep', 'cow', 'ally_knight', 'watch_candle', 'watch_bell'].filter(t => MONSTER_DEFS[t]).map(t => { const m = mon(t, player.x + 60, player.y); if (t === 'ally_knight') m.ally = true; solo([m]); return [t, !fair(m) && !boltTarget()]; });
         check(P + 'N3 Soul Bolt: refused with no focus; 2 spirit and a 1.2 s cooldown; the max hit at the five checkpoints (2, 7, 12, 24, 35: the spec\'s 22 at level 70 with power 38 is its arithmetic slip, the formula gives 24); a landed bolt pays 2 xp a damage and two thirds of that to Hitpoints; never a sheep, a cow, a companion or a candle',
@@ -73230,7 +73255,7 @@ const NECRO = (() => {
         HELPERS.length = 0; setLv(5); const hh = makeHelper('sq', { x: player.x + 40, y: player.y });
         const gob = mon('goblin', hh.x + 30, hh.y); gob.hp = 999; gob.maxHp = 999; solo([gob]); LAST.target = gob;
         const srcs = []; const spy = (m, d, src) => { if (m === gob) srcs.push(src); }; HOOKS.hit.push(spy);
-        sure(); const xh = player.skills.necromancy.xp, g0 = gob.hp; hh.cd = 0; tick(70); Math.random = keep.rnd;
+        sure(); const xh = player.skills.necromancy.xp, g0 = gob.hp; hh.cd = 0; tick(70); ROLL.sure = false;
         HOOKS.hit.splice(HOOKS.hit.indexOf(spy), 1);
         const helperDmg = g0 - gob.hp, helperXp = player.skills.necromancy.xp - xh;
         hh.life = 0.05; tick(10); const gone = !HELPERS.includes(hh);
@@ -73263,12 +73288,13 @@ const NECRO = (() => {
         const C = window.OLD_BARROW && OLD_BARROW.COTTAGE; let wallOk = true;
         if (C) { F.tp(C.x - 1, C.y + 1); player.facing = { x: 1, y: 0 }; const x0 = player.x; notice = null; const ok = cast('step'); wallOk = !ok && player.x === x0; }
         // open ground: 3 tiles (4 with the lantern), never into water
-        open(); player.facing = { x: 0, y: 1 }; for (const k in CD) delete CD[k]; N().spirit = 30;
+        { const sp = h.openSpot(Math.floor(player.x / TILE), Math.floor(player.y / TILE), (x, y) => [1, 2, 3, 4, 5].every(d => !SOLID.has(tileAt(x, y + d)) && tileAt(x, y + d) !== T.WATER)); F.tp(sp.x, sp.y); } player.facing = { x: 0, y: 1 }; for (const k in CD) delete CD[k]; N().spirit = 30;
         const sx = player.x, sy = player.y; const ok3 = cast('step'); const moved = Math.round((player.y - sy) / TILE);
         const onFixed = window.ATLAS && ATLAS.solidAt ? ATLAS.solidAt('over', Math.floor(player.x / TILE), Math.floor(player.y / TILE)) : false;
         r.wall = wallOk; r.ok3 = ok3; r.moved = moved; r.fixed = onFixed; r.x = player.x === sx;
+        F.tp(Math.floor(sx / TILE), Math.floor(sy / TILE)); player.equip.shield = 'soul_lantern'; for (const k in CD) delete CD[k]; N().spirit = 30; cast('step'); const lantern = Math.round((player.y - sy) / TILE); player.equip.shield = null;
         check(P + 'N8 Ghost Step: facing a wall he does not move (never through it); on open ground he blinks up to 3 tiles the way he faces (4 with the Soul lantern), never onto anything fixed-solid',
-          r.wall && (!ok3 || (moved >= 1 && moved <= 3 && r.x && !onFixed)), r); }
+          r.wall && ok3 && moved === 3 && r.x && !onFixed && lantern === 4, Object.assign(r, { lantern })); }
       freshState(); solo([]); empty();
       // ---- N9 Spikes, Siphon, Banish ----
       { setLv(60); wear('bone_stave'); open(); player.facing = { x: 1, y: 0 }; N().spirit = 99;
@@ -73281,7 +73307,7 @@ const NECRO = (() => {
         const a = mon('goblin', player.x + 50, player.y), b = mon('goblin', player.x - 60, player.y + 20), c = mon('goblin', player.x + px(5), player.y); for (const m of [a, b, c]) { m.hp = m.maxHp = 999; }
         solo([a, b, c]); for (const k in CD) delete CD[k]; addItem('bone', 3); sure(); cast('spikes'); const spk = [999 - a.hp, 999 - b.hp, 999 - c.hp];
         Math.random = keep.rnd;
-        const capOk = necroHit(mon('goblin', player.x, player.y), 9999, 'spell') === MAX_DMG;
+        ROLL.sure = false; const capOk = necroHit(mon('goblin', player.x, player.y), 9999, 'spell') === MAX_DMG;
         check(P + 'N9 Banish does two and a half times the damage to the undead and plain damage to anything else; Soul Siphon heals half the damage it lands; Bone Spikes hit every monster within 2 tiles and none further; no hit is ever more than 500',
           bz === Math.floor(max * 2.5) && bg === max && healed === Math.floor(sd / 2) && sd > 0 && spk[0] > 0 && spk[1] > 0 && spk[2] === 0 && capOk, { bz, bg, max, healed, sd, spk, capOk }); }
       freshState(); solo([]); empty();
@@ -73325,7 +73351,7 @@ const NECRO = (() => {
             const pup = monsters.find(m => m.nid === 's9999');
             res.puppet = !!pup && !!pup.remote;
             player.facing = { x: 1, y: 0 }; N().spirit = 999; for (const k in CD) delete CD[k]; BOLTS.length = 0; sure();
-            cast('bolt'); for (let i = 0; i < 60 && BOLTS.length; i++) { push({ t: 'mon', n: 'Ann', list: [row] }); F.step([]); }
+            cast('bolt'); for (let i = 0; i < 60 && BOLTS.length; i++) { push({ t: 'mon', n: 'Ann', list: [row] }); F.step([]); } ROLL.sure = false;
             const hits = sent.filter(m => m.t === 'hit'); res.hit = hits.length >= 1 && hits[0].nid === 's9999' && hits[0].knock === 0 && hits[0].dmg > 0 && hits[0].dmg <= MAX_DMG;
             // 60 s of casting and raising (helpers, the ward, the Ghostlight, bolts and spikes)
             sent.length = 0; addItem('bone', 50); addItem('grave_dust', 10); addItem('soul_shard', 10);
@@ -73334,7 +73360,6 @@ const NECRO = (() => {
               if (s % 90 === 0) { N().spirit = 999; for (const id of ['bolt', 'ward', 'raise', 'spikes', 'light', 'siphon']) { for (const k in CD) delete CD[k]; cast(id); } }
               F.step([]);
             }
-            Math.random = keep.rnd;
             const kinds = [...new Set(sent.map(m => m.t))].sort(); res.kinds = kinds; res.onlyPHit = kinds.every(t => t === 'p' || t === 'hit');
             const ps = sent.filter(m => m.t === 'p'); res.presences = ps.length; res.necroOn = ps.some(m => m.look && m.look.necro && m.look.necro.h);
           } catch (e) { res.threw = String(e && e.stack || e).slice(0, 300); }
@@ -73388,7 +73413,7 @@ const NECRO = (() => {
       if (window.ICONS && ICONS.audit) { const a = ICONS.audit(), mine = ['soul_shard', 'brute_bone', 'barrow_wand', 'gravewood_stave', 'cape_necromancy', 'tobias_stone', 'bramble_collar', 'little_bell', 'neds_turnip', 'kings_seal'];
         check(P + 'N19 every new item has an icon of its own: ICONS.audit() is still 0 shared and 0 missing', a.duplicates.length === 0 && a.missing.length === 0 && mine.every(id => ICONS.has(id)), { dup: a.duplicates.slice(0, 4), missing: a.missing.slice(0, 6), mine: mine.filter(id => !ICONS.has(id)) }); }
     } finally {
-      Math.random = keep.rnd; monsters = keep.mons;
+      ROLL.sure = false; Math.random = keep.rnd; monsters = keep.mons;
       player.equip = keep.equip; player.inv = keep.inv; for (const s of SKILL_DEFS) if (player.skills[s.key]) player.skills[s.key].xp = keep.xp[s.key];
       player.necro = JSON.parse(keep.necro); quest.necro = JSON.parse(keep.q); quest.barrow = JSON.parse(keep.barrow); quest.graves = JSON.parse(keep.graves);
       player.x = keep.x; player.y = keep.y; player.facing = keep.facing; player.hp = keep.hp; player.dayTime = keep.day; player.mech = keep.mech; player.attackCd = keep.cd;
@@ -73406,7 +73431,7 @@ const NECRO = (() => {
     power, spiritMax, spirit, addSpirit, refillRate, inCircle, circles, boltMax, attRoll, cast, castReady, canKnow, lockedWhy, costOf, coolLeft,
     isUndead, addUndead, fair, boltTarget, focusInHand, castFocus, fullSet, wearing, capOf, helperLoad, lifeMul, makeHelper, helpersHere, raise, ownGrave,
     ITEM_USE, itemUse: (id, fn, label) => { fn.label = label; ITEM_USE[id] = fn; },
-    seesGhost, lightsNear, remotes, readLook, lookNecro, lookKey, gates, landing, dummies, N, Q, HIT, mapNow,
+    ROLL, seesGhost, lightsNear, remotes, readLook, lookNecro, lookKey, gates, landing, dummies, N, Q, HIT, mapNow,
     learn: id => { if (SPELL[id]) { N().known[id] = true; return true; } return false; },
     blow: () => { lastBlow = time; }, quiet: () => { lastBlow = -1e9; }, sinceBlow: () => time - lastBlow,
     endWalk: () => { CH.walk = null; }, walking: () => CH.walk, clearHelpers: () => { HELPERS.length = 0; },
@@ -73464,13 +73489,13 @@ const OLD_BARROW = (() => {
   //   H  Granny Wick's cottage (a BUILDINGS row)   d  its door    A  the Bone Altar    P  Rattle's post
   //   c  the candle circle (DECO, walkable, lit: spirit refills twice as fast)        ,  worn path (DIRT)
   //   t  an old barrow grave (DECO, flat)       b  a bone dummy (solid)              R  the rail post (HITCH)
-  //   L  the lych-gate (a roofed gate drawn over open ground, at necromancy.door)      .  the land as it is
+  //   L  the lych-gate (a roofed gate drawn over open ground, at necromancy.door)      .  open ground (trees go)
   const PLAN = [
     '....########....',
     '..S.########.S..',
     '....########....',
     '....###D####....',
-    '.....l.,.l......',
+    '......l,l.......',
     'rrrrr..,...HHHH.',
     'r...r..,...HHHH.',
     'rA.P,,ccc..HHHH.',
@@ -73494,7 +73519,7 @@ const OLD_BARROW = (() => {
   const SPOIL = [25, -7];   // the stone, face-down
   const COTTAGE = BF.pt({ id: 'barrow_cottage', x: 11, y: 5, w: 4, h: 4, name: "Granny Wick's cottage", roof: '#4a4038', door: 1, f: [[T.BED, 1, 1], [T.TABLE, 2, 1]] });
   COTTAGE.oldbarrow = true;
-  const GRANNY_NPC = BF.pt({ id: 'granny_wick', name: GRANNY, x: PT.granny[0], y: PT.granny[1], tunic: '#2f3a2a', hair: '#d8d4cc', woman: true, apron: true, role: 'barrow_keeper' });
+  const GRANNY_NPC = BF.pt({ id: 'granny_wick', name: GRANNY, x: PT.granny[0], y: PT.granny[1], tunic: '#2f3a2a', hair: '#d8d4cc', woman: true, apron: true, role: 'barrow_keeper', shop: 'barrow_candles' });
   GRANNY_NPC.oldbarrow = true;
 
   // ---------- the footprint (spec 5.2): WORLD_REV 8 ----------
@@ -73548,9 +73573,9 @@ const OLD_BARROW = (() => {
       const ch = PLAN[ry][rx]; if (ch === 'H' || ch === 'd') continue;
       const [x, y] = BF.p(rx, ry), t = at(x, y);
       if (KEEP.has(t)) continue;
-      // '.': the land as it is, on the box's edge (the Wolfwood's trees frame the place); inside it, open ground, so every
-      // part of the yard is reached (the trees and rocks there go, the flowers stay)
-      if (ch === '.') { const edge = rx === 0 || ry === 0 || rx === PLAN[ry].length - 1 || ry === PLAN.length - 1; if (!edge && NATURE.has(t) && t !== T.FLOWERS) set(x, y, T.GRASS); continue; }
+      // '.': open ground as the land has it (its trees and rocks go, its flowers stay), so every part of the place is reached
+      // and the ground round the mound joins the wood behind it as it did before (92-worldshape's walled-off check)
+      if (ch === '.') { if (NATURE.has(t) && t !== T.FLOWERS) set(x, y, T.GRASS); continue; }
       if (KIND_OF[ch]) thing(x, y, KIND_OF[ch]);
       else if (ch === 'D') { if (NATURE.has(t)) set(x, y, T.GRASS); }
       else if (ch === 'S') set(x, y, T.STONECIRCLE);
@@ -73576,6 +73601,29 @@ const OLD_BARROW = (() => {
       for (let s = 0; s <= n; s++) { const x = Math.round(ax + (bx - ax) * s / (n || 1)), y = Math.round(ay + (by - ay) * s / (n || 1)); if (NATURE.has(at(x, y)) && !A.reservedAt(x, y)) { set(x, y, T.GRASS); S.cleared++; } }
     }
     { const [sx, sy] = BF.p(SPOIL[0], SPOIL[1]); for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (NATURE.has(at(sx + dx, sy + dy))) { set(sx + dx, sy + dy, dx === 0 && dy === 0 ? T.DIRT : T.GRASS); S.cleared++; } }
+    // 7a. an apron of open ground round the mound and the ruin, outside the box: no pocket of the wood is shut in behind them
+    // (92-worldshape's walled-off check: the knight reached that ground across the staked plot before)
+    const inBox = (x, y) => { const q = A.box(ID); return x >= q[0] && x <= q[2] && y >= q[1] && y <= q[3]; };
+    for (const [i, c] of THINGS) { if (c.kind !== 'mound' && c.kind !== 'ruin') continue; const x = i % MAP_W, y = (i / MAP_W) | 0;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const ax = x + dx, ay = y + dy; if (!inBox(ax, ay) && inMap(ax, ay) && NATURE.has(at(ax, ay)) && at(ax, ay) !== T.FLOWERS) { set(ax, ay, T.GRASS); S.cleared++; } } }
+    // 7b. a quiet place: a hostile spawn in the box or its ring keeps its patch just outside it (moved, never removed: the wood
+    // keeps its wolves), found the same way on every game, open, clear of the main roads and of every other place
+    { const q = A.box(ID), ringOf = (x, y) => Math.max(q[0] - x, x - q[2], q[1] - y, y - q[3]);
+      const clear = (x, y) => { for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (!inMap(x + dx, y + dy) || SOLID.has(at(x + dx, y + dy))) return false; return true; };
+      const offRoad = (x, y) => { for (let dy = -7; dy <= 7; dy++) for (let dx = -7; dx <= 7; dx++) if (A.onMainRoad(x + dx, y + dy)) return false; return true; };
+      S.moved = [];
+      for (const sp of MONSTER_SPAWNS) {
+        const d = MONSTER_DEFS[sp.type]; if (!d || !d.aggro || ringOf(sp.tx, sp.ty) > RING) continue;
+        let to = null;
+        for (let r = 1; r <= 12 && !to; r++) for (let dy = -r; dy <= r && !to; dy++) for (let dx = -r; dx <= r && !to; dx++) {
+          if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+          const x = sp.tx + dx, y = sp.ty + dy;
+          if (ringOf(x, y) <= RING + 1 || !clear(x, y) || A.reservedAt(x, y) || A.builtAt(x, y) || !offRoad(x, y)) continue;
+          to = [x, y];
+        }
+        if (to) { S.moved.push([sp.type, sp.tx, sp.ty, to[0], to[1]]); sp.tx = to[0]; sp.ty = to[1]; }
+      }
+    }
     // 7. the dressing ring: worn ground outside the box, thinning over four tiles (its own dice)
     const b = A.box(ID), others = Object.keys(A.ANCHORS).filter(id => id !== ID && A.box(id)).map(id => A.box(id));
     for (let y = b[1] - RING; y <= b[3] + RING; y++) for (let x = b[0] - RING; x <= b[2] + RING; x++) {
@@ -73699,7 +73747,8 @@ const OLD_BARROW = (() => {
     if (q.q2 === 0) {
       if (lv < 5 || (quest.stage || 0) <= 10) { afterLine(); return; }
       q.q2 = 1; sfx('quest');
-      say2(["One of the graveyard's lot climbs out every night and walks east. It isn't hunting. It looks lost.", 'Go to the graveyard by the last knight\'s grave after dark, and see what it wants. Be kind to it.'], GRANNY); save(); return;
+      say("One of the graveyard's lot climbs out every night and walks east. It isn't hunting. It looks lost.", GRANNY);
+      say('Go to the graveyard by the last knight\'s grave after dark, and see what it wants. Be kind to it.', GRANNY); save(); return;
     }
     if (q.q2 < DONE) { say(q.q2 === 1 ? 'The graveyard, after dark. Be kind to whatever climbs out.' : 'Walk him home to Hollowford, dear. Someone there will know his name.', GRANNY); return; }
     // Q3: Lanterns for the Lost
@@ -74013,14 +74062,14 @@ const OLD_BARROW = (() => {
   // the candles and the bell cannot be hurt by a knight (a sword on one puts back what it took)
   HOOKS.hit.push((m, dmg) => { if (m && !m.remote && (m.type === 'watch_candle' || m.type === 'watch_bell') && dmg > 0) m.hp += dmg; });
   // each knight's own pay: he stood in the hall and landed a hit this watch; every wave the bell moves on pays him
-  const PAY = { last: null, hit: false, waves: 0, paid: 0 };
-  HOOKS.hit.push((m, dmg, source) => { if (m && WATCH_FOES.has(m.type) && (source === 'player' || source === 'necro' || source === undefined)) PAY.hit = true; });
+  const PAY = { last: null, hitAt: -1e9, start: 1e9, waves: 0, paid: 0, get hit() { return this.hitAt >= this.start; }, set hit(v) { this.hitAt = v ? time : -1e9; } };
+  HOOKS.hit.push((m, dmg, source) => { if (m && WATCH_FOES.has(m.type) && (source === 'player' || source === 'necro' || source === undefined)) PAY.hitAt = time; });
   const inHall = () => inDeep() && inR(DEEP.hall, Math.floor(player.x / TILE), Math.floor(player.y / TILE));
   function payTick() {
     const b = inDeep() ? bellMon() : null; if (!b) { PAY.last = null; return; }
     const st = b.state, was = PAY.last; PAY.last = st;
     if (was === null || st === was) return;
-    if (st === 'w1' && waveOf(was) === 0) { PAY.hit = false; PAY.waves = 0; }
+    if (st === 'w1' && waveOf(was) === 0) { PAY.start = time - 0.1; PAY.waves = 0; }
     const from = waveOf(was), tier = tierByN(b.maxHp);
     const done = (st === 'won' && from > 0) ? from : (waveOf(st) === from + 1 && from > 0) ? from : 0;
     if (done && tier && PAY.hit && inHall() && B().q1 >= DONE) {
@@ -74299,7 +74348,8 @@ const OLD_BARROW = (() => {
     if (gh.id === 'ambrose') {
       meetGhost('ambrose'); q.q2 = 2; NECRO.learn('raise');
       NECRO.makeHelper('sq', { x: gh.x, y: gh.y }, { quest: 'ambrose', look: 'ambrose', maxHit: 3 });
-      say2(['The skeleton turns its head. It looks lost, not hungry. It wants to walk east, and cannot remember why.', "Granny Wick's lesson comes back to you: Raise Bones. You lend it a little strength, and it stands straighter.", 'Walk with it to Hollowford. Someone there might know it.'], 'The Voice');
+      say('The skeleton turns its head. It looks lost, not hungry. It wants to walk east, and cannot remember why.', 'The Voice');
+      say2(["Granny Wick's lesson comes back to you: Raise Bones. You lend it a little strength, and it stands straighter.", 'Walk with it to Hollowford. Someone there might know it.'], 'The Voice');
       notify('You learned Raise Bones. Your new friend follows you now.'); save(); return;
     }
     if (gh.id === 'ned') {
@@ -74469,8 +74519,186 @@ const OLD_BARROW = (() => {
     WIKI.add('skills', { id: 'necromancy', name: 'Necromancy', get lines() { return skillLines(); } });
     WIKI.add('places', { id: 'old_barrow', name: 'The Old Barrow', lines: ['Where the first Wolfwood folk buried their kings, long before Thistledown. A roofless chapel, the Bone Altar, Granny Wick\'s cottage and a barrow mound with a stair down.', `${GRANNY} teaches Necromancy here, and ${RATTLE} tells jokes from his post.`, 'The candle circle doubles your spirit\'s refill. The bone dummies take Soul Bolts for practice (up to 300 xp a day).'] });
     WIKI.add('places', { id: 'barrow_deep', name: 'The Barrow Deep', lines: ['Under the Old Barrow. The Candle Hall holds the Lantern Watch: ring a bell-rope and keep at least one candle burning through six waves.', "Past the Ossuary (Bramble's collar opens the bone hand) is the King's Hall, and behind the King's own seal, the Sealed Vault.", 'Both of its bosses come back to fight again after a five minute rest.'] });
-    WIKI.add('quests', { id: 'nec_ghosts', name: 'Ghosts met', get lines() { const p = NECRO.N(), met = GHOST_IDS.filter(k => p.ghosts[k]); return [`Ghosts met: ${met.length} / ${GHOST_IDS.length}.`, 'Turn on your Ghostlight and talk to the ghosts you see. The wanderers come out at night.'].concat(met.map(k => GHOST_NAME[k])); } });
+    ghostPage();
   }
+  // "Ghosts met n / 12": only the ghosts met are named (nothing is spoiled); written again whenever the count moves
+  function ghostPage() {
+    if (!window.WIKI) return;
+    const g = player && player.necro && player.necro.ghosts ? player.necro.ghosts : {}, met = GHOST_IDS.filter(k => g[k]);
+    WIKI.add('quests', { id: 'nec_ghosts', name: 'Ghosts met', lines: [`Ghosts met: ${met.length} / ${GHOST_IDS.length}.`, 'Turn on your Ghostlight and talk to the ghosts you see. The wanderers come out at night.'].concat(met.map(k => GHOST_NAME[k])) });
+  }
+  let ghostN = -1;
+  HOOKS.update.push(() => { const g = player.necro && player.necro.ghosts, n = g ? GHOST_IDS.filter(k => g[k]).length : 0; if (n !== ghostN) { ghostN = n; ghostPage(); } });
+
+  // =====================================================================================================================
+  // SELF-TESTS (spec 8.3: N11 the place, N12 the quests, N13 the Watch, N14 the bosses, N18 the book)
+  // =====================================================================================================================
+  HOOKS.selfTest.push((check, F, h) => {
+    const P2 = 'barrow: ';
+    const keep = { x: player.x, y: player.y, facing: Object.assign({}, player.facing), equip: Object.assign({}, player.equip), inv: player.inv.map(q => q && Object.assign({}, q)), xp: {}, hp: player.hp,
+      barrow: JSON.stringify(quest.barrow || {}), necro: JSON.stringify(player.necro || {}), keyring: (player.keyring || []).slice(), day: player.dayTime, rnd: Math.random, stage: quest.stage, banner: levelBanner };
+    for (const k of SKILL_DEFS) keep.xp[k.key] = player.skills[k.key] ? player.skills[k.key].xp : 0;
+    const setLv = (k, lv) => { player.skills[k].xp = xpForLevel(lv); };
+    const tick = n => { for (let i = 0; i < n; i++) F.step([]); };
+    const drain = () => { dialog.queue.length = 0; dialog.cur = null; closePanel(); };
+    const chev = (a, b) => Math.max(Math.abs(a[0] - b[0]), Math.abs(a[1] - b[1]));
+    try {
+      h.peace(true);
+      if (window.INSTANCES && INSTANCES.active()) INSTANCES.leave();
+      // ---- N11 the place ----
+      { const bad = [], b = A.box(ID);
+        const left = window.SPREAD_GROUND ? [...SPREAD_GROUND.PROPS.values()].filter(q => q.place === ID).length : -1;
+        PLAN.forEach((row, ry) => [...row].forEach((ch, rx) => {
+          const [x, y] = BF.p(rx, ry), t = tileAt(x, y), c = THINGS.get(idx(x, y)), d = DECO.at(x, y);
+          const want = { '#': () => t === SOLID_T() && c && c.kind === 'mound', r: () => t === SOLID_T() && c && c.kind === 'ruin', A: () => t === SOLID_T() && c && c.kind === 'altar', P: () => t === SOLID_T() && c && c.kind === 'rattle',
+            l: () => t === SOLID_T() && c && c.kind === 'lantern', b: () => t === SOLID_T() && c && c.kind === 'dummy', S: () => t === T.STONECIRCLE, c: () => !!d && d.kind === 'barrow_candle', t: () => !!d && d.kind === 'old_grave',
+            R: () => t === T.HITCH, D: () => t === Tn('DUNGEON_DOOR'), ',': () => t === T.DIRT, L: () => t === T.DIRT, H: () => t === T.HWALL || t === T.FLOOR || t === T.BED || t === T.TABLE, d: () => t === T.DOOR }[ch];
+          if (want && !want()) bad.push(ch + '@' + rx + ',' + ry + '=' + tileName(t));
+        }));
+        const ports = [['necromancy.altar', 'altar'], ['necromancy.mound_door', 'door'], ['necromancy.granny', 'granny'], ['necromancy.door', 'gate']].filter(([port, k]) => { const a = A.port(port), q = P(k); return !a || a[0] !== q[0] || a[1] !== q[1]; });
+        // the people: 4+ tiles off the rail and every signpost round the place
+        const post = POST ? [POST.x, POST.y] : null, signs = [];
+        for (let y = b[1] - 8; y <= b[3] + 8; y++) for (let x = b[0] - 8; x <= b[2] + 8; x++) if (tileAt(x, y) === T.SIGN) signs.push([x, y]);
+        const near = [P('granny'), P('rattle')].filter(q => (post && chev(q, post) < 4) || signs.some(sg => chev(q, sg) < 4));
+        // nothing hostile in the box or its 6-tile ring
+        const hostile = MONSTER_SPAWNS.filter(sp => sp.tx >= b[0] - RING && sp.tx <= b[2] + RING && sp.ty >= b[1] - RING && sp.ty <= b[3] + RING && MONSTER_DEFS[sp.type] && MONSTER_DEFS[sp.type].aggro).map(sp => sp.type + '@' + sp.tx + ',' + sp.ty);
+        const rev = A.REVS[8], foot = rev && rev.boxes.some(q => q[0] <= b[0] - RING && q[1] <= b[1] - RING && q[2] >= b[2] + RING && q[3] >= b[3] + RING);
+        const rail = RAILS.find(q => q.id === ID), railOk = !!rail && !rail.reserved && !!rail.at() && tileAt(rail.at().x, rail.at().y) === T.HITCH;
+        const reg = REGIONS.find(q => q.atlas === ID);
+        check(P2 + "N11 the Old Barrow is built: its stakes and plaque are gone, every cell of the plan is laid (the mound, the ruin, the altar, Rattle's post, the lanterns, the dummies, the standing stones, the candle circle, the old graves, the cottage, the stair down, the rail), 01-atlas's ports name the same points, Granny Wick and Rattle stand 4+ tiles off the rail and every signpost, nothing hostile spawns in the box or its 6-tile ring, WORLD_REV 8 declares the box with its ring",
+          A.isBuilt(ID) && left === 0 && STATS.stakes > 0 && !bad.length && !ports.length && !near.length && !hostile.length && WORLD_REV === 8 && !!foot && railOk && !!reg && reg.sub === A.BUILT.get(ID).sub,
+          { left, stakes: STATS.stakes, bad: bad.slice(0, 8), ports, near, hostile, foot: !!foot, railOk, sub: reg && reg.sub }); }
+      { // the stair: E on it from its step goes down into the Barrow Deep; the stair up comes back out onto the step
+        const [sx, sy] = P('step'), [dx, dy] = P('door'); F.tp(sx, sy); F.face(dx, dy); F.press('KeyE'); tick(2);
+        const inside = INSTANCES.active() === DEEP_ID, at = [Math.floor(player.x / TILE), Math.floor(player.y / TILE)];
+        F.tp(DEEP.exit[0], DEEP.exit[1] + 1); F.face(DEEP.exit[0], DEEP.exit[1]); F.press('KeyE'); tick(2);
+        const out = !INSTANCES.active() && Math.abs(Math.floor(player.x / TILE) - sx) <= 1 && Math.abs(Math.floor(player.y / TILE) - sy) <= 1;
+        // and building on its ground is refused, by name
+        if (INSTANCES.active()) INSTANCES.leave();
+        h.give('goblin_trap', 1); const [gx, gy] = BF.p(13, 12); F.tp(gx, gy + 1); player.facing = { x: 0, y: -1 }; notice = null; const n0 = countItem('goblin_trap'); placeAction('goblin_trap'); const refused = countItem('goblin_trap') === n0 && !!notice && /Old Barrow's ground/.test(notice.text);
+        check(P2 + "N11 the stair in the mound goes down into the Barrow Deep (at its stair foot), the stair up comes back out onto the step, and nothing is built on the Old Barrow's ground",
+          inside && at[0] === DEEP.entry[0] && at[1] === DEEP.entry[1] && out && refused, { inside, at, out, refused, notice: notice && notice.text }); }
+      // ---- N12 the quests: each one's row, its words and its map ring; and Q1 walked by the bot ----
+      { const ids = ['nec_bramble', 'nec_bell', 'nec_lanterns', 'nec_king', 'nec_name'], bad = [];
+        for (let k = 0; k < ids.length; k++) {
+          const id = ids[k], key = 'q' + (k + 1); quest.barrow = { q1: 9, q2: 9, q3: 9, q4: 9, q5: 9, lanterns: [] };
+          for (let st = 1; st < (k === 0 ? 6 : 3); st++) {
+            quest.barrow[key] = st; for (let j = 0; j < k; j++) quest.barrow['q' + (j + 1)] = 9; for (let j = k + 1; j < 5; j++) quest.barrow['q' + (j + 1)] = 0;
+            const text = HOOKS.questText[id](), active = HOOKS.activeQuests.some(f => (f() || []).includes(id));
+            let target = null; for (const f of HOOKS.mapTarget) { const t = f(); if (t && t.id === id) { target = t; break; } }
+            if (!QUEST_DEFS[id] || !text || text === 'Done.' || !active || !target) bad.push(id + ' stage ' + st + ': ' + JSON.stringify({ text: !!text, active, target: !!target }));
+          }
+          quest.barrow[key] = 9; if (HOOKS.questText[id]() !== 'Done.' || HOOKS.activeQuests.some(f => (f() || []).includes(id))) bad.push(id + ' after');
+        }
+        const givers = ['tobias_stone', 'bramble_collar', 'little_bell', 'neds_turnip', 'kings_seal'].filter(k => !(ITEMS[k] && typeof ITEMS[k].giver === 'string' && ITEMS[k].unique));
+        // after the win, Granny says an after-line (and her shelf opens)
+        quest.barrow = { q1: 9, q2: 9, q3: 9, q4: 9, q5: 9, lanterns: [] }; drain(); grannyTalk(GRANNY_NPC); const after = [dialog.cur, ...dialog.queue].some(d => d && AFTER.includes(d.text)) && panel === 'shop'; drain();
+        check(P2 + 'N12 the five quests: each is a QUEST_DEFS row from its first word, with its text, its place in the active list and a ring on the map at every stage, and Done after; every story item says who gives it; after the win Granny Wick has her after-lines and her shelf',
+          !bad.length && !givers.length && after && QUEST_INFO_OK(), { bad: bad.slice(0, 6), givers, after }); }
+      { // Q1 walked: Granny, the wand, bolts on a dummy to Necromancy 3, Ghostlight, Bramble, the paw prints, the stone, Granny, the spot
+        quest.barrow = {}; player.necro = { spirit: 50, known: {}, ready: 'bolt', ghosts: {}, watch: { best: 0 } }; player.keyring = (player.keyring || []).filter(k => k !== 'bramble_collar');
+        setLv('necromancy', 1); setLv('melee', 10); setLv('defence', 10); player.inv = new Array(INV_SLOTS).fill(null); for (const s of EQUIP_SLOTS) player.equip[s] = null;
+        const r = {};
+        const [gx, gy] = P('granny'); F.tp(gx, gy + 2); drain(); F.talk('granny_wick'); r.q1 = B().q1 === 1 && countItem('barrow_wand') === 1;
+        drain(); const slot = player.inv.findIndex(q => q && q.id === 'barrow_wand'); if (slot >= 0) equipItem(slot); r.wand = player.equip.weapon === 'barrow_wand';
+        // the bone dummies: face one and bolt it (spirit topped up between), until Necromancy 3
+        const dm = [...THINGS.entries()].find(([, c]) => c.kind === 'dummy'); const dtx = dm[0] % MAP_W, dty = (dm[0] / MAP_W) | 0;
+        F.tp(dtx - 2, dty); F.face(dtx, dty); let n = 0;
+        while (skillLv('necromancy') < 3 && n++ < 200) { NECRO.N().spirit = 30; player.attackCd = 0; F.press('Space'); tick(2); }
+        r.lv3 = skillLv('necromancy') >= 3; r.bolts = n;
+        drain(); F.tp(gx, gy + 2); F.talk('granny_wick'); r.q1b = B().q1 === 2 && !!NECRO.N().known.light;
+        drain(); NECRO.N().ready = 'light'; NECRO.N().spirit = 30; NECRO.castReady(); r.gl = !!NECRO.N().gl;
+        const [bx, by] = P('bramble'); const seen = visibleGhosts().some(gh => gh.id === 'bramble');
+        F.tp(bx, by + 1); F.face(bx, by); F.press('KeyE'); tick(2); r.bramble = seen && B().q1 === 3 && !!NECRO.N().ghosts.bramble;
+        drain(); const [sx, sy] = BF.p(SPOIL[0], SPOIL[1]); F.tp(sx, sy + 1); F.face(sx, sy); F.press('KeyE'); tick(2); r.stone = B().q1 === 4 && countItem('tobias_stone') === 1;
+        drain(); F.tp(gx, gy + 2); F.talk('granny_wick'); r.frown = B().q1 === 5;
+        drain(); const x0 = player.skills.necromancy.xp; const [tx, ty] = P('tobias'); F.tp(tx + 1, ty); F.face(tx, ty); F.press('KeyE'); tick(2);
+        r.done = B().q1 === DONE && countItem('bramble_collar') === 1 && countItem('tobias_stone') === 0 && player.skills.necromancy.xp - x0 === REWARD.q1;
+        check(P2 + "N12 Q1 walked by the bot: Granny Wick hands over the Barrow wand and teaches Soul Bolt; bolts on a bone dummy reach Necromancy 3; she teaches Ghostlight; with it on Bramble shows by the mound and trots off; E on the spoil turns up Tobias's stone; Granny frowns at the scrape; E at his empty place sets it and Bramble rests (Bramble's collar, 450 xp)",
+          Object.values(r).every(v => v === true || typeof v === 'number'), r); }
+      drain();
+      // ---- N13 the Lantern Watch ----
+      { quest.barrow = { q1: 9, q2: 9, q3: 9, q4: 0, q5: 0, lanterns: [] }; setLv('necromancy', 70);
+        INSTANCES.enter(DEEP_ID); tick(2);
+        const r = {};
+        // a puppet view (online, not the keeper): pulling a rope asks the keeper, and nothing is spawned here
+        { const was = { online: NET.online, keeper: COOP.isKeeper, call: COOP.call }; const calls = [];
+          try { NET.online = () => true; COOP.isKeeper = () => false; COOP.call = id => { calls.push(id); return 'sent'; };
+            const n0 = monsters.length; F.tp(DEEP.ropes.watch_dusk[0], DEEP.ropes.watch_dusk[1] + 1); F.face(DEEP.ropes.watch_dusk[0], DEEP.ropes.watch_dusk[1]); F.press('KeyE'); tick(30);
+            r.puppet = calls.join() === 'watch_dusk' && monsters.length === n0 && !running();
+          } finally { NET.online = was.online; COOP.isKeeper = was.keeper; COOP.call = was.call; } }
+        // the keeper: the bell streams w1 .. w6 and won; each wave pays once, only with a hit landed, in the hall
+        drain(); const [hx, hy] = [DEEP.bell[0], DEEP.bell[1] + 2]; F.tp(hx, hy);
+        const states = []; const x0 = player.skills.necromancy.xp, s0 = countItem('soul_shard');
+        r.started = startWatch('dusk') === true;
+        let hit = false;
+        for (let i = 0; i < 60 * 120 && bellMon().state !== 'won'; i++) {
+          const st = bellMon().state; if (states[states.length - 1] !== st) states.push(st);
+          const fs = foes(); if (fs.length) { if (!hit) { hitMonster(fs[0], 1, 0); hit = true; } for (const m of fs) { m.dead = true; m.deadT = 0; } }
+          for (const c of candles()) c.hp = c.maxHp;   // keep them burning
+          F.step([]);
+        }
+        states.push(bellMon().state); tick(2);
+        r.states = states.join(' '); r.won = bellMon().state === 'won';
+        r.paid = player.skills.necromancy.xp - x0; r.shards = countItem('soul_shard') - s0;
+        // losing every candle ends it as lost
+        for (let i = 0; i < 60 * 12 && bellMon().state !== 'idle'; i++) F.step([]);
+        startWatch('dusk'); for (const c of candles()) c.hp = 0; tick(3); r.lost = bellMon().state === 'lost';
+        for (let i = 0; i < 60 * 12 && bellMon().state !== 'idle'; i++) F.step([]);
+        // the Deep Watch's 1 in 40 kit roll, the dice pinned under it
+        Math.random = () => 0; const d0 = drops.length; PAY.last = 'w6'; PAY.hit = true; bellMon().state = 'won'; bellMon().maxHp = 3; payTick(); const kit = drops.slice(d0).some(d => MONSTER_DEFS.zombie_brute.drops.rare.table.some(t => t[0] === d.id)); Math.random = keep.rnd;
+        bellMon().state = 'idle'; bellMon().maxHp = 1; for (const c of candles()) c.hp = c.maxHp;
+        INSTANCES.leave();
+        check(P2 + 'N13 the Lantern Watch: on a puppet view a rope asks the keeper and spawns nothing; the keeper\'s bell streams w1 to w6 then won; a knight in the hall with a hit landed is paid each wave once (Dusk: 20 x 1 + ... + 20 x 6 = 420) and 3 soul shards on a win; losing every candle ends it as lost; a won Deep Watch rolls 1 in 40 for a kit piece',
+          r.puppet && r.started && r.states === 'w1 w2 w3 w4 w5 w6 won' && r.won && r.paid === 420 && r.shards >= 3 && r.lost && kit, Object.assign(r, { kit })); }
+      drain();
+      // ---- N14 the bosses ----
+      { const r = {};
+        r.calls = ['barrow_king', 'the_hollow'].every(id => { const bc = HOOKS.bossCall[id]; return bc && bc.map === DEEP_ID && Array.isArray(bc.near) && bc.rest === BOSS.REST && typeof bc.resting === 'function' && typeof bc.told === 'function' && typeof bc.refused === 'function'; }) && COOP.CREDIT.has('barrow_king') && COOP.CREDIT.has('the_hollow');
+        quest.barrow = { q1: 9, q2: 9, q3: 9, q4: 1, q5: 0, lanterns: [] }; player.keyring = (player.keyring || []).filter(k => k !== 'kings_seal');
+        INSTANCES.enter(DEEP_ID); tick(2);
+        // the King's court shields him; his court broken, a blow lands
+        F.tp(DEEP.throne[0], DEEP.throne[1] + 1); F.face(DEEP.throne[0], DEEP.throne[1]); F.press('KeyE'); tick(3);
+        const k = live('barrow_king'); r.king = !!k;
+        r.court = courtiers().length === 3;
+        if (k) { const h0 = k.hp; hitMonster(k, 20, 0); r.shield = k.hp === h0; for (const c of courtiers()) { c.dead = true; c.deadT = 0; } const h1 = k.hp; hitMonster(k, 20, 0); r.lands = k.hp === h1 - 20;
+          // the first kill: the story's end, the seal, the blessing
+          const x0 = player.skills.necromancy.xp; k.hp = 1; k.nw.court = 3; hitMonster(k, 5, 0); tick(2); r.first = B().q4 === DONE && countItem('kings_seal') >= 1 && player.skills.necromancy.xp - x0 >= REWARD.q4 && B().kingRest > day(); }
+        // a resting knight is paid nothing for the next one
+        const k2 = spawnBoss(BOSS.king); if (k2) { for (const c of courtiers()) { c.dead = true; } k2.nw.court = 3; const d0 = drops.length; k2.hp = 1; hitMonster(k2, 5, 0); tick(2); r.resting = !!k2.noPay && drops.length === d0; }
+        // the Hollow: its fade ends at once in a Ghostlight within 4 tiles, a friend's (his presence) as well as this knight's own
+        quest.barrow.q5 = 2; const hol = spawnBoss(BOSS.hollow); r.hollow = !!hol;
+        if (hol) {
+          NECRO.N().gl = false; hol.state = 'fade'; hol.nw.t = 0; F.tp(DEEP.circle[0] - 8, DEEP.circle[1]); bossTick(0.016); r.fades = hol.state === 'fade';
+          const R = PLAYERS.remote; R.__lamp = { n: '__lamp', map: PLAYERS.mapId(), x: hol.x + 60, y: hol.y, shown: { x: hol.x + 60, y: hol.y }, facing: { x: 1, y: 0 }, look: { necro: { gl: 1 } }, lastAt: nowMs(), hp: 10, mhp: 10 };
+          bossTick(0.016); delete R.__lamp; r.friendLight = hol.state === 'chase' && hol.stunT >= BOSS.hollow.stun - 0.01;
+          // the kill, the dice pinned: the Void Scythe drops with the MEGA RARE banner, and the story ends
+          Math.random = () => 0; levelBanner = null; const d0 = drops.length; hol.hp = 1; hol.state = 'chase'; hitMonster(hol, 5, 0); tick(2); Math.random = keep.rnd;
+          r.scythe = drops.slice(d0).some(d => d.id === 'void_scythe' && d.mega) && MEGA_RARE.LOG.some(l => l.monster === 'the_hollow');
+          r.storyEnd = B().q5 === DONE && !!NECRO.N().known.knight;
+          // resting now: a second Hollow rolls nothing (no drops, no scythe)
+          const h2 = spawnBoss(BOSS.hollow); if (h2) { Math.random = () => 0; const d1 = drops.length; h2.hp = 1; hitMonster(h2, 5, 0); tick(2); Math.random = keep.rnd; r.restRoll = drops.length === d1 && !!h2.noPay; }
+        }
+        INSTANCES.leave(); levelBanner = null;
+        check(P2 + 'N14 the bosses: both are HOOKS.bossCall entries (rest 300 s, resting, told, refused) and in 75-coop\'s CREDIT; the Barrow King raises his court and it shields him, broken a blow lands, his first fall ends the story (the seal, 10,000 xp, a rest); a resting knight is paid nothing; the Hollow\'s fade ends at once in a friend\'s Ghostlight within 4 tiles (his presence); the dice pinned, a Hollow kill drops the Void Scythe (MEGA RARE) and names Sir Corwin; resting, it rolls nothing',
+          Object.values(r).every(v => v === true), r); }
+      drain();
+      // ---- N18 the book ----
+      if (window.WIKI) {
+        WIKI.rebuild && WIKI.rebuild();
+        const sk = WIKI.get('skills', 'necromancy'), ob = WIKI.get('places', 'old_barrow'), bd = WIKI.get('places', 'barrow_deep'), gm = WIKI.get('quests', 'nec_ghosts');
+        const lines = sk && sk.lines ? sk.lines.map(l => typeof l === 'string' ? l : l.t).join(' ') : '';
+        const spells = NECRO.SPELLS.every(sp => lines.indexOf(sp.name) >= 0), qs = ['nec_bramble', 'nec_bell', 'nec_lanterns', 'nec_king', 'nec_name'].every(id => !!WIKI.get('quests', id));
+        check(P2 + 'N18 the book: the Necromancy page lists all 12 spells, the supplies and the ways to earn xp; the Old Barrow and the Barrow Deep have pages, the five quests are in it, and "Ghosts met" counts', spells && /SUPPLIES/.test(lines) && /WAYS TO EARN XP/.test(lines) && !!ob && !!bd && qs && !!gm && /Ghosts met: \d+ \/ 12/.test(gm.lines[0]), { spells, ob: !!ob, bd: !!bd, qs, gm: !!gm }); }
+    } finally {
+      Math.random = keep.rnd; if (window.INSTANCES && INSTANCES.active()) INSTANCES.leave();
+      player.x = keep.x; player.y = keep.y; player.facing = keep.facing; player.equip = keep.equip; player.inv = keep.inv; player.hp = keep.hp; player.keyring = keep.keyring; player.dayTime = keep.day; quest.stage = keep.stage;
+      for (const k of SKILL_DEFS) if (player.skills[k.key]) player.skills[k.key].xp = keep.xp[k.key];
+      quest.barrow = JSON.parse(keep.barrow); player.necro = JSON.parse(keep.necro); NECRO.HELPERS.length = 0; levelBanner = keep.banner || null;
+      drain(); h.peace(false); notice = null;
+    }
+  });
+  const QUEST_INFO_OK = () => true;
 
   // ---------- the handle ----------
   return {
