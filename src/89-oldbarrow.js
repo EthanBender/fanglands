@@ -885,6 +885,16 @@ const OLD_BARROW = (() => {
   const NED_AT = [14, 26];
   const LANTERNS = [[27, 10], [23, 14], [19, 18], [15, 21], [45, 17]];   // the fifth on Count Ashvane's chapel altar
   const LIGHT_SECS = 2;
+  // each one on open ground of that map (the nearest open tile to its spot, the same on every game), once
+  let AFTER_AT = null;
+  function afterSpots() {
+    if (AFTER_AT) return AFTER_AT;
+    const inst = window.INSTANCES && INSTANCES.get(AFTER_ID); if (!inst) return { ned: NED_AT, lanterns: LANTERNS };
+    const W = inst.w, H = inst.h, open = (x, y) => x > 0 && y > 0 && x < W - 1 && y < H - 1 && !SOLID.has(inst.tiles[y * W + x]);
+    const near = ([x0, y0]) => { for (let r = 0; r <= 4; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) { if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue; if (open(x0 + dx, y0 + dy)) return [x0 + dx, y0 + dy]; } return [x0, y0]; };
+    return (AFTER_AT = { ned: near(NED_AT), lanterns: LANTERNS.map(near) });
+  }
+  const lanterns = () => afterSpots().lanterns, nedAt = () => afterSpots().ned;
   // the story's ghosts and where each one is right now (null: not here, not now)
   const GY = () => ROUND(A.port('graveyard.grave'));
   function ghostsNow() {
@@ -892,7 +902,7 @@ const OLD_BARROW = (() => {
     const add = (id, map, x, y, o) => { if (map === here) out.push(Object.assign({ id, name: GHOST_NAME[id], x: tc(x), y: tc(y) }, o || {})); };
     if (q.q1 === 2) { const [x, y] = P('bramble'); add('bramble', 'over', x, y, { kind: 'dog' }); }
     if (q.q2 === 1 && night) { const [x, y] = ROUND(A.port('graveyard.gate')); add('ambrose', 'over', x, y - 1, { kind: 'bones', anyone: true }); }
-    if (q.q3 >= 1) add('ned', AFTER_ID, NED_AT[0], NED_AT[1], { kind: 'farmer', lantern: q.q3 >= DONE });
+    if (q.q3 >= 1) add('ned', AFTER_ID, nedAt()[0], nedAt()[1], { kind: 'farmer', lantern: q.q3 >= DONE });
     if (q.q5 === 1 && night) { const [x, y] = GY(); add('corwin', 'over', x, y + 1, { kind: 'knight', seated: true }); }
     if (night) for (const id in WANDERERS) { const [x, y] = wandererAt(id); add(id, 'over', x, y, { kind: id }); }
     return out;
@@ -993,16 +1003,16 @@ const OLD_BARROW = (() => {
     const q = B();
     if (window.__instance !== AFTER_ID || q.q3 !== 2 || player.dead) { LITQ.i = -1; return; }
     const p = NECRO.N();
-    let near = -1; LANTERNS.forEach(([x, y], i) => { if (!q.lanterns.includes(i) && dist(player.x, player.y, tc(x), tc(y)) <= tiles(1.4)) near = i; });
+    let near = -1; lanterns().forEach(([x, y], i) => { if (!q.lanterns.includes(i) && dist(player.x, player.y, tc(x), tc(y)) <= tiles(1.4)) near = i; });
     if (near < 0 || !p.gl) { LITQ.i = -1; return; }
     if (near === 4 && monsters.some(m => m.type === 'count_ashvane' && !m.dead)) { if (LITQ.i !== 4 || LITQ.t > 0.5) { notify('Count Ashvane blows the lantern out. Beat him first.'); LITQ.i = 4; LITQ.t = -9; } return; }
     if (LITQ.i !== near) { LITQ.i = near; LITQ.t = 0; LITQ.hp = player.hp; }
     if (player.hp < LITQ.hp) { LITQ.t = 0; LITQ.hp = player.hp; notify('A blow breaks the lighting. Try again.'); return; }
     LITQ.t += dt;
     if (LITQ.t < LIGHT_SECS) return;
-    q.lanterns.push(near); LITQ.i = -1; burst(tc(LANTERNS[near][0]), tc(LANTERNS[near][1]) - 20, '#ffd36a', 16, 70); sfx('fire');
+    q.lanterns.push(near); LITQ.i = -1; burst(tc(lanterns()[near][0]), tc(lanterns()[near][1]) - 20, '#ffd36a', 16, 70); sfx('fire');
     notify(`A lantern lit: ${q.lanterns.length} of 5.`);
-    if (q.lanterns.length >= LANTERNS.length) {
+    if (q.lanterns.length >= lanterns().length) {
       q.q3 = DONE; NECRO.learn('walk'); giveOrDrop('neds_turnip', 1, player.x, player.y); complete('Lanterns for the Lost', REWARD.q3);
       say2(["Ned! I'm Old Ned! Ha! I grew turnips by the river, and my wife made the best soup in the Wolfwood.", "Take this. I've held it for a hundred years. It is still a turnip."], GHOST_NAME.ned);
       say(`${GRANNY} will be pleased. She teaches Grave Walk to those who light the way: so you can always come home.`, 'The Voice');
@@ -1044,7 +1054,7 @@ const OLD_BARROW = (() => {
     if (q.q1 >= 1 && q.q1 < DONE) return q.q1 === 3 ? at(BF.p(SPOIL[0], SPOIL[1]), 'The builders\' spoil', 'nec_bramble') : q.q1 === 5 ? at(P('tobias'), "Tobias's place", 'nec_bramble') : q.q1 === 2 ? at(P('bramble'), 'The barrow mound', 'nec_bramble') : at(P('granny'), GRANNY, 'nec_bramble');
     if (q.q2 === 1) return at(A.port('graveyard.gate'), 'The graveyard gate', 'nec_bell');
     if (q.q2 === 2) return at(chapelAt(), "Hollowford's chapel", 'nec_bell');
-    if (q.q3 === 1 || q.q3 === 2) { if (window.__instance === AFTER_ID) { const i = [0, 1, 2, 3, 4].find(k => !q.lanterns.includes(k)); return q.q3 === 1 ? at(NED_AT, 'Old Ned', 'nec_lanterns', AFTER_ID) : at(LANTERNS[i == null ? 0 : i], 'A dead lantern', 'nec_lanterns', AFTER_ID); } return at(A.port('graveyard.crypt'), 'The crypt', 'nec_lanterns'); }
+    if (q.q3 === 1 || q.q3 === 2) { if (window.__instance === AFTER_ID) { const i = [0, 1, 2, 3, 4].find(k => !q.lanterns.includes(k)); return q.q3 === 1 ? at(nedAt(), 'Old Ned', 'nec_lanterns', AFTER_ID) : at(lanterns()[i == null ? 0 : i], 'A dead lantern', 'nec_lanterns', AFTER_ID); } return at(A.port('graveyard.crypt'), 'The crypt', 'nec_lanterns'); }
     if (q.q4 >= 1 && q.q4 < DONE) return inDeep() ? at(DEEP.throne, "The King's throne", 'nec_king', DEEP_ID) : at(P('door'), "The barrow's stair", 'nec_king');
     if (q.q5 === 1) return at(GY(), "The last knight's grave", 'nec_name');
     if (q.q5 === 2) return inDeep() ? at(DEEP.nameStone, 'The Sealed Vault', 'nec_name', DEEP_ID) : at(P('door'), "The barrow's stair", 'nec_name');
@@ -1057,7 +1067,7 @@ const OLD_BARROW = (() => {
     for (const gh of visibleGhosts()) items.push({ y: gh.y + 4, draw: () => a.ghost(g, gh, time) });
     if (window.__instance === AFTER_ID) {
       const q = B();
-      if (q.q3 >= 2) LANTERNS.forEach(([x, y], i) => { const lit = q.q3 >= DONE || q.lanterns.includes(i); items.push({ y: (y + 1) * TILE - 2, draw: () => a.wayLantern(g, tc(x), tc(y), lit, LITQ.i === i ? Math.max(0, LITQ.t) / LIGHT_SECS : 0) }); });
+      if (q.q3 >= 2) lanterns().forEach(([x, y], i) => { const lit = q.q3 >= DONE || q.lanterns.includes(i); items.push({ y: (y + 1) * TILE - 2, draw: () => a.wayLantern(g, tc(x), tc(y), lit, LITQ.i === i ? Math.max(0, LITQ.t) / LIGHT_SECS : 0) }); });
       if (q.q3 >= DONE) for (const m of monsters) if (!m.dead && (m.type === 'zombie_calm' || m.type === 'grave_zombie_calm')) items.push({ y: 1e8 - 3, draw: () => a.tinyLantern(g, m.x, m.y - LIFT.lamp, time + m.x * 0.01) });
     }
     for (const n of NAMES) if (n.t > 0) items.push({ y: 1e8 - 1, draw: () => a.nameLight(g, n.x + Math.sin(n.t * 3 + n.x) * 8, n.y - n.t * 90, n.t * 2) });
@@ -1181,6 +1191,16 @@ const OLD_BARROW = (() => {
         check(P2 + "N12 Q1 walked by the bot: Granny Wick hands over the Barrow wand and teaches Soul Bolt; bolts on a bone dummy reach Necromancy 3; she teaches Ghostlight; with it on Bramble shows by the mound and trots off; E on the spoil turns up Tobias's stone; Granny frowns at the scrape; E at his empty place sets it and Bramble rests (Bramble's collar, 450 xp)",
           Object.values(r).every(v => v === true || typeof v === 'number'), r); }
       drain();
+      { // the story's spots stand on open ground: Old Ned and the five lanterns (the Afterlands' own map), the chapel's board,
+        // the six wanderers (each 4+ tiles off every rail and signpost), Bramble by the mound, the spoil and Tobias's place
+        const inst = INSTANCES.get(AFTER_ID), W = inst.w, openA = ([x, y]) => !SOLID.has(inst.tiles[y * W + x]);
+        const S0 = afterSpots(), bad = [];
+        if (!openA(S0.ned)) bad.push('ned'); S0.lanterns.forEach((p, i) => { if (!openA(p)) bad.push('lantern ' + i); });
+        const openO = ([x, y]) => !SOLID.has(tileAt(x, y));
+        if (!openO(chapelAt())) bad.push('chapel');
+        for (const k in WANDERERS) { const p = wandererAt(k); if (!openO(p)) bad.push(k); for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) { const t = tileAt(p[0] + dx, p[1] + dy); if (t === T.HITCH || t === T.SIGN) bad.push(k + ' near a rail or a sign'); } }
+        for (const p of [P('bramble'), BF.p(SPOIL[0], SPOIL[1]), P('tobias')]) if (SOLID.has(tileAt(p[0], p[1]))) bad.push('place ' + p);
+        check(P2 + 'N12 the story\'s spots stand on open ground: Old Ned and the five lanterns in the Afterlands, Hollowford\'s memorial board, the six wandering ghosts (each 4+ tiles off every rail and signpost), Bramble by the mound, the spoil and Tobias\'s place', !bad.length, { bad }); }
       // ---- N13 the Lantern Watch ----
       { quest.barrow = { q1: 9, q2: 9, q3: 9, q4: 0, q5: 0, lanterns: [] }; setLv('necromancy', 70);
         INSTANCES.enter(DEEP_ID); tick(2);
