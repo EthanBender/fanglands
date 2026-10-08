@@ -1052,7 +1052,8 @@ Bridge, a cairn on the ash, the mare on the Sea Road; laptop 1280x800 and iPad 1
 (`~/.fanglands/backups/20261007-202337-pre-roads-test`), nobody online. The fingerprint baseline is this build's (0a9081a8bd939131).
 
 **Roads-ready (the review of 8d26eb1, fixed; tag `roads-ready`).** Master 7269b13 merged in first (the mare never
-whistled in on top of a knight, aa3eaff, which fanglands.com already served; the Void Scythe and MEGA RARE; Summon a ride).
+whistled in on top of a knight, aa3eaff, which fanglands.com already served; the Void Scythe and MEGA RARE; Summon a ride),
+then master 18c4441 (riding together).
 The fixes, each with a check that fails on 8d26eb1: the story signpost reads the roads; the milestones name the Goblin
 Camp and leave out their own ends; E on a faced post reads it (Dunstan); the Long and Goblin Roads paved up to Hollowford
 (the burn's seam lines step off a road: median 9, 2 nearly ruled); the walk across Hollowford's square counted; the old
@@ -1060,18 +1061,21 @@ dirt off a road's line grassed (211 tiles); the footprint only what the pass cha
 pass's self-test counts its work, not the clock. One fix outside the roads: E on a mare with the hero just past her opened
 the hero's panel (21-companion; master's own `--play` failed its Summon a ride check on it), now the mare answers.
 
-The migration: `--rev-base` master 7269b13 (rev 6): fixture + matrix 27/27 (449 footprint planks back of 449 placed; 416
-stumps and fires dropped); the 7 Oct pre-teacher-chat export 94/94 and the newest, pre-summon-ride, 97/97 (MudGoll's
-bulldozer stays where he left it; 12 of his cleared tiles beside the new road go back to the world's own); 0 stage
-changes, 0 lost machines, items or coins. `spread-footprint` against master 7269b13: 2,372 tiles changed, 0 outside.
+The migration: `--rev-base` master 18c4441 (rev 6): fixture + matrix 27/27 (449 footprint planks back of 449 placed; 416
+stumps and fires dropped); the 7 Oct pre-teacher-chat export 94/94; against 7269b13 (the same world) the newest export,
+pre-summon-ride, 97/97 (MudGoll's bulldozer stays where he left it; 12 of his cleared tiles beside the new road go back to
+the world's own); 0 stage changes, 0 lost machines, items or coins. `spread-footprint` against master 18c4441: 2,372
+tiles changed, 0 outside.
 
 **Proved on this build:** `./build.sh` (literals 0 bare, changetile, compass 70 rows all hold, boot budget: node 1,643 ms,
-Chromium 4x 2,560 ms at load 10); headless ALL 1534; `--play` ALL 1535, the Fang dead; online 448; mmo-sim 43, `--room` 43,
-`--sim` 47; dom-keys 16; mmo-sim-admin 12; mmo-sim-party 18; mmo-sim-teacher 9; sim-suite 28; mmo-sim-world 16;
+Chromium 4x 2,560 ms at load 10); headless ALL 1546; `--play` ALL 1547, the Fang dead (one earlier run of five had the
+admin layout check find no ADMIN chip at phone sizes; it did not come back, and master's own `--play` is not steady
+either); online 460; mmo-sim 43, `--room` 43, `--sim` 47; dom-keys 16; mmo-sim-admin 12; mmo-sim-party 18;
+mmo-sim-teacher 9; mmo-sim-ride 21; sim-suite 28; mmo-sim-world 16;
 build-sim `--strip --reads`; atlas-drift; the footprint; the migration as above. Shots: `~/.fanglands/work/spread/s6r/`
 (the Mill Lane fork and its post, a lantern road at night, the Cave Road's milestone, the Drovers' Track, the goblin-road
 bridge, the mare on the Sea Road, the story signpost, the Long Road into Hollowford, Dunstan's turn; laptop 1280x800 and
-iPad 1024x768) and the full map `s6r/s6r-fullmap.png`. The fingerprint baseline is this build's (77be4546a7a0be2e).
+iPad 1024x768) and the full map `s6r/s6r-fullmap.png`. The fingerprint baseline is this build's (06fac3d500697d91).
 
 ## Proving "nothing visible changed" (spec §9.4)
 
