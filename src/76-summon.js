@@ -13,12 +13,14 @@
 // The scrap yard's twins (33-goblincity: the yard walker and the yard dozer) are not rides of their own: their wrecks repair
 // into the plain walker and bulldozer tiles, so the walker and bulldozer buttons are theirs too.
 //
-// A ride comes whole and ready to the nearest free tile round the admin: never on a knight (his own or a friend's), a
+// A ride comes whole and ready to the nearest free tile round the admin that he can walk to (never past a wall, rocks or
+// water; walled in all round, there is no room and it says so): never on a knight (his own or a friend's), a
 // villager, a monster or something lying on the ground, never in water, a wall or a building, never beside a door, and never
 // where it would close a gate to a mount that could ride through it before (94-mountgates' routes, as 51-mounts' dismount
 // checks). A summoned machine is a parked machine like a repaired one: it is a map tile (changeTile, saved in mapDiffs), it is
 // boarded with E, parks and wrecks the core's way. At most one of each machine he summoned stands unused: summoning that kind
-// again takes the old one away first (player.summoned remembers it by map index until he climbs on it).
+// again takes the old one away first (player.summoned remembers it by map index until he climbs on it; a visit to a place
+// forgets nothing, as the overworld map is put back when he comes out).
 //
 // The world decides: the admin's game asks ({t: 'summon', kind, req}), the world checks the role in its database and that he is
 // out in the world (not in a place), writes "MudGoll summoned a bulldozer" to What admins did (mod_log), and answers
@@ -109,11 +111,27 @@
     }
     return out.sort((a, b) => a.d - b.d || a.ty - b.ty || a.tx - b.tx);
   }
+  // the tiles he can walk to on foot without leaving the square REACH round him (straight steps only, as a knight cannot
+  // squeeze between two corners): a ride is put down only where he can get to it, never past a wall, rocks or water
+  function walkable() {
+    const ptx = Math.floor(player.x / TILE), pty = Math.floor(player.y / TILE), seen = new Set([idx(ptx, pty)]), todo = [[ptx, pty]];
+    while (todo.length) {
+      const [x, y] = todo.pop();
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = x + dx, ny = y + dy;
+        if (Math.abs(nx - ptx) > REACH || Math.abs(ny - pty) > REACH || !inMap(nx, ny)) continue;
+        const i = idx(nx, ny);
+        if (seen.has(i) || solidFor(map[i], 'player')) continue;
+        seen.add(i); todo.push([nx, ny]);
+      }
+    }
+    return seen;
+  }
   // the spot for this kind, with the ride it would replace counted as gone (its tile as the ground under it)
   function spotFor(kind) {
     const park = kind.tile(), old = oldSpot(kind), oi = old ? idx(old.tx, old.ty) : -1, was = oi >= 0 ? map[oi] : 0;
     if (oi >= 0) map[oi] = groundOf(old.under);
-    try { for (const c of ring()) if (!blocked(c.tx, c.ty, park)) return { tx: c.tx, ty: c.ty }; return null; }
+    try { const can = walkable(); for (const c of ring()) if (can.has(idx(c.tx, c.ty)) && !blocked(c.tx, c.ty, park)) return { tx: c.tx, ty: c.ty }; return null; }
     finally { if (oi >= 0) map[oi] = was; }
   }
 
@@ -180,10 +198,12 @@
   const forgetAsks = () => S.pending.clear();
   NET.on('offline', forgetAsks); NET.on('welcome', forgetAsks); NET.on('role', forgetAsks);
 
-  // a machine he climbed on (or that wrecked, or was stripped) is not a summoned one any more: forget it
+  // a machine he climbed on (or that wrecked, or was stripped) is not a summoned one any more: forget it. Never inside a place:
+  // there the shared map holds the place's own tiles (16-instances), so the overworld index means nothing until he comes out,
+  // and forgetting it there would let the next summon pile a second machine beside the unused first one.
   HOOKS.update.push(() => {
     const r = player.summoned;
-    if (r && typeof r === 'object') {
+    if (r && typeof r === 'object' && !inPlace()) {
       for (const id of Object.keys(r)) { const kind = kindOf(id); if (!kind || !standing(kind)) delete r[id]; }
       if (!Object.keys(r).length) delete player.summoned;
     }
@@ -356,6 +376,40 @@
         for (const q of d) changeTile(q.tx, q.ty, T.GRASS);
         for (let i = set.length - 1; i >= 0; i--) changeTile(set[i][0], set[i][1], set[i][2]);
         delete player.summoned; }
+
+      // ---- walled in: rocks on all eight sides, open ground beyond them: no room (never past the rocks), nothing sent;
+      //      in a pocket with one open tile, the ride goes on that tile ----
+      { at(home); const o = own(), set = [];
+        const put = (tx, ty, t) => { set.push([tx, ty, tileAt(tx, ty)]); changeTile(tx, ty, t); };
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (dx || dy) put(o.tx + dx, o.ty + dy, T.ROCK);
+        const c0 = count(T.DOZER), s0 = sent.length; notice = null;
+        const no = summon('dozer') === false && !!notice && notice.text === NO_ROOM;
+        const quiet = !sent.slice(s0).some(m => m.t === 'summon') && count(T.DOZER) === c0 && !player.summoned;
+        for (let i = set.length - 1; i >= 0; i--) changeTile(set[i][0], set[i][1], set[i][2]);
+        set.length = 0;
+        // a pocket: rocks round him and round the one open tile north of him, so he can walk to that tile and nowhere else:
+        // the ride goes there
+        for (const [dx, dy] of [[-1, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [0, 1], [1, 1], [-1, -2], [0, -2], [1, -2]]) put(o.tx + dx, o.ty + dy, T.ROCK);
+        const s1 = sent.length; notice = null;
+        const ok = summon('dozer'); const d = near(T.DOZER, REACH);
+        const pocket = ok && d.length === 1 && d[0].tx === o.tx && d[0].ty === o.ty - 1;
+        for (const q of d) changeTile(q.tx, q.ty, T.GRASS);
+        for (let i = set.length - 1; i >= 0; i--) changeTile(set[i][0], set[i][1], set[i][2]);
+        delete player.summoned;
+        check(P + 'walled in: rocks on all eight sides (open ground just past them): "' + NO_ROOM + '", nothing sent, nothing put down; in a pocket with one open tile, the ride goes there and never past the rocks', no && quiet && pocket, { no, quiet, notice: notice && notice.text, d, o, sent: sent.slice(s1).filter(m => m.t === 'summon').length }); }
+
+      // ---- a place visited in between: he summons a bulldozer, goes into the Spider Den and out, and summons one again from
+      //      another spot: the unused one still goes (one, never two), and player.summoned points at the new one ----
+      { at(home); const c0 = count(T.DOZER);
+        summon('dozer'); const first = near(T.DOZER, REACH)[0];
+        const into = INSTANCES.enter('spider_den'); F.sim(2, []);
+        const kept = !!(player.summoned && player.summoned.dozer);
+        INSTANCES.leave(); F.sim(2, []);
+        at(east); summon('dozer'); const second = near(T.DOZER, REACH)[0];
+        const one = count(T.DOZER) === c0 + 1, firstGone = !!first && tileAt(first.tx, first.ty) !== T.DOZER;
+        const points = !!second && !!player.summoned && !!player.summoned.dozer && player.summoned.dozer.i === idx(second.tx, second.ty) && !!standing(kindOf('dozer'));
+        check(P + 'a place visited in between (the Spider Den): the summoned bulldozer is still remembered inside and after, and summoning again from another spot replaces it: one bulldozer, never two', into && kept && one && firstGone && points, { into, kept, counts: [c0, count(T.DOZER)], first, second, firstGone, points, summoned: player.summoned });
+        const q = oldSpot(kindOf('dozer')); if (q) changeTile(q.tx, q.ty, groundOf(q.under)); delete player.summoned; }
 
       // ---- beside the city gate: never closes it to a mount that could ride through ----
       { const gates = window.MOUNTGATES ? MOUNTGATES.cityGates() : [];

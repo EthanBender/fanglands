@@ -35,7 +35,7 @@
     "69-axestump.js": { "calls": 3, "remake": "69-axestump.js", "what": "story: the empty stump once the axe is taken (its remake); test: the axe put back" },
     "75-coop.js": { "calls": 1, "remake": null, "what": "machine: a friend's kill leaves the walker's wreck" },
     "76-admin.js": { "calls": 3, "remake": ["20-hollowford.js", "28-thefang.js", "35-night.js"], "what": "story: the admin's story switches (the beast's wreck, the lair gate, the crypt) set the same quest state the remakes of 20, 28 and 35 read" },
-    "76-summon.js": { "calls": 13, "remake": null, "what": "machine: an admin's summoned walker, bulldozer or Barrelbeast put down beside him, and the unused one taken away when he summons that kind again (parked round the Dozer Bay like any machine); mare: Cinder summoned beside him (tied at her rail like any mare); test: a self-test that puts the ground back" },
+    "76-summon.js": { "calls": 18, "remake": null, "what": "machine: an admin's summoned walker, bulldozer or Barrelbeast put down beside him, and the unused one taken away when he summons that kind again (parked round the Dozer Bay like any machine); mare: Cinder summoned beside him (tied at her rail like any mare); test: a self-test that puts the ground back" },
     "90-canyon.js": { "calls": 1, "remake": null, "what": "world: a salt seam regrows (never saved)" },
     "91-royalmine.js": { "calls": 1, "remake": null, "what": "instance: the Royal Mine's own tiles" },
     "85-riverside.js": { "calls": 1, "remake": null, "what": "test: a trap on a built place's ground refused (put back if it were placed)" },

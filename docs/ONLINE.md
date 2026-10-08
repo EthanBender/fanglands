@@ -893,8 +893,10 @@ plain walker and bulldozer tiles, so those two buttons are theirs.
 - Out in the world only. Inside a place (an instance) the Powers row is dead with "Only out in the world." under it, every
   ride button in the view reads "Only out in the world." and does nothing, and Summon sends nothing; the world's `place`
   says the same words.
-- Where: the nearest free tile round him, within 4 tiles (straight-line distance from his middle, then north to south,
-  then west to east). Free: in the map, plain ground (`PLACEABLE_ON`: never water, a wall, a fence, a gate or a door),
+- Where: the nearest free tile round him that he can walk to, within 4 tiles (straight-line distance from his middle, then
+  north to south, then west to east). He can walk to it: a straight-step path on foot from his own tile that never leaves
+  the square 4 tiles round him (so never past a wall, rocks or water; walled in on all eight sides there is no room).
+  Free: in the map, plain ground (`PLACEABLE_ON`: never water, a wall, a fence, a gate or a door),
   not inside a building, no knight on it (his own body or a friend's on this map), no villager, no living monster, nothing
   lying on it, not beside a door, and never where it would close a gate: within two tiles of a gate the tile is tried as
   the ride first and is taken only when every mount that could cross that opening before (94-mountgates `routes`) still
@@ -909,7 +911,8 @@ plain walker and bulldozer tiles, so those two buttons are theirs.
   the ground's tile name under it, the world it was put down in) remembers the last one, and summoning that kind again
   gives its tile back to the ground under it before the new one comes (from anywhere on the map). Once he climbs on it, it
   wrecks or is stripped (its tile is no longer that ride), or the world changes (`w`), it is forgotten: a machine he has
-  used is his to keep. The mare is one mare: summoning her moves her. Riding her, "You are on Cinder already."
+  used is his to keep. A visit to a place forgets nothing (inside, the map holds the place's tiles, so the record is
+  left alone until he is back out on the overworld). The mare is one mare: summoning her moves her. Riding her, "You are on Cinder already."
 - Nothing reaches another knight: the ride stands in the admin's own game, as a repaired machine does (the world keeps no
   map). Nothing changes for a player: no row, no button, nothing on his `player`.
 - The parent page reads the row in What admins did as "MudGoll summoned a bulldozer" ("Cinder the mare", "a goblin walker",
@@ -1058,7 +1061,8 @@ The cap runs before the role check, so a knight hammering admin messages is drop
   each ride in the Powers tab and it stands beside him in his game only, logged once each; summoning again replaces the
   unused one; inside a place nothing is sent; Sam's Summon, his raw `summon` and a forged answer do nothing. The
   self-test in 76-summon: every kind summoned, ridden, parked, wrecked and summoned again; the mare owned and not owned;
-  a crowded spot, the city gate, water, a place, a world that says no, a player; the view at five sizes, touch on and off.)
+  a crowded spot, walled in on eight sides (no room) and a one-tile pocket, a place visited between two summons (still
+  one), the city gate, water, a place, a world that says no, a player; the view at five sizes, touch on and off.)
 - The three simulations are required as modules (`require('./mmo-sim.js')` exports `Wire`, `makeContext`,
   `loadRoom(now, opts)`, `FakeWorld` and `FakeStore`, `mulberry32` and `contractRoll`); `MMO_ROOM=<path to room.js>`
   points them at another checkout. `deploy.sh` runs all three before every deploy. The `Wire` delivers a close the

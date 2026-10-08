@@ -60,7 +60,7 @@ async function main() {
   const got = (who, t, since) => heard[who].slice(since || 0).filter(m => m.t === t);
   // the admin's panel, driven by its buttons the way a finger does it
   const click = (g, key) => { g.render(); return g.FANGLANDS.clickButton(key); };
-  const openSpot = (g, cx, cy) => ev(g, `(() => { for (let r = 0; r < 30; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) { const x = ${cx} + dx, y = ${cy} + dy; let ok = inMap(x - 3, y - 3) && inMap(x + 3, y + 3); for (let yy = y - 2; yy <= y + 2 && ok; yy++) for (let xx = x - 3; xx <= x + 5 && ok; xx++) if (tileAt(xx, yy) !== T.GRASS) ok = false; if (ok && !inVillageBounds(tc(x), tc(y))) return { x, y }; } return { x: ${cx}, y: ${cy} }; })()`);
+  const openSpot = (g, cx, cy) => ev(g, `(() => { for (let r = 0; r < 30; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) { const x = ${cx} + dx, y = ${cy} + dy; let ok = inMap(x - 3, y - 3) && inMap(x + 3, y + 3); for (let yy = y - 2; yy <= y + 2 && ok; yy++) for (let xx = x - 3; xx <= x + 5 && ok; xx++) if (tileAt(xx, yy) !== T.GRASS) ok = false; if (ok && !inVillageBounds(tc(x), tc(y))) return { x, y, open: true }; } return { x: ${cx}, y: ${cy}, open: false }; })()`);
   const isSpawn = m => typeof m.nid === 'string' && m.nid.charAt(0) === '!';
 
   // ---- log in ----
@@ -211,7 +211,9 @@ async function main() {
   // ---- 9. summoning a ride (docs/ONLINE.md, "Summoning a ride") ----
   {
     tick(120, heal);
-    const spot = openSpot(A, A.ATLAS.world.tx(60), A.ATLAS.world.ty(30));
+    // open grass by the signpost (a 9 by 5 patch of it, so every ride has a tile he can walk to: a summon never reaches past
+    // trees, rocks or water)
+    const spot = openSpot(A, ...A.ATLAS.frame('signpost').p(64, 30));
     A.FANGLANDS.tp(spot.x, spot.y); B.FANGLANDS.tp(spot.x + 4, spot.y); tick(12, heal);
     const tileOf = (g, kind) => ev(g, `(() => { const k = SUMMON.KINDS.find(k => k.id === '${kind}'); return k ? k.tile() : null; })()`);
     const near = (g, t) => ev(g, `(() => { const o = { tx: Math.floor(player.x / TILE), ty: Math.floor(player.y / TILE) }, out = []; for (let dy = -4; dy <= 4; dy++) for (let dx = -4; dx <= 4; dx++) if (tileAt(o.tx + dx, o.ty + dy) === ${t}) out.push([o.tx + dx, o.ty + dy]); return out; })()`);
@@ -226,8 +228,8 @@ async function main() {
       res.push({ kind, tapped, mine: mine.length, theirs: theirs.length, logged: rows.length === l0 + 1 && line0.by === 'MudGoll' && line0.detail === kind, answered: got('A', 'summon', s0).length === 1, said });
       A.FANGLANDS.closePanel();
     }
-    const ok1 = res.every(r => r.tapped && r.mine === 1 && r.theirs === 0 && r.logged && r.answered && r.said);
-    line('summon: MudGoll taps each ride in the Powers tab (Cinder, the walker, the bulldozer, the Barrelbeast): the world answers him, logs "MudGoll summoned ..." once each, and the ride stands beside him in his game only', ok1, res);
+    const ok1 = spot.open && res.every(r => r.tapped && r.mine === 1 && r.theirs === 0 && r.logged && r.answered && r.said);
+    line('summon: MudGoll taps each ride in the Powers tab (Cinder, the walker, the bulldozer, the Barrelbeast) on open grass: the world answers him, logs "MudGoll summoned ..." once each, and the ride stands beside him in his game only', ok1, { open: spot.open, res });
     // again from three tiles over: the unused bulldozer goes, the new one comes, never two
     {
       const t = tileOf(A, 'dozer'), count = g => ev(g, `(() => { let n = 0; for (let i = 0; i < map.length; i++) if (map[i] === ${t}) n++; return n; })()`);
