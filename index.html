@@ -74342,11 +74342,13 @@ const OLD_BARROW = (() => {
   // every game (rings outward, rows then columns), once per world
   let SPOTS = null;
   HOOKS.built.push(() => { SPOTS = null; });
+  const far = (x, y) => { for (let dy = -4; dy <= 4; dy++) for (let dx = -4; dx <= 4; dx++) { const t = tileAt(x + dx, y + dy); if (t === T.HITCH || t === T.SIGN) return false; } return true; };
+  const spotOk = (x, y, floor) => inMap(x, y) && !SOLID.has(tileAt(x, y)) && tileAt(x, y) !== T.WATER && far(x, y) && (!floor || tileAt(x, y) === T.FLOOR);
   function spotNear(x0, y0, floor) {
-    const far = (x, y) => { for (let dy = -4; dy <= 4; dy++) for (let dx = -4; dx <= 4; dx++) { const t = tileAt(x + dx, y + dy); if (t === T.HITCH || t === T.SIGN) return false; } return true; };
-    const ok = (x, y) => inMap(x, y) && !SOLID.has(tileAt(x, y)) && tileAt(x, y) !== T.WATER && far(x, y) && (!floor || tileAt(x, y) === T.FLOOR);
+    const ok = (x, y) => spotOk(x, y, floor);
     for (let r = 0; r <= 8; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) { if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue; if (ok(x0 + dx, y0 + dy)) return [x0 + dx, y0 + dy]; }
-    return floor ? spotNear(x0, y0, false) : [x0, y0];
+    if (floor) return spotNear(x0, y0, false);
+    const p = [x0, y0]; p.none = true; return p;   // nothing found: kept as is (not searched again every frame)
   }
   const ROUND = p => [Math.round(p[0]), Math.round(p[1])];
   // the six wanderers: each at a point in its own place's frame (or port), night only, in a Ghostlight
@@ -74358,7 +74360,18 @@ const OLD_BARROW = (() => {
     osric_ghost: { at: () => ROUND(A.port('old_bridge.span')), lines: ['Three hundred and six stones. Three hundred and seven? I shall count again.', 'Wilf did a fine job with the new stone. I counted every one.'] },
     ivy: { at: () => ROUND(A.port('thistledown.castle')), lines: ['Have you seen an earring? Silver, with a little pearl? I have the other one right here.', "I lost it in the garden two hundred years ago. It must be here somewhere."] },
   };
-  function wandererAt(id) { if (!SPOTS) { SPOTS = {}; for (const k in WANDERERS) { const [x, y] = WANDERERS[k].at(); SPOTS[k] = spotNear(x, y, WANDERERS[k].floor); } } return SPOTS[id]; }
+  // worked out once, then re-checked on each read: the world can change under a spot (a rail laid, a place built in
+  // play), and then that one ghost's spot is worked out again. Never inside an instance: there the overworld's tiles
+  // are walled over until the knight leaves, so the spot kept from outside stands (or, with none yet, the bare point)
+  const inside = () => !!(window.INSTANCES && INSTANCES.active && INSTANCES.active());
+  function wandererAt(id) {
+    if (!SPOTS) SPOTS = {};
+    const s = SPOTS[id];
+    if (inside()) return s || WANDERERS[id].at();
+    if (s && (s.none || spotOk(s[0], s[1], false))) return s;
+    const [x, y] = WANDERERS[id].at();
+    return (SPOTS[id] = spotNear(x, y, WANDERERS[id].floor));
+  }
   // the Afterlands' own map (an instance: its numbers are its own) for Q3
   const AFTER_ID = 'afterlands';
   const NED_AT = [14, 26];
@@ -74462,7 +74475,11 @@ const OLD_BARROW = (() => {
   // ---------- Q2: Ambrose walks home to Hollowford; at the chapel Old Tam knows him ----------
   let CHAPEL = null;
   HOOKS.built.push(() => { CHAPEL = null; });
-  const chapelAt = () => CHAPEL || (CHAPEL = spotNear(...ROUND(A.frame('hollowford').p(128, 85)), false));
+  const chapelAt = () => {
+    if (CHAPEL && (inside() || CHAPEL.none || spotOk(CHAPEL[0], CHAPEL[1], false))) return CHAPEL;
+    const p = ROUND(A.frame('hollowford').p(128, 85));
+    return inside() ? p : (CHAPEL = spotNear(...p, false));
+  };
   HOOKS.update.push(() => {
     const q = B();
     if (q.q2 !== 2 || window.__instance || player.dead) return;
@@ -74673,6 +74690,9 @@ const OLD_BARROW = (() => {
       { // the story's spots stand on open ground: Old Ned and the five lanterns (the Afterlands' own map), the chapel's board,
         // the six wanderers (each 4+ tiles off every rail and signpost), Bramble by the mound, the spoil and Tobias's place
         const inst = INSTANCES.get(AFTER_ID), W = inst.w, openA = ([x, y]) => !SOLID.has(inst.tiles[y * W + x]);
+        // read inside an instance first (its walls cover the overworld there): a spot kept from outside must survive it
+        SPOTS = null; CHAPEL = null; for (const k in WANDERERS) wandererAt(k); chapelAt();
+        INSTANCES.enter(DEEP_ID); tick(2); for (const k in WANDERERS) wandererAt(k); chapelAt(); INSTANCES.leave(); tick(1);
         const S0 = afterSpots(), bad = [];
         if (!openA(S0.ned)) bad.push('ned'); S0.lanterns.forEach((p, i) => { if (!openA(p)) bad.push('lantern ' + i); });
         const openO = ([x, y]) => !SOLID.has(tileAt(x, y));
