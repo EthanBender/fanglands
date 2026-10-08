@@ -19,6 +19,8 @@
 //   F. tabs other files add with ADMIN.addTab (78-accounts: Accounts; 79-ownerteachers: Teachers, shown only to an owner's
 //      knight). Their drawing, state and tests live in their own
 //      file; this one only lays the tab buttons out (in two rows when the panel is too narrow for one) and hands over.
+//   G. powers other files add with ADMIN.addPower (76-summon: Summon a ride): one more row of the Powers list, and the
+//      view it opens; the same split as F
 // Wraps by reassignment, all with explicit arguments: hurtPlayer and die (Can't be hurt), pointerDown (where the last
 // tap was, for Teleport), drawPanels (the Teleport button over the world map, and the one search box), closePanel (the
 // search box goes when the panel does). Feature file: HOOKS only otherwise. window.ADMIN is the register.
@@ -50,6 +52,15 @@
     if (!spec || typeof spec.id !== 'string' || typeof spec.draw !== 'function' || TABS.some(t => t[0] === spec.id) || EXTRA.some(t => t.id === spec.id)) return false;
     EXTRA.push(spec); return true;
   }
+  // G. powers from other files (76-summon: Summon a ride): entry() answers one row of the Powers list ({ key, text, color,
+  // enabled, action, line }), drawn after the five above; view(g, x, y, w, h, T) draws the Powers tab while S.view.kind is
+  // that power's `view`. Their drawing, state and tests live in their own file.
+  const POWERS = [];
+  function addPower(spec) {
+    if (!spec || typeof spec.key !== 'string' || typeof spec.entry !== 'function' || POWERS.some(p => p.key === spec.key)) return false;
+    POWERS.push(spec); return true;
+  }
+  const powerView = kind => POWERS.find(p => p.view && p.view === kind && typeof p.draw === 'function') || null;
   const SUBTITLE = {
     knights: 'Mute, send out or ban a knight. Nobody can do that to an admin.',
     powers: 'These change only your own knight.',
@@ -666,7 +677,7 @@
     const x = px + 18, y = py + 60 + rows * (T + 6) + 4, cw = w - 36, ch = py + h - 12 - y;
     if (ex) ex.draw(g, x, y, cw, ch, T);
     else if (S.tab === 'knights') { if (S.view && S.view.kind === 'mute') drawMuteChooser(g, x, y, cw, ch, T); else drawKnights(g, x, y, cw, ch, T); }
-    else if (S.tab === 'powers') { if (S.view && S.view.kind === 'give') drawGive(g, x, y, cw, ch, T); else drawPowers(g, x, y, cw, ch, T); }
+    else if (S.tab === 'powers') { const pv = S.view && powerView(S.view.kind); if (pv) pv.draw(g, x, y, cw, ch, T); else if (S.view && S.view.kind === 'give') drawGive(g, x, y, cw, ch, T); else drawPowers(g, x, y, cw, ch, T); }
     else if (S.tab === 'monsters') drawMonsters(g, x, y, cw, ch, T);
     else drawParty(g, x, y, cw, ch, T);
   };
@@ -754,6 +765,7 @@
       { key: 'admin:teleport', text: 'Teleport', color: '#21262d', enabled: !inInstance(), action: startTeleport, line: inInstance() ? 'Teleport works on the overworld.' : 'Tap a place on the world map to go there.' },
       { key: 'admin:give', text: 'Give me an item', color: '#21262d', enabled: true, action: () => { S.view = { kind: 'give' }; freshSearch(); }, line: 'Anything in the game, as many as you like.' },
     ];
+    for (const p of POWERS) { const e = p.entry(); if (e) entries.push(e); }
     const withLines = T + 26, bare = T + 8;
     let cols = 1, rowH = withLines;
     if (entries.length * withLines > h) { cols = w >= 480 ? 2 : 1; if (Math.ceil(entries.length / cols) * withLines > h) rowH = bare; }
@@ -911,6 +923,7 @@
     mute, unmute, kick, ban, unban, askModlist, get modlist() { return S.modlist; },
     isSpawn, SPAWN_LIVE_MAX, UNLOCKS, modSentence, plural, amount, monName, setSearch, setQty, state: S,
     addTab, tabs: () => allTabs().map(t => t[0]),
+    addPower, kit: { btn, row, note, fit, inInstance }, GOLD, SEL,
   };
   window.ADMIN = ADMIN;
 

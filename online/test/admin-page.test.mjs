@@ -303,3 +303,16 @@ test('the admin page: adding a teacher, as the owner does it (Enter, a short pas
     assert.match(String(M.els.get('tworld').textContent), /MAIN world's \(fanglands\.com\)/);
   }
 });
+
+test('the admin page: What admins did reads a summon in plain words ("MudGoll summoned a bulldozer")', () => {
+  // the page's own sentence(), with the words it reads, run on its own
+  const from = script.indexOf('  const SPANS = '), to = script.indexOf('  async function loadModlog()');
+  assert.ok(from > 0 && to > from, 'the sentence block is where it was');
+  const sentence = vm.runInNewContext(script.slice(from, to) + '\nsentence', {});
+  const row = detail => ({ at: 0, by: 'MudGoll', act: 'summon', n: 'MudGoll', detail });
+  assert.equal(sentence(row('dozer')), 'MudGoll summoned a bulldozer');
+  assert.equal(sentence(row('walker')), 'MudGoll summoned a goblin walker');
+  assert.equal(sentence(row('beast')), 'MudGoll summoned a Barrelbeast');
+  assert.equal(sentence(row('horse')), 'MudGoll summoned Cinder the mare');
+  assert.equal(sentence(row('cart')), 'MudGoll summoned cart');   // a kind a newer world knows: its own word
+});

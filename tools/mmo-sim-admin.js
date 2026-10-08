@@ -13,6 +13,9 @@
 //   6. MudGoll keeps the map and spawns 3 goblins beside Sam: Sam sees them, kills one (Sam's kill), it is gone 2 s later for good
 //   7. Sam keeps the map: MudGoll's 2 wolves are made in Sam's game, MudGoll sees puppets, spawn_clear takes them from both
 //   8. Sam (a player) sends every admin message: each is answered error admin, nothing changes, Sam is not dropped
+//   9. MudGoll summons each ride through the panel's buttons: it stands beside him in his game alone, the world's mod log says
+//      "MudGoll summoned ..." once each, summoning one again replaces it, inside a place nothing is sent; Sam's Summon and a
+//      raw summon of his are refused and nothing appears in either game
 // Exit 0 only when every line passes. The plumbing (the fake wire, the game contexts, the Room loader) is tools/mmo-sim.js's.
 'use strict';
 const vm = require('vm');
@@ -205,6 +208,54 @@ async function main() {
     line("spawn, Sam keeps the map (MudGoll went into the Spider Den and back): MudGoll's 2 wolves are made in Sam's game and MudGoll sees them as puppets; Clear spawns takes them from both", into && out && samKeeps && asked && made && cleared && goneSam && goneMud, { into, out, samKeeps, keeper: A.COOP.keeper(), asked, inSam: inSam.length, inMud: inMud.length, goneSam, goneMud });
   }
 
+  // ---- 9. summoning a ride (docs/ONLINE.md, "Summoning a ride") ----
+  {
+    tick(120, heal);
+    const spot = openSpot(A, A.ATLAS.world.tx(60), A.ATLAS.world.ty(30));
+    A.FANGLANDS.tp(spot.x, spot.y); B.FANGLANDS.tp(spot.x + 4, spot.y); tick(12, heal);
+    const tileOf = (g, kind) => ev(g, `(() => { const k = SUMMON.KINDS.find(k => k.id === '${kind}'); return k ? k.tile() : null; })()`);
+    const near = (g, t) => ev(g, `(() => { const o = { tx: Math.floor(player.x / TILE), ty: Math.floor(player.y / TILE) }, out = []; for (let dy = -4; dy <= 4; dy++) for (let dx = -4; dx <= 4; dx++) if (tileAt(o.tx + dx, o.ty + dy) === ${t}) out.push([o.tx + dx, o.ty + dy]); return out; })()`);
+    const logRows = () => room.store.modLog(50).filter(r => r.act === 'summon');
+    const res = [];
+    for (const kind of ['horse', 'walker', 'dozer', 'beast']) {
+      const t = tileOf(A, kind), l0 = logRows().length, s0 = heard.A.length;
+      A.ADMIN.open('powers'); click(A, 'admin:summon'); const tapped = click(A, 'admin:summon:' + kind); tick(64, heal);   // past the 1 a second cap
+      const mine = near(A, t), theirs = near(B, t);
+      const rows = logRows(), line0 = rows[0];
+      const said = A.FANGLANDS.notice && /^Summoned .* beside you\. Press E to ride\.$/.test(A.FANGLANDS.notice.text);
+      res.push({ kind, tapped, mine: mine.length, theirs: theirs.length, logged: rows.length === l0 + 1 && line0.by === 'MudGoll' && line0.detail === kind, answered: got('A', 'summon', s0).length === 1, said });
+      A.FANGLANDS.closePanel();
+    }
+    const ok1 = res.every(r => r.tapped && r.mine === 1 && r.theirs === 0 && r.logged && r.answered && r.said);
+    line('summon: MudGoll taps each ride in the Powers tab (Cinder, the walker, the bulldozer, the Barrelbeast): the world answers him, logs "MudGoll summoned ..." once each, and the ride stands beside him in his game only', ok1, res);
+    // again from three tiles over: the unused bulldozer goes, the new one comes, never two
+    {
+      const t = tileOf(A, 'dozer'), count = g => ev(g, `(() => { let n = 0; for (let i = 0; i < map.length; i++) if (map[i] === ${t}) n++; return n; })()`);
+      const c0 = count(A); A.FANGLANDS.tp(spot.x - 3, spot.y); tick(70, heal);
+      const asked = A.SUMMON.summon('dozer'); tick(6, heal);
+      line('summon: the bulldozer summoned again three tiles over replaces the unused one (the same number standing), beside him', asked && count(A) === c0 && near(A, t).length === 1, { asked, before: c0, after: count(A), near: near(A, t) });
+    }
+    // inside a place: nothing is sent, nothing is logged
+    {
+      const l0 = logRows().length, s0 = heard.A.length;
+      const into = A.INSTANCES.enter('spider_den'); tick(10, heal);
+      const asked = A.SUMMON.summon('walker'); tick(70, heal); const asked2 = A.SUMMON.summon('beast'); tick(10, heal);
+      const words = A.FANGLANDS.notice && A.FANGLANDS.notice.text;
+      const out = A.INSTANCES.leave(); tick(20, heal);
+      line('summon: inside a place (the Spider Den) Summon says "Only out in the world.", sends nothing and nothing is logged', into && out && asked === false && asked2 === false && words === 'Only out in the world.' && logRows().length === l0 && got('A', 'summon', s0).length === 0, { into, out, asked, asked2, words });
+    }
+    // Sam: his Summon refuses, a raw one is refused by the world, forged answers do nothing
+    {
+      const b0 = heard.B.length, l0 = logRows().length, t = tileOf(B, 'dozer');
+      const before = near(B, t).length;
+      const no = B.SUMMON.summon('dozer') === false;
+      B.NET.send({ t: 'summon', kind: 'dozer', req: 1 }); tick(10, heal);
+      const refused = got('B', 'error', b0).filter(m => m.code === 'admin').length === 1 && got('B', 'summon', b0).length === 0;
+      ev(B, `NET.emit('summon', { t: 'summon', ok: true, kind: 'dozer', req: 1 })`); tick(2, heal);
+      line('summon: Sam (a player) cannot: his Summon sends nothing, a raw summon is answered error admin and logs nothing, a forged answer puts nothing down', no && refused && logRows().length === l0 && near(B, t).length === before && !B.ADMIN.is(), { no, refused, logged: logRows().length - l0, near: near(B, t).length, before });
+    }
+  }
+
   // ---- 8. a player's admin messages are refused ----
   {
     tick(120);
@@ -215,6 +266,7 @@ async function main() {
       { t: 'mute', n: 'MudGoll', span: 'always' }, { t: 'unmute', n: 'MudGoll' }, { t: 'kick', n: 'MudGoll' }, { t: 'ban', n: 'MudGoll' }, { t: 'unban', n: 'Sam' }, { t: 'modlist' },
       { t: 'spawn', type: 'goblin', count: 5, x: Math.round(p.x), y: Math.round(p.y) }, { t: 'spawn_clear' },
       { t: 'party', x: Math.round(p.x), y: Math.round(p.y), spots, table: [{ id: 'coins', min: 1, max: 10, w: 1 }], hat: 1000 }, { t: 'party_end' },
+      { t: 'summon', kind: 'dozer', req: 3 },
     ];
     for (const m of msgs) B.NET.send(m);
     tick(20);
@@ -223,7 +275,7 @@ async function main() {
     const noSpawns = !A.FANGLANDS.monsters.some(isSpawn) && !B.FANGLANDS.monsters.some(isSpawn);
     const parties = typeof room.store.liveParties === 'function' ? room.store.liveParties(vnow) : [];
     const samOn = B.NET.online() && B.NET.me === 'Sam';
-    line('a player is refused: Sam sends mute, unmute, kick, ban, unban, modlist, spawn, spawn_clear, party and party_end; each is answered error admin, MudGoll is not muted or kicked, nothing is spawned, no party exists, and Sam is not dropped for speed', refusals === msgs.length && aFine && noSpawns && parties.length === 0 && samOn, { refusals, of: msgs.length, aFine, noSpawns, parties: parties.length, samOn });
+    line('a player is refused: Sam sends mute, unmute, kick, ban, unban, modlist, spawn, spawn_clear, party, party_end and summon; each is answered error admin, MudGoll is not muted or kicked, nothing is spawned, no party exists, and Sam is not dropped for speed', refusals === msgs.length && aFine && noSpawns && parties.length === 0 && samOn, { refusals, of: msgs.length, aFine, noSpawns, parties: parties.length, samOn });
   }
 
   const bad = results.filter(r => !r).length;

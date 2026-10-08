@@ -438,3 +438,76 @@ test('admin messages before hello are ignored without an answer', () => {
   assert.equal(w.store.account('Sam').mutedUntil, 0);
   assert.equal(sam.of('muted').length, 0);
 });
+
+// ---------- summoning a ride (docs/ONLINE.md, "Summoning a ride") ----------
+test('summon: the admin is answered alone, with his req, and What admins did gets "MudGoll summoned a bulldozer"; nothing else moves', () => {
+  const { w, mud, sam, ada } = party3();
+  const keeper = w.room.keeperOf('over');
+  for (const [i, kind] of ['horse', 'walker', 'dozer', 'beast'].entries()) {
+    w.later();
+    w.say(mud, { t: 'summon', kind, req: i + 1 });
+    assert.deepEqual(mud.last('summon'), { t: 'summon', kind, req: i + 1, ok: true });
+  }
+  const rows = w.store.modLog(10);
+  assert.deepEqual(rows.slice(0, 4).map(r => [r.by, r.act, r.target, r.detail]), [['MudGoll', 'summon', 'MudGoll', 'beast'], ['MudGoll', 'summon', 'MudGoll', 'dozer'], ['MudGoll', 'summon', 'MudGoll', 'walker'], ['MudGoll', 'summon', 'MudGoll', 'horse']]);
+  assert.equal(mud.got.length, 4, JSON.stringify(mud.got));   // the four answers and nothing else
+  assert.equal(sam.got.length, 0, JSON.stringify(sam.got));
+  assert.equal(ada.got.length, 0, JSON.stringify(ada.got));
+  assert.equal(w.room.keeperOf('over'), keeper);
+  // no req: answered without one (an older page); a req that is not a whole number in range is not echoed
+  w.later(); w.say(mud, { t: 'summon', kind: 'dozer' });
+  assert.deepEqual(mud.last('summon'), { t: 'summon', kind: 'dozer', ok: true });
+  w.later(); w.say(mud, { t: 'summon', kind: 'dozer', req: -1 });
+  assert.deepEqual(mud.last('summon'), { t: 'summon', kind: 'dozer', ok: true });
+  w.later(); w.say(mud, { t: 'summon', kind: 'dozer', req: 'x' });
+  assert.deepEqual(mud.last('summon'), { t: 'summon', kind: 'dozer', ok: true });
+});
+
+test('summon: a player is answered error admin and nothing is written; a kind the world does not know is refused bad', () => {
+  const { w, mud, sam } = party3();
+  const before = snapshot(w.store);
+  w.say(sam, { t: 'summon', kind: 'dozer', req: 1 });
+  assert.deepEqual(sam.got, [{ t: 'error', code: 'admin', text: 'only an admin can do that' }]);
+  assert.equal(sam.of('summon').length, 0);
+  assert.equal(mud.got.length, 0);
+  assert.equal(snapshot(w.store), before);
+  for (const kind of ['dragon', '', null, 7, 'HORSE', '__proto__']) {
+    w.later(); w.say(mud, { t: 'summon', kind, req: 2 });
+    assert.deepEqual(mud.last('summon'), { t: 'summon', kind: null, req: 2, ok: false, code: 'bad' }, String(kind));
+  }
+  assert.equal(snapshot(w.store), before);
+});
+
+test('summon: out in the world only: in a place or on his own island the answer is code place and nothing is written', () => {
+  const { w, mud } = party3();
+  const before = snapshot(w.store);
+  for (const map of ['spider_den', 'deepholm', 'house']) {
+    w.later();
+    w.say(mud, { t: 'p', map, x: 480, y: 480, lv: 3 });
+    w.say(mud, { t: 'summon', kind: 'beast', req: 9 });
+    assert.deepEqual(mud.last('summon'), { t: 'summon', kind: 'beast', req: 9, ok: false, code: 'place' }, map);
+  }
+  assert.equal(snapshot(w.store), before);
+  w.later(); w.say(mud, { t: 'p', map: 'over', x: 480, y: 480, lv: 3 });
+  w.say(mud, { t: 'summon', kind: 'beast', req: 10 });
+  assert.equal(mud.last('summon').ok, true);
+  assert.equal(w.store.modLog(1)[0].detail, 'beast');
+});
+
+test('summon: the cap (1 a second, a burst of 3) runs before anything else', () => {
+  const { w, mud } = party3();
+  for (let i = 0; i < 4; i++) w.say(mud, { t: 'summon', kind: 'walker', req: i });
+  assert.equal(mud.of('summon').length, 3);
+  assert.equal(w.store.modLog(10).filter(r => r.act === 'summon').length, 3);
+  w.later(); w.say(mud, { t: 'summon', kind: 'walker', req: 9 });
+  assert.equal(mud.last('summon').req, 9);
+});
+
+test('summon: a demoted admin is refused at once (the role is read from the store for every summon)', () => {
+  const { w, mud } = party3();
+  w.store.setRole('mudgoll', 'player');
+  w.say(mud, { t: 'summon', kind: 'horse', req: 1 });
+  assert.equal(mud.of('summon').length, 0);
+  assert.equal(mud.last('error').code, 'admin');
+  assert.equal(w.store.modLog(10).filter(r => r.act === 'summon').length, 0);
+});
