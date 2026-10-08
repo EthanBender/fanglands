@@ -871,7 +871,7 @@ const OLD_BARROW = (() => {
   QUEST_DEFS.nec_king = { name: 'The Barrow King' };
   QUEST_DEFS.nec_name = { name: 'The Name on the Stone' };
   const REWARD = { q1: 450, q2: 1200, q3: 3000, q4: 10000, q5: 25000 };
-  const GHOST_XP = 250;   // each ghost met the first time (and a soul shard)
+  const GHOST = { xp: 250 }, GHOST_XP = GHOST.xp;   // each ghost met the first time pays this (and a soul shard)
   const complete = (title, xp) => { gainXp('necromancy', xp); levelBanner = { text: 'QUEST COMPLETE', sub: title, t: 3.5 }; sfx('quest'); };
 
   // ---------- the ghosts (Speak with the Dead): seen only in a Ghostlight (Rattle and Ambrose by anyone) ----------
