@@ -32,7 +32,7 @@ const NECRO = (() => {
   // THE CHOICES (spec section 9: the designer's picks, built as the owner's standing rule says). Each is ONE line here.
   // ======================================================================================================================
   const CHOICES = {
-    TEACHERS: { keeper: 'Granny Wick', skull: 'Rattle' },   // 1. who teaches, at the Old Barrow (89-oldbarrow reads both names)
+    TEACHERS: { keeper: 'Granny Wick', keeperShort: 'Granny', skull: 'Rattle' },   // 1. who teaches at the Old Barrow (every line that names them reads these)
     BAR: 'spirit',                                          // 2. a Spirit bar that refills by itself, plus supplies (no runes)
     COUNTS_TO_COMBAT: false,                                // 3. Necromancy is not in combatLevel() (a core const: true is not built)
     SCYTHE: { monster: 'the_hollow', chance: 250 },          // 4. the Void Scythe: the Hollow, 1 in 250 per paid kill (MEGA_RARE.SOURCES)
@@ -46,7 +46,7 @@ const NECRO = (() => {
     WATCH_XP: { dusk: 20, midnight: 110, deep: 380 },       // 12. the cape at about 95 hours: the Lantern Watch's pay per wave (× wave number)
     UNDERTAKER: 'separate',                                 // 13. the queued Undertaker idea is not built here
     SHARD_PRICE: 25,                                        // 14. Granny Wick sells soul shards at this many coins
-    ALL_GHOSTS: { xp: 2000, reward: "Rattle's story" },     // 15. meeting all 12 ghosts: Rattle's own story and this much XP
+    ALL_GHOSTS: { xp: 2000 },                               // 15. meeting all 12 ghosts: the skull's own story (TEACHERS.skull) and this much XP
   };
 
   // ---------- small helpers ----------
@@ -155,7 +155,7 @@ const NECRO = (() => {
   const canKnow = s => L() >= s.lv && taught(s);
   // why not, in plain words (null when it can be cast at all)
   function lockedWhy(s) {
-    if (!taught(s)) return s.q === 'q1' || s.q === 'q1b' ? 'Granny Wick teaches it at the Old Barrow.' : 'A quest at the Old Barrow teaches it.';
+    if (!taught(s)) return s.q === 'q1' || s.q === 'q1b' ? `${CHOICES.TEACHERS.keeper} teaches it at the Old Barrow.` : 'A quest at the Old Barrow teaches it.';
     if (L() < s.lv) return `Needs Necromancy ${s.lv}.`;
     return null;
   }

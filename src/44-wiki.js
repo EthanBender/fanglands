@@ -118,13 +118,7 @@
     dragons: { giver: 'Dunstan the dung farmer, the Ashfields', reward: '150 coins, 150 Farming xp, his stall opens', kind: 'Side quest' },
     board: { giver: 'The notice board in Thistledown square (and by the cave road)', reward: 'Coins and xp per job; the Duke pays a steel bar', kind: 'Tiny quests' },
     tinker: { giver: 'Tinkerton, Grubmarket (the Far Shore)', reward: "400 coins, Tinker's goggles, his shop opens", kind: 'Side quest' },
-    // Necromancy's five (89-oldbarrow)
-    nec_bramble: { giver: 'Granny Wick, the Old Barrow (combat 5)', reward: "450 Necromancy xp, the Barrow wand, Soul Bolt and Ghostlight, Bramble's collar", kind: 'Necromancy' },
-    nec_bell: { giver: 'Granny Wick, the Old Barrow (Necromancy 5)', reward: '1,200 Necromancy xp, Raise Bones, the Little Bell', kind: 'Necromancy' },
-    nec_lanterns: { giver: 'Granny Wick, the Old Barrow (Necromancy 18, combat 25)', reward: "3,000 Necromancy xp, Grave Walk, Ned's lucky turnip", kind: 'Necromancy' },
-    nec_king: { giver: 'Granny Wick, the Old Barrow (Necromancy 40)', reward: "10,000 Necromancy xp, Raise Risen (at 50), the King's seal", kind: 'Necromancy' },
-    nec_name: { giver: 'Granny Wick, the Old Barrow (Necromancy 60, combat 60)', reward: '25,000 Necromancy xp, Call the Last Knight (at 95), and the names home', kind: 'Necromancy' },
-    nec_ghosts: { giver: 'Speak with the Dead (Ghostlight)', reward: "250 Necromancy xp and a soul shard each; all twelve: Rattle's story and 2,000 xp", kind: 'Necromancy' },
+    // (Necromancy's quests, nec_*: 89-oldbarrow writes their rows with WIKI.add, from its own names and numbers)
     gnash: { giver: 'King Gnash, Castle Gnash', reward: 'His treasury: 3 steel bars, 2 mithril bars, his crown', kind: 'Side quest' },
     rebuild: { giver: "The board in Hollowford's square", reward: 'A town again; 500 coins at the end', kind: 'Side quest' },
     guild: { giver: 'Old Tam, Hollowford', reward: 'Ranks, a chest, a cape (500 coins) and staff', kind: 'Side quest' },

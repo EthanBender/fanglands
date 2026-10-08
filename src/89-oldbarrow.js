@@ -37,7 +37,7 @@ const OLD_BARROW = (() => {
   const LIFT = { candle: 22, lamp: 46, head: 30 };   // pixels above a thing's feet where its light or tag sits
   const REACHES = [36, 62, 100];                      // how far in front of the knight E looks, in pixels
   const SEED = (() => { let h = 2166136261; for (const c of '89-oldbarrow') h = Math.imul(h ^ c.charCodeAt(0), 16777619); return h >>> 0; })();
-  const GRANNY = C.TEACHERS.keeper, RATTLE = C.TEACHERS.skull;
+  const GRANNY = C.TEACHERS.keeper, GRANNY_SHORT = C.TEACHERS.keeperShort, RATTLE = C.TEACHERS.skull, RATTLE_STORY = `${RATTLE}'s story`;
   // the words a kid sees for a button: on touch the BOLT face's own word (a wand in hand turns SWING into BOLT), and the throne's
   // USE (keyName('KeyE') has no touch word)
   const BOLT_KEY = () => touchMode() ? 'BOLT' : keyName('Space');
@@ -77,7 +77,7 @@ const OLD_BARROW = (() => {
   // lying face-down in the builders' spoil
   const TRAIL = [[7, 4], [9, 4], [11, 4], [13, 3], [15, 2], [17, 1], [19, 0], [21, -1], [23, -2], [24, -4], [25, -6]];
   const SPOIL = [25, -7];   // the stone, face-down
-  const COTTAGE = BF.pt({ id: 'barrow_cottage', x: 11, y: 5, w: 4, h: 4, name: "Granny Wick's cottage", roof: '#4a4038', door: 1, f: [[T.BED, 1, 1], [T.TABLE, 2, 1]] });
+  const COTTAGE = BF.pt({ id: 'barrow_cottage', x: 11, y: 5, w: 4, h: 4, name: `${GRANNY}'s cottage`, roof: '#4a4038', door: 1, f: [[T.BED, 1, 1], [T.TABLE, 2, 1]] });
   COTTAGE.oldbarrow = true;
   const GRANNY_NPC = BF.pt({ id: 'granny_wick', name: GRANNY, x: PT.granny[0], y: PT.granny[1], tunic: '#2f3a2a', hair: '#d8d4cc', woman: true, apron: true, role: 'barrow_keeper', shop: 'barrow_candles' });
   GRANNY_NPC.oldbarrow = true;
@@ -99,7 +99,7 @@ const OLD_BARROW = (() => {
 
   // ---------- DECO kinds (walkable): the candle circle and the old graves ----------
   const ART = () => window.NECRO_ART || null;
-  DECO.kind('barrow_candle', { flat: true, use: 'Granny Wick\'s candles. They help lost ghosts find their way to rest. Stand among them and your spirit comes back twice as fast.',
+  DECO.kind('barrow_candle', { flat: true, use: `${GRANNY}'s candles. They help lost ghosts find their way to rest. Stand among them and your spirit comes back twice as fast.`,
     draw(g, px, py, c, tx, ty) { const a = ART(); if (a) a.candleCell(g, px, py, tx, ty); } });
   DECO.kind('old_grave', { flat: true, use: (c, tx, ty) => graveWords(tx, ty),
     draw(g, px, py, c, tx, ty) { const a = ART(); if (a) a.oldGrave(g, px, py, tx, ty, tobiasHere(tx, ty)); } });
@@ -210,7 +210,7 @@ const OLD_BARROW = (() => {
     if (c.kind === 'dummy') { notify(NECRO.focusInHand() ? `Bolt the dummy (${BOLT_KEY()}). It does not mind.` : 'A bone dummy for practising spells. Hold a wand and bolt it.'); return true; }
     if (c.kind === 'mound') { notify(nightNow() ? 'The barrow mound. Little lights drift over the grass at night. They mean no harm.' : 'The barrow mound, where the first Wolfwood folk buried their kings.'); return true; }
     if (c.kind === 'ruin') { notify('The chapel\'s old wall. The roof fell in long ago.'); return true; }
-    if (c.kind === 'lantern') { notify('A lantern on a post. Granny Wick lights them at dusk.'); return true; }
+    if (c.kind === 'lantern') { notify(`A lantern on a post. ${GRANNY} lights them at dusk.`); return true; }
     return false;
   });
   const nightNow = () => !!(window.NIGHT && NIGHT.phase && NIGHT.phase() !== 'day');
@@ -277,12 +277,12 @@ const OLD_BARROW = (() => {
   // =====================================================================================================================
   const say2 = (lines, who) => { for (const l of lines) say(l, who); };
   const L = () => NECRO.level();
-  SHOPS.barrow_candles = { name: "Granny Wick's shelf", stock: [['soul_shard', C.SHARD_PRICE]], buys: [], rate: 1, buysWords: 'Granny Wick buys nothing. "I have more bones than I know what to do with, dear."' };
+  SHOPS.barrow_candles = { name: `${GRANNY}'s shelf`, stock: [['soul_shard', C.SHARD_PRICE]], buys: [], rate: 1, buysWords: `${GRANNY} buys nothing. "I have more bones than I know what to do with, dear."` };
   const AFTER = [
     'Most of them only want someone to remember them. Remember that, and you will be a good keeper.',
-    "Soul shards on my shelf, twenty-five coins each, if you run short. Nobody should ever be stuck for a shard.",
+    `Soul shards on my shelf, ${C.SHARD_PRICE} coins each, if you run short. Nobody should ever be stuck for a shard.`,
     'The candles do the hard work. I just keep them lit.',
-    'Rattle has told you the joke about the skeleton and the party? He tells everybody. Every single body.',
+    `${RATTLE} has told you the joke about the skeleton and the party? He tells everybody. Every single body.`,
   ];
   let afterN = 0;
   HOOKS.talk.barrow_keeper = n => grannyTalk(n);
@@ -292,7 +292,7 @@ const OLD_BARROW = (() => {
     if (q.q1 === 0) {
       if (combatLevel() < 5) { say2(["Well now, a knight. You'll want to swing a sword a while before the dead will listen to you, dear.", 'Come back at combat level 5.'], GRANNY); return; }
       q.q1 = 1; NECRO.learn('bolt'); giveOrDrop('barrow_wand', 1, player.x, player.y); sfx('quest');
-      say2(["You heard Rattle? Not just clacking, but the words? Most folk only hear clacking. You've got the knack.",
+      say2([`You heard ${RATTLE}? Not just clacking, but the words? Most folk only hear clacking. You've got the knack.`,
         "Necromancy isn't bossing the dead about. It's listening. Most of them only want someone to remember them.",
         'Here: my old Barrow wand. Hold it and swing, and it throws a Soul Bolt. Practise on my bone dummies. They don\'t mind.'], GRANNY);
       notify(`Hold the Barrow wand, face a bone dummy and ${touchMode() ? 'tap' : 'press'} ${BOLT_KEY()}. Necromancy 3 to go on.`); save(); return;
@@ -344,7 +344,7 @@ const OLD_BARROW = (() => {
   // Rattle: a court jester buried here 400 years ago, still telling terrible jokes. Anyone sees and hears him.
   const JOKES = [
     "Why didn't the skeleton go to the party? He had no BODY to go with. I'll be here all week. I'll be here all century.",
-    "What do you call a skeleton who won't work? Lazy bones. Granny calls me that. Every day.",
+    `What do you call a skeleton who won't work? Lazy bones. ${GRANNY_SHORT} calls me that. Every day.`,
     "Why are skeletons so calm? Nothing gets under their skin.",
     "I tried to be a drummer once. Too many bones in the band. We kept falling apart.",
     "Knock knock. Who's there? Tibia. Tibia who? Tibia honest, I forgot the rest.",
@@ -357,11 +357,11 @@ const OLD_BARROW = (() => {
     const met = Object.keys(NECRO.N().ghosts).filter(k => GHOST_IDS.includes(k)).length;
     if (met >= GHOST_IDS.length && !q.rattleStory) {
       q.rattleStory = true; gainXp('necromancy', C.ALL_GHOSTS.xp); sfx('quest');
-      levelBanner = { text: 'ALL TWELVE GHOSTS', sub: C.ALL_GHOSTS.reward, t: 3.5 };
+      levelBanner = { text: 'ALL TWELVE GHOSTS', sub: RATTLE_STORY, t: 3.5 };
       say2(['Twelve! You found all twelve of us. Then you have earned it: my story.', 'Four hundred years ago I told the old king a joke so good he laughed until he cried. Then he made me promise to save the best one for someone who would really listen.',
         'Here it is. What is the best thing about being a skeleton? ... You always have a funny bone. And now so do you.'], RATTLE); save(); return;
     }
-    if (q.q1 === 0) { say2([JOKES[0], 'Granny! A live one! Talk to Granny Wick, knight. She is by the cottage.'], RATTLE); return; }
+    if (q.q1 === 0) { say2([JOKES[0], `${GRANNY_SHORT}! A live one! Talk to ${GRANNY}, knight. She is by the cottage.`], RATTLE); return; }
     say(JOKES[RT.n++ % JOKES.length], RATTLE);
   }
   // Rattle cracks a joke as the knight walks in (once a visit)
@@ -681,7 +681,7 @@ const OLD_BARROW = (() => {
     if (running()) { notify('The Watch is already running. Keep the candles lit!'); return; }
     const b = bellMon(); if (b && (b.state === 'won' || b.state === 'lost')) { notify('The bell is still ringing. Wait for it to fall quiet.'); return; }
     const r = window.COOP && COOP.call ? COOP.call('watch_' + key) : (startWatch(key), 'woke');
-    say(B().q1 >= DONE ? 'The bell tolls. The restless are coming for the candles. Keep one burning through six waves!' : 'The bell tolls. (Finish Bramble\'s Last Walk with Granny Wick and the Watch will pay you Necromancy.)', 'The Barrow Deep');
+    say(B().q1 >= DONE ? 'The bell tolls. The restless are coming for the candles. Keep one burning through six waves!' : `The bell tolls. (Finish Bramble's Last Walk with ${GRANNY} and the Watch will pay you Necromancy.)`, 'The Barrow Deep');
     return r;
   }
   HOOKS.bossCall = HOOKS.bossCall || {};
@@ -848,11 +848,11 @@ const OLD_BARROW = (() => {
   // cannot rest. Stages: 0 not started ... 9 (DONE). Story items declare their giver.
   // =====================================================================================================================
   Object.assign(ITEMS, {
-    tobias_stone: { name: "Tobias's stone", value: 0, color: '#8a8a82', shape: 'rock', stack: 1, unique: true, giver: 'the builders\' spoil by the Old Barrow (Q1, Granny Wick)' },
-    bramble_collar: { name: "Bramble's collar", value: 0, color: '#8a5a2a', shape: 'silk', stack: 1, unique: true, giver: 'Bramble, at the Old Barrow (Q1, Granny Wick)' },
-    little_bell: { name: 'The Little Bell', value: 0, color: '#d9b25c', shape: 'coins', stack: 1, unique: true, giver: 'Ambrose the bell-ringer, Hollowford (Q2, Granny Wick)' },
-    neds_turnip: { name: "Ned's lucky turnip", value: 1, color: '#e2d6e8', shape: 'potato', stack: 1, unique: true, giver: 'Old Ned, in the Afterlands (Q3, Granny Wick)' },
-    kings_seal: { name: "The King's seal", value: 0, color: '#d9b25c', shape: 'coins', stack: 1, unique: true, giver: 'the Barrow King (Q4, Granny Wick)' },
+    tobias_stone: { name: "Tobias's stone", value: 0, color: '#8a8a82', shape: 'rock', stack: 1, unique: true, giver: `the builders' spoil by the Old Barrow (Q1, ${GRANNY})` },
+    bramble_collar: { name: "Bramble's collar", value: 0, color: '#8a5a2a', shape: 'silk', stack: 1, unique: true, giver: `Bramble, at the Old Barrow (Q1, ${GRANNY})` },
+    little_bell: { name: 'The Little Bell', value: 0, color: '#d9b25c', shape: 'coins', stack: 1, unique: true, giver: `Ambrose the bell-ringer, Hollowford (Q2, ${GRANNY})` },
+    neds_turnip: { name: "Ned's lucky turnip", value: 1, color: '#e2d6e8', shape: 'potato', stack: 1, unique: true, giver: `Old Ned, in the Afterlands (Q3, ${GRANNY})` },
+    kings_seal: { name: "The King's seal", value: 0, color: '#d9b25c', shape: 'coins', stack: 1, unique: true, giver: `the Barrow King (Q4, ${GRANNY})` },
   });
   for (const k of ['tobias_stone', 'bramble_collar', 'little_bell', 'neds_turnip', 'kings_seal']) ITEMS[k].id = k;
   if (window.KEYRING && KEYRING.register) {
@@ -871,6 +871,7 @@ const OLD_BARROW = (() => {
   QUEST_DEFS.nec_king = { name: 'The Barrow King' };
   QUEST_DEFS.nec_name = { name: 'The Name on the Stone' };
   const REWARD = { q1: 450, q2: 1200, q3: 3000, q4: 10000, q5: 25000 };
+  const GHOST_XP = 250;   // each ghost met the first time (and a soul shard)
   const complete = (title, xp) => { gainXp('necromancy', xp); levelBanner = { text: 'QUEST COMPLETE', sub: title, t: 3.5 }; sfx('quest'); };
 
   // ---------- the ghosts (Speak with the Dead): seen only in a Ghostlight (Rattle and Ambrose by anyone) ----------
@@ -878,10 +879,10 @@ const OLD_BARROW = (() => {
   const GHOST_NAME = { rattle: RATTLE, bramble: 'Bramble', ambrose: 'Ambrose', ned: 'Old Ned', barrow_king: 'the Barrow King', corwin: C.LAST_KNIGHT, pell: 'Mistress Pell', hob: 'Wee Hob', finn: 'Old Finn', snik: 'Snik', osric_ghost: 'Brother Osric', ivy: 'Lady Ivy' };
   function meetGhost(id) {
     const p = NECRO.N(); if (p.ghosts[id] || !GHOST_IDS.includes(id)) return false;
-    p.ghosts[id] = true; gainXp('necromancy', 250); giveOrDrop('soul_shard', 1, player.x, player.y);
+    p.ghosts[id] = true; gainXp('necromancy', GHOST_XP); giveOrDrop('soul_shard', 1, player.x, player.y);
     const n = GHOST_IDS.filter(k => p.ghosts[k]).length;
-    notify(`Ghosts met: ${n} / ${GHOST_IDS.length}. +250 Necromancy and a soul shard.`);
-    if (n === GHOST_IDS.length) say('Twelve! Go and tell Rattle. He has been saving something for you.', GRANNY);
+    notify(`Ghosts met: ${n} / ${GHOST_IDS.length}. +${GHOST_XP} Necromancy and a soul shard.`);
+    if (n === GHOST_IDS.length) say(`Twelve! Go and tell ${RATTLE}. He has been saving something for you.`, GRANNY);
     save(); return true;
   }
   // a spot near a place's point: open ground (or a floor), 4+ tiles off every rail and signpost, found the same way on
@@ -959,7 +960,7 @@ const OLD_BARROW = (() => {
       meetGhost('ambrose'); q.q2 = 2; NECRO.learn('raise');
       NECRO.makeHelper('sq', { x: gh.x, y: gh.y }, { quest: 'ambrose', look: 'ambrose', maxHit: 3 });
       say('The skeleton turns its head. It looks lost, not hungry. It wants to walk east, and cannot remember why.', 'The Voice');
-      say2(["Granny Wick's lesson comes back to you: Raise Bones. You lend it a little strength, and it stands straighter.", 'Walk with it to Hollowford. Someone there might know it.'], 'The Voice');
+      say2([`${GRANNY}'s lesson comes back to you: Raise Bones. You lend it a little strength, and it stands straighter.`, 'Walk with it to Hollowford. Someone there might know it.'], 'The Voice');
       notify('You learned Raise Bones. Your new friend follows you now.'); save(); return;
     }
     if (gh.id === 'ned') {
@@ -1122,26 +1123,37 @@ const OLD_BARROW = (() => {
   // ---------- the book (44-wiki: the QUEST_INFO rows are its own; these pages are written here) ----------
   if (window.WIKI) {
     const SP = NECRO.SPELLS;
+    // the five quests' rows (the ghosts' row is ghostPage's), made from the names and numbers above, so a choice changes in one line
+    const comma = v => String(v).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    const at = `${GRANNY}, the Old Barrow`;
+    for (const [id, giver, reward] of [
+      ['nec_bramble', `${at} (combat 5)`, `${comma(REWARD.q1)} Necromancy xp, the Barrow wand, Soul Bolt and Ghostlight, Bramble's collar`],
+      ['nec_bell', `${at} (Necromancy 5)`, `${comma(REWARD.q2)} Necromancy xp, Raise Bones, the Little Bell`],
+      ['nec_lanterns', `${at} (Necromancy 18, combat 25)`, `${comma(REWARD.q3)} Necromancy xp, Grave Walk, Ned's lucky turnip`],
+      ['nec_king', `${at} (Necromancy 40)`, `${comma(REWARD.q4)} Necromancy xp, Raise Risen (at 50), the King's seal`],
+      ['nec_name', `${at} (Necromancy 60, combat 60)`, `${comma(REWARD.q5)} Necromancy xp, Call the Last Knight (at 95), and the names home`],
+    ]) WIKI.add('quests', { id, name: QUEST_DEFS[id] ? QUEST_DEFS[id].name : id, giver, reward, kind: 'Necromancy' });
     const skillLines = () => {
       const out = ['Necromancy is listening to the dead. You ask old bones and lost ghosts for help; they help, and then they go back to rest.', `Start: ${GRANNY} at the Old Barrow (combat level 5).`, { t: 'SPELLS', c: '#d9b25c' }];
       for (const s of SP) out.push(`Lv ${s.lv} · ${s.name}: ${s.what}${s.spirit ? ' ' + s.spirit + ' spirit.' : ''}${s.rest ? ' Rests ' + Math.round(s.rest / 60) + ' minutes.' : s.cd >= 1 ? ' Every ' + s.cd + ' s.' : ''}`);
       out.push({ t: 'SPIRIT AND POWER', c: '#d9b25c' }, 'Spirit = 20 + your level + your power, and it refills by itself: twice as fast out of a fight, twice again in a lit candle circle. The Bone Altar fills it; a soul shard gives 15.',
         'Power is what your necromancer gear adds: the wand 2, the Gravewood stave 6, the Bone stave 10, the Void Scythe 15, the hood 4, the robe 8, the wraps 5, the Soul lantern 6, the cape 3, and +5 for the whole Barrow-bound set.',
-        { t: 'SUPPLIES', c: '#d9b25c' }, 'Bones, grave dust, soul shards, brute bones and dragon bones. Granny Wick sells soul shards for ' + C.SHARD_PRICE + ' coins.',
+        { t: 'SUPPLIES', c: '#d9b25c' }, 'Bones, grave dust, soul shards, brute bones and dragon bones. ' + GRANNY + ' sells soul shards for ' + C.SHARD_PRICE + ' coins.',
         { t: 'WAYS TO EARN XP', c: '#d9b25c' }, '2 xp a point of spell damage, 1 a point of helper damage.', 'Raising your own graves: wood cross 25, grave 60, headstone 150.', 'Offering at the Bone Altar: bone 15, brute bone 70 (Lv 30), dragon bone 160 (Lv 45).',
-        `The Lantern Watch: every wave pays ${C.WATCH_XP.dusk} (Dusk, Lv 10), ${C.WATCH_XP.midnight} (Midnight, Lv 40) or ${C.WATCH_XP.deep} (Deep, Lv 70) times the wave number.`, 'Meeting a ghost: 250 the first time, and a soul shard.', 'Five quests at the Old Barrow, and the Gravewood stave (400).');
+        `The Lantern Watch: every wave pays ${C.WATCH_XP.dusk} (Dusk, Lv 10), ${C.WATCH_XP.midnight} (Midnight, Lv 40) or ${C.WATCH_XP.deep} (Deep, Lv 70) times the wave number.`, `Meeting a ghost: ${GHOST_XP} the first time, and a soul shard.`, 'Five quests at the Old Barrow, and the Gravewood stave (400).');
       return out;
     };
     WIKI.add('skills', { id: 'necromancy', name: 'Necromancy', get lines() { return skillLines(); } });
-    WIKI.add('places', { id: 'old_barrow', name: 'The Old Barrow', lines: ['Where the first Wolfwood folk buried their kings, long before Thistledown. A roofless chapel, the Bone Altar, Granny Wick\'s cottage and a barrow mound with a stair down.', `${GRANNY} teaches Necromancy here, and ${RATTLE} tells jokes from his post.`, 'The candle circle doubles your spirit\'s refill. The bone dummies take Soul Bolts for practice (up to 300 xp a day).'] });
+    WIKI.add('places', { id: 'old_barrow', name: 'The Old Barrow', lines: ['Where the first Wolfwood folk buried their kings, long before Thistledown. A roofless chapel, the Bone Altar, ' + GRANNY + '\'s cottage and a barrow mound with a stair down.', `${GRANNY} teaches Necromancy here, and ${RATTLE} tells jokes from his post.`, 'The candle circle doubles your spirit\'s refill. The bone dummies take Soul Bolts for practice (up to 300 xp a day).'] });
     WIKI.add('places', { id: 'barrow_deep', name: 'The Barrow Deep', lines: ['Under the Old Barrow. The Candle Hall holds the Lantern Watch: ring a bell-rope and keep at least one candle burning through six waves.', "Past the Ossuary (Bramble's collar opens the bone hand) is the King's Hall, and behind the King's own seal, the Sealed Vault.", 'Both of its bosses come back to fight again after a five minute rest.'] });
     ghostPage();
   }
+  function GHOSTS_REWARD() { return `${GHOST_XP} Necromancy xp and a soul shard each; all twelve: ${RATTLE_STORY} and ${String(C.ALL_GHOSTS.xp).replace(/\B(?=(\d{3})+(?!\d))/g, ',')} xp`; }
   // "Ghosts met n / 12": only the ghosts met are named (nothing is spoiled); written again whenever the count moves
   function ghostPage() {
     if (!window.WIKI) return;
     const g = player && player.necro && player.necro.ghosts ? player.necro.ghosts : {}, met = GHOST_IDS.filter(k => g[k]);
-    WIKI.add('quests', { id: 'nec_ghosts', name: 'Ghosts met', lines: [`Ghosts met: ${met.length} / ${GHOST_IDS.length}.`, 'Turn on your Ghostlight and talk to the ghosts you see. The wanderers come out at night.'].concat(met.map(k => GHOST_NAME[k])) });
+    WIKI.add('quests', { id: 'nec_ghosts', name: 'Ghosts met', kind: 'Necromancy', giver: 'Speak with the Dead (Ghostlight)', reward: GHOSTS_REWARD(), lines: [`Ghosts met: ${met.length} / ${GHOST_IDS.length}.`, 'Turn on your Ghostlight and talk to the ghosts you see. The wanderers come out at night.'].concat(met.map(k => GHOST_NAME[k])) });
   }
   let ghostN = -1;
   HOOKS.update.push(() => { const g = player.necro && player.necro.ghosts, n = g ? GHOST_IDS.filter(k => g[k]).length : 0; if (n !== ghostN) { ghostN = n; ghostPage(); } });
@@ -1327,6 +1339,18 @@ const OLD_BARROW = (() => {
         const lines = sk && sk.lines ? sk.lines.map(l => typeof l === 'string' ? l : l.t).join(' ') : '';
         const spells = NECRO.SPELLS.every(sp => lines.indexOf(sp.name) >= 0), qs = ['nec_bramble', 'nec_bell', 'nec_lanterns', 'nec_king', 'nec_name'].every(id => !!WIKI.get('quests', id));
         check(P2 + 'N18 the book: the Necromancy page lists all 12 spells, the supplies and the ways to earn xp; the Old Barrow and the Barrow Deep have pages, the five quests are in it, and "Ghosts met" counts', spells && /SUPPLIES/.test(lines) && /WAYS TO EARN XP/.test(lines) && !!ob && !!bd && qs && !!gm && /Ghosts met: \d+ \/ 12/.test(gm.lines[0]), { spells, ob: !!ob, bd: !!bd, qs, gm: !!gm }); }
+      // ---- N21 the choices are one-line changes: no teacher's name typed out by hand in these files (the TEACHERS line is the one
+      // place), Granny's shelf line says C.SHARD_PRICE, and the ghosts' reward says C.ALL_GHOSTS.xp ----
+      { const src = String(window.__gameSource || ''), hand = [], HAND_RE = new RegExp(['Gra' + 'nny', 'Rat' + 'tle', 'twenty-' + 'five'].join('|'));
+        for (const part of src.split(/\n\/\/ ---- src\//)) {
+          const file = part.slice(0, part.indexOf(' ')); if (!/^(89-oldbarrow|89-necromancy|89-necroart|44-wiki)\.js$/.test(file)) continue;
+          part.split('\n').forEach((ln, i) => { const code = ln.replace(/^\s*\/\/.*$/, '').replace(/\s\/\/\s.*$/, '');
+            if (/TEACHERS: \{|check\(P2? \+/.test(code)) return; if (HAND_RE.test(code)) hand.push(file + ':' + i + ' ' + code.trim().slice(0, 80)); }); }
+        const comma = String(C.ALL_GHOSTS.xp).replace(/\B(?=(\d{3})+(?!\d))/g, ','), gh = WIKI.get('quests', 'nec_ghosts') || {}, q1 = WIKI.get('quests', 'nec_bramble') || {};
+        const shelf = AFTER.some(l => l.includes(C.SHARD_PRICE + ' coins each')), ghosts = String(gh.reward).includes(comma + ' xp') && String(gh.reward).includes(RATTLE_STORY);
+        const giver = String(q1.giver).startsWith(GRANNY + ',') && q1.name === QUEST_DEFS.nec_bramble.name;
+        check(P2 + 'N21 every choice is one line: no teacher name typed by hand in 89-oldbarrow, 89-necromancy, 89-necroart or 44-wiki (only the TEACHERS line), her shelf line reads SHARD_PRICE, the ghosts\' wiki reward reads ALL_GHOSTS.xp and the quests\' givers read TEACHERS',
+          src.length > 0 && hand.length === 0 && shelf && ghosts && giver, { hand: hand.slice(0, 8), n: hand.length, shelf, ghosts, giver, reward: gh.reward }); }
       // ---- N20 the words on a touch screen: the first lesson names the BOLT button (a wand in hand turns SWING into BOLT), the
       // throne names USE (keyName('KeyE') is the raw 'KeyE' there) ----
       { const kt = window.__forceTouch, kq = JSON.stringify(quest.barrow || {}); const r = {};
