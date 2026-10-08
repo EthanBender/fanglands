@@ -23090,11 +23090,20 @@ window.SETTINGS = SETTINGS;
   // ---------- putting her down and picking her up ----------
   function horseAt() { const a = H().at; return (a && inMap(a[0], a[1]) && tileAt(a[0], a[1]) === T_HORSE) ? { tx: a[0], ty: a[1] } : null; }
   function liftHorse() { const at = horseAt(); if (at) changeTile(at.tx, at.ty, groundUnder()); H().at = null; H().under = null; }
+  // never on a knight: whistled in while he stood on the spot south of the rail (her first choice), she was put down on top
+  // of him and he was stuck under her and could not get on (owner, 7 Oct). A friend standing there counts too.
+  function knightOn(tx, ty) {
+    if (!player.dead && circleHitsTile(player.x, player.y, player.r || 14, tx, ty)) return true;
+    const P = window.PLAYERS, here = P && typeof P.mapId === 'function' ? P.mapId() : null;
+    if (P && P.remote) for (const k of Object.values(P.remote)) if (k && !k.dead && k.map === here && typeof k.x === 'number' && circleHitsTile(k.x, k.y, 14, tx, ty)) return true;
+    return false;
+  }
   function parkAt(tx, ty) {
     if (!inMap(tx, ty)) return false;
     const t = tileAt(tx, ty);
     if (!PLACEABLE_ON.has(t) || insideBuilding(tx, ty)) return false;
     for (const n of NPCS) if (circleHitsTile(n.px, n.py, 14, tx, ty)) return false;
+    if (knightOn(tx, ty)) return false;
     H().under = tileName(t); changeTile(tx, ty, T_HORSE); H().at = [tx, ty];
     return true;
   }
@@ -23220,8 +23229,10 @@ window.SETTINGS = SETTINGS;
   function horseNear() {
     const own = { tx: Math.floor(player.x / TILE), ty: Math.floor(player.y / TILE) };
     const ft = frontTile(player, 44);
+    if (tileAt(own.tx, own.ty) === T_HORSE) return own;   // a knight already under her (an old save, or before the fix above) can still get on
     if (tileAt(ft.tx, ft.ty) === T_HORSE) return ft;
-    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) if (tileAt(own.tx + dx, own.ty + dy) === T_HORSE) return { tx: own.tx + dx, ty: own.ty + dy };
+    // beside him, the diagonals too (whistled in while he stands at the rail she can come to a corner of him)
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]]) if (tileAt(own.tx + dx, own.ty + dy) === T_HORSE) return { tx: own.tx + dx, ty: own.ty + dy };
     return null;
   }
   // What the R key and the RIDE / GET DOWN button both call.
@@ -23937,6 +23948,15 @@ window.SETTINGS = SETTINGS;
       check(P + 'E on the rail whistles her in from across the map and she is rested and ready',
         far && typeof w === 'number' && back && H().hp === HORSE_HP && tileAt(o.x + 5, o.y) !== T_HORSE,
         { far, w, at: at && [at.tx, at.ty], hp: H().hp, notice: notice && notice.text }); }
+    // 11b. whistled while standing on her first spot (south of the post): she is never put down on top of him, and he gets on
+    { clearLane(); liftHorse(); const far = parkAt(o.x + 5, o.y);
+      F.tp(POST.x, POST.y + 1); F.step([]); F.face(POST.x, POST.y); F.press('KeyE'); F.sim(2, []);
+      const at = horseAt(), me = { tx: Math.floor(player.x / TILE), ty: Math.floor(player.y / TILE) };
+      const notUnder = !!at && !(at.tx === me.tx && at.ty === me.ty) && !circleHitsTile(player.x, player.y, player.r || 14, at.tx, at.ty);
+      const rode = tryRide() !== false && riding(); if (riding()) dismount();
+      check(P + 'whistled while standing on the spot south of the rail, she comes to a spot beside him, never on top of him, and he can get on',
+        far && notUnder && rode, { far, at: at && [at.tx, at.ty], me: [me.tx, me.ty], rode, notice: notice && notice.text });
+      dialog.cur = null; dialog.queue.length = 0; }
 
     // 12. tap-to-move still drives her (17-tap paths for the wider body)
     { const up = ride();
