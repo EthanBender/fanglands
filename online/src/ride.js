@@ -9,7 +9,11 @@
 // as the world spells it); anything else is taken off the relayed presence (everyone sees him stand where he is) and the
 // rider's game is told why with ride_no { d, code }, at most once a second. When the driver stops driving (gets out,
 // parks, the machine is wrecked, he falls, he goes into a place, he leaves or his line drops) every rider is told with
-// ride_end { d, why }, and his game sets him down. Nothing here touches a save, an item or a machine: the machine stays
+// ride_end { d, why }, and his game sets him down. A driver who carries riders is watched here (whatever the movement
+// check's mode): a jump (his j counter changes) or a path faster than any machine goes (Full Steam's 430 px/s with a quarter
+// to spare, over any stretch of 0.4 s to 3 s, or ever more than JUMP_SLACK past it) sets every rider down with why 'jump',
+// so one kid's game can never carry another's knight through walls to a place he could not walk to. The rider's own game
+// keeps the same watch (src/84-ridetogether.js). Nothing here touches a save, an item or a machine: the machine stays
 // the driver's, and where the rider is stays his own game's word.
 //
 //   const rides = new Rides(room)       room: the Room (its byName, within and send)
@@ -30,9 +34,18 @@ export const RIDE_NO_EVERY = 1000;     // ms: a refusal is said to one knight at
 // off (the driver is not driving a machine with seats), seat (no such seat), taken (that seat is someone else's, another
 // is free), full (every seat is someone else's), far (not within reach)
 export const RIDE_CODES = Object.freeze(['gone', 'self', 'off', 'seat', 'taken', 'full', 'far']);
-// why riders got down (ride_end.why): off (the driver is not driving any more), fell, inside (he went into another place),
-// left (he left the world)
-export const RIDE_ENDS = Object.freeze(['off', 'fell', 'inside', 'left']);
+// why riders got down (ride_end.why): off (the driver is not driving any more), wreck (his machine broke under him: his
+// presence says wk), fell, inside (he went into another place), left (he left the world), jump (his path jumped or went faster
+// than any machine). A page that does not know a why says "You hop down."
+export const RIDE_ENDS = Object.freeze(['off', 'wreck', 'fell', 'inside', 'left', 'jump']);
+// the driver's path the world believes while he carries riders (src/84-ridetogether.js keeps the same numbers)
+export const DRIVE_TOP = 430;          // px/s: the fastest any machine goes (55-riding's Full Steam)
+export const DRIVE_K = 1.25;           // a quarter to spare
+export const DRIVE_LONG = 400;         // ms: over a stretch at least this long the path may be DRIVE_SLACK past the top speed
+export const DRIVE_SLACK = 200;        // px
+export const JUMP_SLACK = 480;         // px: and over a shorter stretch (presences bunch on a busy line) this far
+export const DRIVE_WINDOW = 3000;      // ms of his path kept
+export const BUNCH_MS = 30;            // ms: presences that arrive this close together keep only the newest (a stalled line letting go)
 
 const low = s => String(s).toLowerCase();
 // the machine a presence says its knight drives: 'walker' | 'dozer' | 'beast', 'other' (the mare, a kind this world does not
@@ -56,8 +69,13 @@ export class Rides {
     if (k.seats && k.seats.size) {
       const why = k.dead ? 'fell' : (movedMap || k.seatsMap !== k.map) ? 'inside' : null;
       if (why) this.endSeats(k, why);
-      else { const cap = seatsOf(k.mech); for (const [s] of Array.from(k.seats)) if (s > cap) this.endSeat(k, s, 'off'); }
+      else {
+        // out of the machine first (climbing out or a wreck moves him a tile: that is no jump), then his path
+        const cap = seatsOf(k.mech); for (const [s] of Array.from(k.seats)) if (s > cap) this.endSeat(k, s, m.wk === 1 && !k.mech ? 'wreck' : 'off');
+        if (k.seats.size && this.dragged(k, m)) this.endSeats(k, 'jump');
+      }
     }
+    if (!k.seats || !k.seats.size) k.rideTrack = null;
     // as a rider
     const r = m.ride;
     if (!r || typeof r !== 'object') { this.release(k); return { ride: null, spd: null }; }
@@ -86,6 +104,22 @@ export class Rides {
     const fresh = !k.ride || k.ride.d !== D.lc;
     if (!this.room.within(k, D, fresh ? HOP_REACH : RIDE_REACH, true)) return 'far';
     return null;
+  }
+  // the driver's path while he carries riders: true when this presence jumps (j changed) or is further from any place he
+  // was in the last DRIVE_WINDOW than the fastest machine could go. Arrival times are the world's own clock.
+  dragged(k, m) {
+    if (!Number.isFinite(k.x) || !Number.isFinite(k.y)) return false;
+    const t = this.room.now(), j = Number.isFinite(m.j) ? m.j : null, tr = k.rideTrack || (k.rideTrack = []), last = tr[tr.length - 1];
+    let bad = !!(last && j !== null && last.j !== null && j !== last.j);
+    for (let i = 0; i < tr.length && !bad; i++) {
+      const p = tr[i], dt = Math.max(0, t - p.t);
+      if (Math.hypot(k.x - p.x, k.y - p.y) > DRIVE_TOP * DRIVE_K * dt / 1000 + (dt < DRIVE_LONG ? JUMP_SLACK : DRIVE_SLACK)) bad = true;
+    }
+    if (bad) { k.rideTrack = null; return true; }
+    if (last && t - last.t < BUNCH_MS) tr.pop();
+    tr.push({ t, x: k.x, y: k.y, j });
+    while (tr.length > 1 && t - tr[0].t > DRIVE_WINDOW) tr.shift();
+    return false;
   }
   // who sits in seat s of D's machine (a knight still on line who still says so), or null
   holder(D, s) {

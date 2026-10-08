@@ -479,7 +479,9 @@ kind gets a row there and in `online/src/ride.js` `RIDE_SEATS`. While a knight r
 puts his knight in the seat every frame and draws him seated after the machine; E, X, Space, Q, H, the walking keys and
 taps are taken by the file's wrappers (each passes straight through otherwise), and `frontTile(player)` / `npcInFront()`
 answer nothing. A feature that moves the knight or acts for him must leave a rider alone (`window.RIDE &&
-RIDE.state.ride`): his place is the machine's.
+RIDE.state.ride`): his place is the machine's. E is Hop on only when `RIDE.offer()` says so (he faces the machine, or his own
+E has nothing in front of him: a new usable tile needs nothing more, since anything that is not open ground keeps its E). A
+rider is set down only on ground open in his own world (`RIDE.freeAt`: clear, and a walk reaches `RIDE.OPEN_REACH` tiles).
 
 ### The townsfolk (`src/83-townsart.js`, `src/83-townsfolk.js`)
 

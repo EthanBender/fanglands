@@ -14,12 +14,19 @@
 // driver going into a place, and his line dropping, set riders down; a rider whose line drops just goes from the seat;
 // the old page shows a rider standing where his presence says, with no error; nobody's pack, coins, quests or machine
 // changed, and each rider's own save holds where his own knight is; offline, E by a machine does what it always did.
+// Then the review's findings (7 Oct), each of which failed on the first build: beside a friend's machine E keeps a kid's own
+// E (his own parked bulldozer, a workbench); a forest that is still in the riders' worlds (the driver plowed it in his):
+// hopping off mid-lane and the driver climbing out both set them where they can walk away; a driver whose game moves him
+// 5000 px by hand, and one sliding 20 px a frame through a wall, carry nobody (each rider set down at once on his side, the
+// world ends the seats); a rider whose line goes silent (socket open) reads "You are not connected, so you hop down."
+// Every game runs on the sim's clock. RIDE_PAGE=<a built index.html> puts another build under test.
 // Exit 0 only when every line passes.
 'use strict';
 const fs = require('fs'), vm = require('vm'), path = require('path'), cp = require('child_process');
 const ROOT = path.join(__dirname, '..');
 const scriptOf = html => html.slice(html.indexOf('<script>') + 8, html.lastIndexOf('</script>'));
-const script = scriptOf(fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8'));
+// RIDE_PAGE: another built page to put under test (a check that each line fails on an older build)
+const script = scriptOf(fs.readFileSync(process.env.RIDE_PAGE || path.join(ROOT, 'index.html'), 'utf8'));
 // the page from before seats: the game master shipped at 49df821 (git history; skipped, and said so, without git)
 const OLD_REV = process.env.RIDE_OLD_REV || '49df821';
 let oldScript = null;
@@ -30,7 +37,7 @@ const FRAME_MS = 1000 / 60;
 // The wire and a game context: copied from tools/golem-sim.js (which copied them from tools/mmo-sim.js)
 // ---------------------------------------------------------------------------
 class Wire {
-  constructor(room) { this.room = room; this.accounts = new Map(); this.opening = []; this.inbound = []; this.outbound = []; this.closing = []; this.srvOf = new Map(); }
+  constructor(room) { this.room = room; this.accounts = new Map(); this.opening = []; this.inbound = []; this.outbound = []; this.closing = []; this.srvOf = new Map(); this.mute = new Set(); }
   login(name) { const token = 'tok-' + name.toLowerCase().replace(/[^a-z0-9]/g, ''); this.accounts.set(token, name); return token; }
   socketClass() {
     const wire = this;
@@ -67,8 +74,9 @@ class Wire {
         this.srvOf.set(c, srv); c.readyState = 1; this.room.join(srv, name);
         if (c.onopen) c.onopen();
       }
-      for (const { client, str } of this.inbound.splice(0)) { const srv = this.srvOf.get(client); if (srv) this.room.message(srv, str); }
-      for (const { client, str } of this.outbound.splice(0)) { if (client.readyState === 1 && client.onmessage) client.onmessage({ data: str }); }
+      // a muted client's line is silent both ways (its wifi dropped without the socket closing)
+      for (const { client, str } of this.inbound.splice(0)) { const srv = this.srvOf.get(client); if (srv && !this.mute.has(client)) this.room.message(srv, str); }
+      for (const { client, str } of this.outbound.splice(0)) { if (client.readyState === 1 && client.onmessage && !this.mute.has(client)) client.onmessage({ data: str }); }
       for (const c of this.closing.splice(0)) { const srv = this.srvOf.get(c); if (srv) { this.srvOf.delete(c); this.room.leave(srv); } if (c.onclose) c.onclose(); }
     }
   }
@@ -85,7 +93,7 @@ function makeContext(wire, src, opts = {}) {
   const g = {
     innerWidth: 1000, innerHeight: 700, devicePixelRatio: 1, addEventListener: noop, requestAnimationFrame: noop, setInterval: noop, setTimeout, clearTimeout,
     localStorage: { getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); }, removeItem: k => { delete store[k]; } },
-    performance: { now: () => Date.now() }, console: Object.assign(Object.create(console), { table: () => { }, error: (...a) => { errors.push(a.map(String).join(' ')); } }), navigator: { maxTouchPoints: 0 },
+    performance: { now: opts.now || (() => Date.now()) }, console: Object.assign(Object.create(console), { table: () => { }, error: (...a) => { errors.push(a.map(String).join(' ')); } }), navigator: { maxTouchPoints: 0 },
     document: { getElementById: () => mkCanvas(), createElement: () => mkCanvas(), fonts: null },
   };
   g.window = g; g.__online = opts.offline ? false : true; g.__onlineBase = 'http://fake'; g.WebSocket = wire.socketClass(); g.fetch = wire.fetch();
@@ -105,8 +113,10 @@ async function main() {
   const book = new MoveBook(null, now);
   const room = new Room({ now, log: () => { }, wake: () => { }, atlas, moveBook: book });
   const wire = new Wire(room);
-  const M = makeContext(wire, script), B = makeContext(wire, script), A = makeContext(wire, script), C = makeContext(wire, script);
-  const O = oldScript ? makeContext(wire, oldScript) : null;
+  // every game's clock is the sim's (60 frames a second), so what a game times by the clock matches what the world saw
+  const vc = { now };
+  const M = makeContext(wire, script, vc), B = makeContext(wire, script, vc), A = makeContext(wire, script, vc), C = makeContext(wire, script, vc);
+  const O = oldScript ? makeContext(wire, oldScript, vc) : null;
   const games = [M, B, A, C].concat(O ? [O] : []);
   const results = [];
   const line = (name, ok, info) => { results.push(!!ok); console.log((ok ? 'PASS  ' : 'FAIL  ') + name + (info !== undefined ? '   ' + JSON.stringify(info) : '')); };
@@ -139,6 +149,9 @@ async function main() {
   if (!ground) { console.error('no open ground found'); process.exit(1); }
   const [gx, gy] = ground;
   const put = (g, tx, ty, fx = 1, fy = 0) => R(g, `FANGLANDS.tp(${tx}, ${ty}); player.facing = { x: ${fx}, y: ${fy} }; player.hp = player.maxHp;`);
+  // a driver carrying riders is never teleported (that is a jump, and his riders get down): he is eased onto a tile's middle
+  // a few px a frame, as driving would
+  const glide = (g, tx, ty) => { for (let i = 0; i < 200; i++) { const d = R(g, `(() => { const X = tc(${tx}), Y = tc(${ty}), dx = X - player.x, dy = Y - player.y, d = Math.hypot(dx, dy); if (d > 0) { const k = Math.min(1, 3 / d); player.x += dx * k; player.y += dy * k; } return d; })()`); tick(1); if (d < 0.01) break; } };
   const pos = g => R(g, '({ x: player.x, y: player.y })');
   const riding = g => R(g, 'RIDE.state.ride ? { d: RIDE.state.ride.d, s: RIDE.state.ride.s } : null');
   const noticeOf = g => R(g, 'notice ? notice.text : null');
@@ -231,7 +244,7 @@ async function main() {
   // ---- 7. a gate: the machine and its riders go through; a door stops it ----
   const at = pos(M), mtx = Math.floor(at.x / 48), mty = Math.floor(at.y / 48);
   for (const g of games) R(g, `changeTile(${mtx + 3}, ${mty - 1}, T.FENCE); changeTile(${mtx + 3}, ${mty}, T.GATE); changeTile(${mtx + 3}, ${mty + 1}, T.FENCE);`);
-  put(M, mtx, mty); tick(10);
+  glide(M, mtx, mty); tick(10);
   tick(90, new Map([[M, ['KeyD']]])); tick(20);
   const past = pos(M), gateX = (mtx + 3) * 48 + 48;
   const through = past.x > gateX && !!riding(A) && !!riding(C) && pos(A).x > gateX - 30 && pos(C).x > gateX - 30;
@@ -265,8 +278,8 @@ async function main() {
   const walkerSeat = riding(B), annFull = noticeOf(A);
   R(M, `player.mech.hp = 1; hurtPlayer(5, player.x + 30, player.y, true);`); tick(12);
   const bWreck = pos(B);
-  line('9. the walker has one seat: Ben rides it, Ann reads "Mudtech\'s walker is full."; when it is wrecked under Mudtech, Ben is set down safely',
-    R(M, 'player.mech') === null && JSON.stringify(walkerSeat) === '{"d":"Mudtech","s":1}' && faceA && faceA.disabled && annFull === 'Mudtech\'s walker is full.' && riding(A) === null && riding(B) === null && safeOn(B, bWreck),
+  line('9. the walker has one seat: Ben rides it, Ann reads "Mudtech\'s walker is full."; when it is wrecked under Mudtech, Ben is set down safely ("Mudtech\'s walker broke. You hop down.")',
+    R(M, 'player.mech') === null && JSON.stringify(walkerSeat) === '{"d":"Mudtech","s":1}' && faceA && faceA.disabled && annFull === 'Mudtech\'s walker is full.' && riding(A) === null && riding(B) === null && safeOn(B, bWreck) && noticeOf(B) === 'Mudtech\'s walker broke. You hop down.',
     { walkerSeat, faceA, annFull, B: riding(B), bWreck, said: noticeOf(B) });
 
   // ---- 10. the Barrelbeast: two seats; the driver goes into a place and his riders get down ----
@@ -333,7 +346,85 @@ async function main() {
     line('15. offline nothing is offered and E by a parked bulldozer climbs in, as it always did', tgt === null && R(off, 'player.mech && player.mech.kind') === 'dozer' && R(off, 'RIDE.state.ride') === null, { tgt, mech: R(off, 'player.mech') }); }
 
   const errs = [M, B, A, C].map(g => g.__errors.filter(e => !/NET \*/.test(e)).length);
-  line('16. no game logged an error in the whole run', errs.every(n => n === 0), { errs, first: [M, B, A, C].map(g => g.__errors[0]).filter(Boolean).slice(0, 2) });
+  // ======== the review's findings (7 Oct): each line below failed on the first build of this feature ========
+  // fresh ground in every game: open grass 34 tiles long and 9 tall; Mudtech back in a bulldozer at its west end
+  const ends = { B: [], A: [], C: [] }, rideEnds = g => ends[g === B ? 'B' : g === A ? 'A' : 'C'];
+  for (const [k, g] of [['B', B], ['A', A], ['C', C]]) g.NET.on('ride_end', m => ends[k].push(m.why));
+  const lay = () => { for (const g of [M, B, A, C]) R(g, `for (let y = ${gy - 4}; y <= ${gy + 4}; y++) for (let x = ${gx - 1}; x <= ${gx + 33}; x++) setTile(x, y, T.GRASS);`); };
+  const drive = () => { R(M, 'if (player.mech) { player.mech = null; player.r = 13; player.speed = 175; }'); put(M, gx + 2, gy); R(M, `setTile(${gx + 3}, ${gy}, T.DOZER); player.dozerUp = {};`); press(M, 'KeyE'); tick(2); };
+  const board = (g, dy) => { const m = pos(M), tx = Math.floor(m.x / 48), ty = Math.floor(m.y / 48); R(g, 'if (RIDE.state.ride) RIDE.setDown("self", true); player.mech = null; player.r = 13; player.speed = 175;'); put(g, tx, ty + dy, 0, -dy); tick(30); press(g, 'KeyE'); tick(12); return riding(g); };
+  // can he walk away: the tiles a knight on foot reaches from where he stands (straight steps, his own world), up to 400
+  const reachOf = g => R(g, `(() => { const tx = Math.floor(player.x / TILE), ty = Math.floor(player.y / TILE); if (solidFor(tileAt(tx, ty), 'player')) return 0; const seen = new Set([idx(tx, ty)]), q = [[tx, ty]]; while (q.length && seen.size < 400) { const [x, y] = q.shift(); for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = x + dx, ny = y + dy; if (!inMap(nx, ny)) continue; const i = idx(nx, ny); if (seen.has(i) || solidFor(map[i], 'player')) continue; seen.add(i); q.push([nx, ny]); } } return seen.size; })()`);
+  const inSolid = g => R(g, 'collides(player.x, player.y, 13, "player")');
+  const walkAway = g => { const p0 = pos(g); tick(60, new Map([[g, ['KeyA']]])); return d2(p0, pos(g)); };
+
+  // ---- 16. E by a friend's machine keeps the knight's own E: his own parked bulldozer, a workbench ----
+  lay(); drive();
+  { const m = pos(M), tx = Math.floor(m.x / 48), ty = Math.floor(m.y / 48);
+    R(C, 'if (RIDE.state.ride) RIDE.setDown("self", true); player.mech = null; player.r = 13; player.speed = 175;');
+    // Cy one tile below the bulldozer facing east, at his own parked bulldozer (in his world only)
+    R(C, `setTile(${tx + 1}, ${ty + 1}, T.DOZER);`); put(C, tx, ty + 1, 1, 0); tick(90);
+    // (the friend's machine is in hop reach: the old build offered HOP ON here and E put him on it)
+    const inReach = R(C, '!!RIDE.hopTarget()'), offered = R(C, '(hudSeatFace.list.filter(f => f.seat === "use" && f.when()).sort((a, b) => b.prio - a.prio)[0] || {}).id');
+    press(C, 'KeyE'); tick(4);
+    const own = R(C, 'player.mech && player.mech.kind'), cRide = riding(C);
+    R(C, 'player.mech = null; player.r = 13; player.speed = 175;'); R(C, `setTile(${tx + 1}, ${ty + 1}, T.WORKBENCH);`); put(C, tx, ty + 1, 1, 0); tick(30);
+    const inReach2 = R(C, '!!RIDE.hopTarget()');
+    press(C, 'KeyE'); tick(2);
+    const bench = R(C, 'panel'), cRide2 = riding(C); R(C, `closePanel(); setTile(${tx + 1}, ${ty + 1}, T.GRASS);`);
+    line('16. Cy beside Mudtech\'s bulldozer, facing his own parked bulldozer: his USE seat is his own and E climbs into his own (no hop); facing a workbench E opens it',
+      inReach && inReach2 && offered !== 'hopon' && own === 'dozer' && cRide === null && bench === 'station' && cRide2 === null, { inReach, inReach2, offered, own, cRide, bench, cRide2 }); }
+
+  // ---- 17. the forest the driver plowed is still in the riders' worlds: they get down where they can walk away ----
+  { lay(); drive(); const m0 = pos(M), tx0 = Math.floor(m0.x / 48), ty0 = Math.floor(m0.y / 48);
+    for (const g of [B, A]) R(g, `for (let y = ${ty0 - 4}; y <= ${ty0 + 4}; y++) for (let x = ${tx0 + 4}; x <= ${tx0 + 30}; x++) setTile(x, y, T.TREE);`);
+    board(B, 1); board(A, -1);
+    const on = [riding(B), riding(A)];
+    tick(300, new Map([[M, ['KeyD']]]), () => pos(M).x > (tx0 + 10) * 48 + 24);
+    // a gap of one tile among the riders' trees on each side of the machine (as the review found)
+    { const m = pos(M), tx = Math.floor(m.x / 48), ty = Math.floor(m.y / 48); for (const g of [B, A]) R(g, `setTile(${tx}, ${ty + 1}, T.GRASS); setTile(${tx}, ${ty - 1}, T.GRASS);`); }
+    // Ann hops off mid-lane (E); then Mudtech climbs out (X) with Ben aboard
+    press(A, 'KeyE'); tick(6);
+    const a = { ride: riding(A), reach: reachOf(A), solid: inSolid(A), said: noticeOf(A) };
+    tick(30, new Map([[M, ['KeyD']]]));
+    R(M, 'player.facing = { x: 1, y: 0 };'); press(M, 'KeyX'); tick(12);
+    const b = { ride: riding(B), reach: reachOf(B), solid: inSolid(B), said: noticeOf(B) };
+    const wa = walkAway(A), wb = walkAway(B);
+    line('17. Mudtech plows 7 tiles into a forest that is still in Ben\'s and Ann\'s worlds: Ann hops off mid-lane and Ben gets down when Mudtech climbs out; each stands on open ground he can walk away from (never a one-tile gap among his trees)',
+      !!on[0] && !!on[1] && a.ride === null && b.ride === null && !a.solid && !b.solid && a.reach >= 100 && b.reach >= 100 && wa > 40 && wb > 40 && b.said === 'Mudtech got out of the bulldozer. You hop down.',
+      { on, a, b, walked: [Math.round(wa), Math.round(wb)] }); }
+
+  // ---- 18. a driver who cheats (player.x by hand, as a devtools console would) carries nobody ----
+  { lay(); drive(); board(B, 1); board(A, -1); tick(10);
+    const on = [riding(B), riding(A)], b0 = pos(B), a0 = pos(A); ends.B.length = 0; ends.A.length = 0;
+    R(M, 'player.x += 5000;'); tick(8);
+    const b = { ride: riding(B), moved: Math.round(d2(b0, pos(B))), said: noticeOf(B), world: ends.B.slice() }, a = { ride: riding(A), moved: Math.round(d2(a0, pos(A))), world: ends.A.slice() };
+    line('18. Mudtech\'s game moves him 5000 px by hand with Ben and Ann aboard: both are set down at once where they were ("Mudtech\'s bulldozer went too fast for you. You hop down."), and the world ends their seats (jump)',
+      !!on[0] && !!on[1] && b.ride === null && a.ride === null && b.moved < 3 * 48 && a.moved < 3 * 48 && b.said === 'Mudtech\'s bulldozer went too fast for you. You hop down.' && R(B, `!collides(player.x, player.y, 13, 'player')`) && b.world.includes('jump') && a.world.includes('jump'), { on, b, a });
+    R(M, 'player.x -= 5000;'); tick(10); }
+
+  // ---- 19. the same cheat in small steps (20 px a frame, 1200 px/s) through a wall: the rider is never carried through ----
+  { lay(); drive(); const m0 = pos(M), wx = Math.floor(m0.x / 48) + 5;
+    for (const g of [M, B, A, C]) R(g, `for (let y = ${gy - 4}; y <= ${gy + 4}; y++) setTile(${wx}, y, T.WALL);`);
+    board(B, 1); tick(10); ends.B.length = 0;
+    const on = riding(B); let inside = 0, pastWall = 0;
+    for (let i = 0; i < 90; i++) { R(M, 'player.x += 20;'); tick(1); if (inSolid(B)) inside++; if (pos(B).x > wx * 48) pastWall++; }
+    const b = { ride: riding(B), x: Math.round(pos(B).x), wall: wx * 48, said: noticeOf(B), world: ends.B.slice(), inside, pastWall };
+    line('19. Mudtech\'s game slides him 20 px a frame (1200 px/s) through a wall with Ben aboard: Ben is set down on his side of the wall, never inside it, and the world ends his seat (jump)',
+      !!on && b.ride === null && inside === 0 && pastWall === 0 && b.x < wx * 48 && !inSolid(B) && b.world.includes('jump'), b);
+    R(M, `player.x = ${m0.x}; player.y = ${m0.y};`); for (const g of [M, B, A, C]) R(g, `for (let y = ${gy - 4}; y <= ${gy + 4}; y++) setTile(${wx}, y, T.GRASS);`); tick(10); }
+
+  // ---- 20. a rider's own line goes quiet (his wifi drops, the socket stays open): he reads that he is not connected ----
+  { lay(); drive(); board(B, 1); tick(10);
+    const on = riding(B), sock = B.NET.sock; let said = [];
+    wire.mute.add(sock);
+    let n = 0; tick(6 * 60, new Map([[M, ['KeyD']]]), () => { n++; const t = noticeOf(B); if (t && !said.includes(t)) said.push(t); return riding(B) === null; });
+    const at = n / 60, status = B.NET.status;
+    wire.mute.delete(sock); tick(30);
+    line('20. Ben\'s line goes quiet while he rides (no word either way, his socket still open): within 3.5 s he reads "You are not connected, so you hop down." (never "Mudtech left.")',
+      !!on && riding(B) === null && at <= 3.5 && said.includes('You are not connected, so you hop down.') && !said.some(t => /left/.test(t)), { on, at, said, status }); }
+
+  line('21. no game logged an error in the whole run', errs.every(n => n === 0), { errs, first: [M, B, A, C].map(g => g.__errors[0]).filter(Boolean).slice(0, 2) });
 
   const bad = results.filter(r => !r).length;
   console.log((bad ? `${bad} FAILED of ${results.length}` : `ALL ${results.length} PASS`) + ` (online/src/room.js, ${frames} frames, ${Date.now() - t0} ms)`);

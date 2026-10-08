@@ -10,7 +10,10 @@
 // 1280 x 800, the E key) and Ann rides (an iPad, 1180 x 820, touch: she taps the HOP ON seat). For the bulldozer, the walker
 // and the Barrelbeast in turn: the friends hop on, the machine drives, everyone's screens agree, screenshots from the
 // driver's and a rider's screen at 1280 x 800 and at the iPad size, then the driver climbs out and every rider is set down on
-// free ground. The world's movement check counts nothing for the riders, and no page throws.
+// free ground. The world's movement check counts nothing for the riders. Then the review's findings (7 Oct): a forest the
+// bulldozer plows that stays in the riders' worlds (Ann taps HOP OFF mid-lane, Ben gets down when Mudtech climbs out, both
+// walk away); Ben facing his own parked walker beside the bulldozer climbs into his own; a wreck says it broke; Ben's wifi
+// drops (offline, socket open) and he reads that he is not connected. No page throws.
 // Needs playwright-core and a Chromium (found as tools/dom-keys.js finds them): without them it says so and exits 0.
 // NEVER point it at a real world: it signs knights in with a password.
 import fs from 'node:fs';
@@ -109,8 +112,13 @@ const until = async (page, fn, arg, ms = 8000) => { const t0 = Date.now(); while
       { kind: 'walker', what: 'walker', seats: 1, board: tx => `changeTile(${tx}, ${gy}, T.MECH);` },
       { kind: 'beast', what: 'Barrelbeast', seats: 2, board: null },
     ];
+    // no machine left standing on the ground from an earlier run (a parked one in the road stops the next)
+    const clearGround = () => Promise.all(pages.map(p => p.evaluate(([gx, gy]) => { const M = [T.DOZER, T.DOZER_WRECK, T.MECH, T.WRECK, T.BEAST, T.BEAST_WRECK].filter(t => t !== undefined); for (let y = gy - 3; y <= gy + 3; y++) for (let x = gx - 3; x <= gx + 14; x++) if (M.includes(tileAt(x, y))) changeTile(x, y, T.GRASS); }, [gx, gy])));
     for (const M of MACHINES) {
       const x0 = gx;
+      await clearGround();
+      // everyone on foot (a knight's save may have left him in a machine)
+      for (const p of pages) await p.evaluate(() => { if (RIDE.state.ride) RIDE.setDown('self', true); if (player.mech) { player.mech = null; player.r = 13; player.speed = 175; } });
       // the driver climbs in (E on the machine), or into the Barrelbeast he has already won
       await put(mud, x0, gy, 1, 0); await calm(mud);
       if (M.board) { await mud.evaluate(code => { (0, eval)(code); }, M.board(x0 + 1)); await mud.keyboard.press('e'); }
@@ -174,6 +182,96 @@ const until = async (page, fn, arg, ms = 8000) => { const t0 = Date.now(); while
     const counts = v => v && v.move && v.move.today ? { speed: v.move.today.speed, wall: v.move.today.wall, checked: v.move.today.checked } : null;
     const a = counts(mv0), b = counts(mv1);
     line('the world\'s movement check judged the riders and counted no speed and no wall', !!a && !!b && b.checked > a.checked && b.speed === a.speed && b.wall === a.wall, { before: a, after: b });
+    // ======== the review's findings (7 Oct), in the real pages ========
+    // the tiles a knight on foot reaches from where he stands in his own world (straight steps), up to 400, and inside a solid?
+    const where = page => page.evaluate(() => {
+      const tx = Math.floor(player.x / TILE), ty = Math.floor(player.y / TILE), solid = collides(player.x, player.y, 13, 'player');
+      const seen = new Set(solidFor(tileAt(tx, ty), 'player') ? [] : [idx(tx, ty)]), q = seen.size ? [[tx, ty]] : [];
+      while (q.length && seen.size < 400) { const [x, y] = q.shift(); for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = x + dx, ny = y + dy; if (!inMap(nx, ny)) continue; const i = idx(nx, ny); if (seen.has(i) || solidFor(map[i], 'player')) continue; seen.add(i); q.push([nx, ny]); } }
+      return { x: Math.round(player.x), y: Math.round(player.y), solid, reach: seen.size, ride: RIDE.state.ride ? RIDE.state.ride.d : null, said: notice ? notice.text : null };
+    });
+    const onFoot = page => page.evaluate(() => { if (RIDE.state.ride) RIDE.setDown('self', true); if (player.mech) { player.mech = null; player.r = 13; player.speed = 175; } });
+    const noMonsters = () => Promise.all(pages.map(p => p.evaluate(() => { const px = n => n * TILE; for (const m of monsters) if (!m.dead && Math.hypot(m.x - player.x, m.y - player.y) < px(14)) { m.x = -9999; m.y = -9999; } })));
+    // the driver climbs into a bulldozer at (tx, ty) - 1 (E on it); the friends stand below and above it and hop on (Ben E, Ann a tap)
+    const dozerWithRiders = async (tx, ty) => {
+      for (const p of pages) await onFoot(p);
+      await put(mud, tx, ty, 1, 0); await calm(mud);
+      await mud.evaluate(([x, y]) => { changeTile(x, y, T.DOZER); player.dozerUp = {}; }, [tx + 1, ty]);
+      await mud.keyboard.press('e'); await until(mud, () => !!player.mech && player.mech.kind === 'dozer');
+      const at = await mud.evaluate(() => [Math.floor(player.x / TILE), Math.floor(player.y / TILE)]);
+      await put(ben, at[0], at[1] + 1, 0, -1); await put(ann, at[0], at[1] - 1, 0, 1);
+      for (const p of pages) await calm(p);
+      await until(ben, () => !!(RIDE.offer || RIDE.hopTarget)(), null, 10000); await until(ann, () => !!(RIDE.offer || RIDE.hopTarget)(), null, 10000);
+      await ben.keyboard.press('e'); await until(ben, () => !!RIDE.state.ride);
+      await ann.evaluate(() => render()); const s = await ann.evaluate(() => HK.seat('use')); await ann.touchscreen.tap(s.x, s.y); await until(ann, () => !!RIDE.state.ride);
+      return [await ride(ben), await ride(ann)];
+    };
+
+    // F1. a forest the bulldozer plows is still in the riders' worlds: Ann hops off mid-lane (a tap on HOP OFF), Mudtech climbs
+    // out with Ben aboard; each stands where he can walk away (the first build set both in a one-tile gap among their trees)
+    { const spot = await mud.evaluate(() => {
+        const tree = t => t === T.TREE || t === T.OAK, open = (x, y) => inMap(x, y) && !SOLID.has(tileAt(x, y)) && tileAt(x, y) !== T.WATER;
+        for (let y = 6; y < MAP_H - 6; y++) for (let x = 6; x < MAP_W - 12; x++) {
+          let n = 0; for (let yy = y - 2; yy <= y + 2; yy++) for (let xx = x + 1; xx <= x + 6; xx++) if (tree(tileAt(xx, yy))) n++;
+          if (n < 26 || !tree(tileAt(x + 1, y)) || !tree(tileAt(x + 2, y))) continue;
+          let ok = true; for (let yy = y - 1; yy <= y + 1 && ok; yy++) for (let xx = x - 4; xx <= x; xx++) if (!open(xx, yy)) ok = false;
+          if (ok && !inVillageBounds(tc(x), tc(y))) return [x, y];
+        }
+        return null; });
+      if (!spot) throw new Error('no forest edge');
+      const on = await dozerWithRiders(spot[0] - 3, spot[1]);
+      await noMonsters();
+      await mud.keyboard.down('d'); await wait(1000);
+      await ann.evaluate(() => render()); const s = await ann.evaluate(() => { const f = HK.face('use'), q = HK.seat('use'); return { id: f && f.id, x: q.x, y: q.y }; });
+      await ann.touchscreen.tap(s.x, s.y);
+      await wait(600); await mud.keyboard.up('d'); await wait(800);
+      const plowed = await mud.evaluate(([fx]) => Math.floor(player.x / TILE) - fx, spot);
+      await shot(ben, 'forest-rider-ben-in-the-lane-1280x800');
+      await mud.keyboard.press('x'); await until(ben, () => !RIDE.state.ride, null, 6000); await wait(400);
+      const b = await where(ben), a = await where(ann);
+      await shot(ben, 'forest-rider-ben-set-down-1280x800'); await shot(ann, 'forest-rider-ann-hopped-off-ipad-1180x820');
+      const b0 = await ben.evaluate(() => player.x); await ben.keyboard.down('a'); await wait(1500); await ben.keyboard.up('a'); const bw = b0 - await ben.evaluate(() => player.x);
+      const a0 = await ann.evaluate(() => player.x); await ann.keyboard.down('a'); await wait(1500); await ann.keyboard.up('a'); const aw = a0 - await ann.evaluate(() => player.x);
+      line('forest: Mudtech plows into a forest that stays in Ben\'s and Ann\'s worlds; Ann taps HOP OFF mid-lane and Mudtech climbs out with Ben aboard: each is set down where he can walk away (1.5 s of A takes each 100 px or more)',
+        !!on[0] && !!on[1] && s.id === 'hopoff' && plowed >= 2 && !b.ride && !a.ride && !b.solid && !a.solid && b.reach >= 100 && a.reach >= 100 && bw > 100 && aw > 100 && b.said === 'Mudtech got out of the bulldozer. You hop down.',
+        { spot, on, seat: s.id, plowed, ben: b, ann: a, walked: [Math.round(bw), Math.round(aw)] }); }
+
+    // F2. by a friend's machine, E keeps a kid's own E: Ben faces his own parked walker and climbs into it
+    { const [tx, ty] = [gx, gy]; await clearGround();
+      for (const p of pages) await onFoot(p);
+      await put(mud, tx, ty, 1, 0); await calm(mud); await mud.evaluate(([x, y]) => { changeTile(x, y, T.DOZER); player.dozerUp = {}; }, [tx + 1, ty]);
+      await mud.keyboard.press('e'); await until(mud, () => !!player.mech);
+      await ben.evaluate(([x, y]) => { changeTile(x, y, T.MECH); }, [tx + 2, ty + 1]); await put(ben, tx + 1, ty + 1, 1, 0); await calm(ben);
+      // (Mudtech's machine has finished sliding to where he is on Ben's screen)
+      const near = await until(ben, () => { const e = PLAYERS.remote.Mudtech; return !!RIDE.hopTarget() && !!e && Math.hypot(e.shown.x - e.x, e.shown.y - e.y) < 1; }, null, 10000);
+      const seat = await ben.evaluate(() => { const f = HK.face('use'); return f && f.id; });
+      await ben.keyboard.press('e'); await wait(500);
+      const got = await ben.evaluate(() => ({ mech: player.mech ? (player.mech.kind || 'walker') : null, ride: !!RIDE.state.ride }));
+      line('own E: beside Mudtech\'s bulldozer, Ben faces his own parked walker: his USE seat is his own and E climbs into his walker (never onto the bulldozer)', near && seat !== 'hopon' && got.mech === 'walker' && !got.ride, { near, seat, got });
+      await ben.evaluate(() => { player.mech = null; player.r = 13; player.speed = 175; }); await mud.evaluate(() => { player.mech = null; player.r = 13; player.speed = 175; }); }
+
+    // F3. the bulldozer breaks under Mudtech: the riders read that it broke (not that he got out)
+    { await clearGround(); const on = await dozerWithRiders(gx, gy);
+      await mud.evaluate(() => { dialog.cur = null; wreckMech(); });
+      await until(ben, () => !RIDE.state.ride, null, 6000); await until(ann, () => !RIDE.state.ride, null, 6000);
+      const b = await where(ben), a = await where(ann);
+      line('wreck: the bulldozer breaks under Mudtech; Ben and Ann are set down on open ground and read "Mudtech\'s bulldozer broke. You hop down."',
+        !!on[0] && !!on[1] && !b.ride && !a.ride && !b.solid && !a.solid && b.said === 'Mudtech\'s bulldozer broke. You hop down.' && a.said === b.said, { on, ben: b, ann: a });
+      await mud.evaluate(() => { for (let y = -3; y <= 3; y++) for (let x = -3; x <= 3; x++) { const tx = Math.floor(player.x / TILE) + x, ty = Math.floor(player.y / TILE) + y; if (tileAt(tx, ty) === T.DOZER_WRECK) changeTile(tx, ty, T.GRASS); } }); }
+
+    // F4. Ben's wifi drops while he rides (the socket stays open, nothing comes or goes): he reads that he is not connected
+    { await clearGround(); const on = await dozerWithRiders(gx, gy); await noMonsters();
+      await ben.evaluate(() => { window.__said = []; const n0 = notify; notify = function (t) { __said.push([Math.round(performance.now()), String(t)]); return n0.apply(this, arguments); }; window.__t0 = performance.now(); });
+      await ben.context().setOffline(true);
+      await mud.keyboard.down('d'); await wait(1500); await mud.keyboard.up('d');
+      const down = await until(ben, () => !RIDE.state.ride, null, 6000);
+      const log = await ben.evaluate(() => __said.map(([t, s]) => [t - __t0, s])), status = await ben.evaluate(() => NET.status);
+      await ben.context().setOffline(false); await until(ben, () => NET.status === 'on', null, 30000); await wait(1500);
+      const b = await where(ben);
+      line('quiet line: Ben\'s wifi drops while he rides: within 4 s he reads "You are not connected, so you hop down." (never "Mudtech left."), on open ground, and is back on foot when it returns',
+        !!on[0] && down && log.some(([t, s]) => s === 'You are not connected, so you hop down.' && t < 4000) && !log.some(([, s]) => /left/.test(s)) && !b.solid && !b.ride, { on, status, log, ben: b });
+      await mud.evaluate(() => { player.mech = null; player.r = 13; player.speed = 175; }); }
+
     const errors = pages.map(p => p.errors.length);
     line('no page threw', errors.every(n => n === 0), { errors, first: pages.map(p => p.errors[0]).filter(Boolean).slice(0, 2) });
   } finally { await browser.close(); }

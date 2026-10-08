@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Room } from '../src/room.js';
 import { MemoryStore } from '../src/store.js';
-import { RIDE_SEATS, HOP_REACH, RIDE_REACH, RIDE_NO_EVERY, machineOf } from '../src/ride.js';
+import { RIDE_SEATS, HOP_REACH, RIDE_REACH, RIDE_NO_EVERY, RIDE_ENDS, DRIVE_TOP, machineOf } from '../src/ride.js';
 import { MoveBook } from '../src/move.js';
 import { readAtlas } from '../src/atlas.js';
 import fs from 'node:fs';
@@ -180,4 +180,72 @@ test('the movement check judges a rider at the machine\'s speed (Full Steam), an
   const cy = w.knight('Cy', x0, y + T, { spd: 175 });
   for (let i = 1; i <= 20; i++) w.p(cy, { x: x0 + i * 54, y: y + T, spd: 175 });
   assert.ok(w.book.view().today.speed - after.speed >= 1);
+});
+
+test('a machine that breaks under its driver: his presence says wk, and his riders hear why "wreck" (no wk: "off")', () => {
+  assert.ok(RIDE_ENDS.includes('wreck') && RIDE_ENDS.includes('jump'));
+  for (const [wk, why] of [[1, 'wreck'], [undefined, 'off']]) {
+    const w = world();
+    const mud = w.knight('Mudtech', 500, 500, { mech: DOZER, j: 3 }), ben = w.knight('Ben', 540, 500);
+    w.p(ben, { x: 540, y: 500, ride: { d: 'Mudtech', s: 1 } });
+    w.p(mud, { x: 500, y: 500, mech: DOZER, j: 3 });
+    ben.clear();
+    // the wreck steps him back a tile (his j goes up): still "wreck", never "jump"
+    w.p(mud, { x: 452, y: 500, mech: null, j: 4, wk });
+    assert.deepEqual(ben.last('ride_end'), { t: 'ride_end', d: 'Mudtech', why }, String(wk));
+    assert.equal(ben.of('ride_end').length, 1);
+  }
+});
+
+// a driver carrying Ben, driven by `path` (one presence per step); returns what Ben heard
+function drive(path, opts = {}) {
+  const w = world();
+  if (opts.move) w.room.setSim({ move: opts.move });
+  const mud = w.knight('Mudtech', 500, 500, { mech: DOZER, j: 7 }), ben = w.knight('Ben', 540, 500);
+  w.p(ben, { x: 540, y: 500, ride: { d: 'Mudtech', s: 1 } });
+  w.p(mud, { x: 500, y: 500, mech: DOZER, j: 7 });
+  ben.clear();
+  let n = 0;
+  for (const st of path) {
+    w.t += st.dt === undefined ? 125 : st.dt;
+    w.say(mud, { t: 'p', map: 'over', lv: 3, dead: false, mech: DOZER, x: st.x, y: st.y, j: st.j === undefined ? 7 : st.j, spd: 205 });
+    n++;
+    if (ben.of('ride_end').length) break;
+  }
+  return { end: ben.last('ride_end'), steps: n, seats: w.room.rides.ridersOf(w.room.byName.get('mudtech')).length };
+}
+test('a driver who jumps carries nobody: a teleport, a j that changes, a path faster than any machine; whatever the move check says', () => {
+  for (const move of ['observe', 'off']) {
+    // one big jump (player.x set by hand): at once
+    let r = drive([{ x: 5781, y: 500 }], { move });
+    assert.deepEqual(r.end, { t: 'ride_end', d: 'Mudtech', why: 'jump' }, move + ' teleport');
+    assert.equal(r.seats, 0);
+    // a jump the driver's game counted (j), however short
+    r = drive([{ x: 510, y: 500 }, { x: 560, y: 500, j: 8 }], { move });
+    assert.equal(r.end && r.end.why, 'jump', move + ' j');
+    // 1200 px/s in a straight line (through anything): set down within half a second
+    const fast = []; for (let i = 1; i <= 40; i++) fast.push({ x: 500 + i * 150, y: 500 });
+    r = drive(fast, { move });
+    assert.equal(r.end && r.end.why, 'jump', move + ' fast');
+    assert.ok(r.steps <= 4, 'within 4 presences (0.5 s): ' + r.steps);
+  }
+});
+test('an honest driver keeps his riders: Full Steam for 3 s, a stalled line that lets go in one burst, a lagging line', () => {
+  // Full Steam: DRIVE_TOP px/s at 8 presences a second for 3 s
+  const steam = []; for (let i = 1; i <= 24; i++) steam.push({ x: 500 + i * DRIVE_TOP / 8, y: 500 });
+  let r = drive(steam);
+  assert.equal(r.end, undefined, 'steam'); assert.equal(r.seats, 1);
+  // 250 px/s; the line stalls 2 s, then 16 presences arrive at once, then on as before
+  const stall = []; let x = 500;
+  for (let i = 0; i < 8; i++) stall.push({ x: x += 31.25, y: 500 });
+  stall.push({ x: x += 31.25, y: 500, dt: 2000 });
+  for (let i = 0; i < 15; i++) stall.push({ x: x += 31.25, y: 500, dt: 0 });
+  for (let i = 0; i < 24; i++) stall.push({ x: x += 31.25, y: 500 });
+  r = drive(stall);
+  assert.equal(r.end, undefined, 'stall'); assert.equal(r.seats, 1);
+  // presences that come uneven (75 ms, 175 ms, ...) at 250 px/s
+  const uneven = []; x = 500; let t = 0;
+  for (let i = 0; i < 40; i++) { const dt = i % 2 ? 175 : 75; t += dt; uneven.push({ x: 500 + t * 0.25, y: 500, dt }); }
+  r = drive(uneven);
+  assert.equal(r.end, undefined, 'uneven'); assert.equal(r.seats, 1);
 });
