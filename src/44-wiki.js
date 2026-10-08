@@ -383,7 +383,7 @@
       if (e.usedIn.length) { out.push(H('USED FOR')); for (const rid of e.usedIn) if (d.recipes[rid]) out.push(L(d.recipes[rid].name, 'recipes', rid)); }
     }
     if (section === 'recipes') {
-      out.push(P(`${STATION_NAME[String(e.station)] || (e.station === 'dozerbay' ? 'The bulldozer bay (Hollowford)' : e.station)}`, '#e6edf3'));
+      out.push(P(`${STATION_NAME[String(e.station)] || (e.station === 'dozerbay' ? 'The parts bench in the Bulldozer Bay (Smithy Lane, Thistledown)' : e.station)}`, '#e6edf3'));
       out.push(P(`${skillName(e.skill)} level ${e.lv} · ${e.xp} xp`));
       if (e.blurb) out.push(P(e.blurb, '#8b949e'));
       if (e.requires) out.push(P(`Needs the ${e.requires} fitted first.`, '#8b949e'));

@@ -470,9 +470,10 @@ const TOWNSFOLK = (() => {
         // and 4 more: the riverside's Wilf, Tamsin the miller, Odo and Nan Gully (the Great Spread, Stage 5b); and 3 more: the
         // Crossroads Inn's Mother Hobb, Jory the pedlar and Marigold the drover (Stage 5c); and 3 more: Ansel the beacon keeper,
         // Hilde the trapper and Corvin the hunter (Stage 5d); and 2 more: Bramble the scout and Brin the drover (Stage 5e); and 1
-        // more: Wat the carter (Stage 5f); and 3 more: the roads' traders, Ivo the ore-picker, Rusty Kett and Cinder Meg (Stage 6); and
-        // 1 more: Granny Wick at the Old Barrow (89-necroart: the sample's own parts, a family of one)
-        ids.length === 97 && !bad.length && !missed.length && !dup.length && !small.length, { n: ids.length, bad: bad.slice(0, 5), missed, dup, small }); }
+        // more: Wat the carter (Stage 5f); and 3 more: the roads' traders, Ivo the ore-picker, Rusty Kett and Cinder Meg (Stage 6);
+        // and 1 more: Sprocket, the goblin mechanic in the Bulldozer Bay (96-dozerbay); and 1 more: Granny Wick at the Old Barrow
+        // (89-necroart: the sample's own parts, a family of one)
+        ids.length === 98 && !bad.length && !missed.length && !dup.length && !small.length, { n: ids.length, bad: bad.slice(0, 5), missed, dup, small }); }
 
     // 2. every person the game draws reaches the new look by id: each NPCS entry through the core's drawNpc, and every
     // place's own people in real frames (Hollowford's square and the guild, the ferry, Deepholm, Sylvaris, Aerie and the
@@ -507,6 +508,8 @@ const TOWNSFOLK = (() => {
         // Deepholm and Aerie (the sky city, the Cloud Kingdom: the residents, Lark, the walkers and the fliers)
         if (window.INSTANCES) {
           INSTANCES.enter('deepholm'); for (const p of taps()) look(p.x, p.y); INSTANCES.leave();
+          // Sprocket in the Bulldozer Bay (96-dozerbay)
+          if (INSTANCES.list().includes('dozer_bay')) { INSTANCES.enter('dozer_bay'); for (const p of taps()) look(p.x, p.y); INSTANCES.leave(); }
           INSTANCES.enter('aerie'); F.sim(2, []);
           for (const p of taps()) look(p.x, p.y);
           const K = window.KINGDOM;

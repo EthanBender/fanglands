@@ -1286,6 +1286,12 @@ down." (a rider who has heard nothing at all from the world for a second sends `
 drops just goes from the seat on everyone else's screen (`left`); the driver drives on. The driver's screen says "Ben
 hopped on." once a friend has sat 0.15 s (a late presence from a line that was down names its old seat for a moment).
 
+A driver who takes his machine down the Bulldozer Bay's tunnel (`src/96-dozerbay.js`) goes into a place like any other:
+his presence names the map `dozer_bay` with no machine, and every rider is set down beside the mouth by his own game ("Mudtech
+went inside. You hop down."); the driver reads "Ben hops down outside." The machine is stored in one of the knight's own
+four stalls (`player.bay`, saved with him): nothing about it is sent, the world keeps nothing of it, and a friend in the
+workshop at the same time sees his own stalls, never another knight's.
+
 **A driver who cheats carries nobody.** Only a rider's own game moves his knight, but it glues him to the driver's seat,
 so the driver's path is watched on both sides, whatever the movement check's mode: a jump (the driver's `j` changes) or a
 path further from any place he was in the last 3 s than the fastest machine goes (Full Steam's 430 px/s with a quarter to
