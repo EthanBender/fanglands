@@ -78,7 +78,9 @@ export const VIEW_FORWARD = new Set(['p', 'left', 'mon', 'keeper', 'chat', 'crac
 export const VIEW_STATUS = new Set(['muted', 'unmuted', 'chat_pause', 'strike']);
 export const VIEW_DROP = new Set(['welcome', 'who', 'role', 'sim', 'snap', 'hit', 'kill', 'hurt', 'gift', 'gift_ok', 'gift_back', 'prize',
   'trade_ask', 'trade_asked', 'trade_ask_off', 'trade_no', 'trade_open', 'trade_state', 'trade_note', 'trade_end', 'trade_done',
-  'mod', 'modlist', 'spawn', 'spawn_clear', 'summon', 'light_no', 'party_no', 'boss_call', 'boss_wait', 'hand', 'watching', 'error', 'pong', 'view']);
+  'mod', 'modlist', 'spawn', 'spawn_clear', 'summon', 'light_no', 'party_no', 'boss_call', 'boss_wait', 'hand', 'watching', 'error', 'pong', 'view',
+  // riding together (ride.js): what the kid's own game does with his seat; the teacher's screen draws the riders from their presence
+  'ride_no', 'ride_end']);
 // an error to the kid that ends his game's line: the view ends, in these words
 export const VIEW_END = {
   left: (n, at) => n + ' left the game at ' + clockAt(at) + '.',

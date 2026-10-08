@@ -114,5 +114,8 @@
 "93-roads.js",
 "93-roadart.js",
 "54-megarare.js",
-"54-megarareart.js"
+"54-megarareart.js",
+"84-ridetogether.js",
+"tools/mmo-sim-ride.js",
+"tools/ride-browser.mjs"
 ]

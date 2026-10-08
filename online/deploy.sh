@@ -19,6 +19,8 @@ node --test online/test/
 [ -f tools/dom-keys.js ] && node tools/dom-keys.js index.html
 [ -f tools/mmo-sim-admin.js ] && node tools/mmo-sim-admin.js
 [ -f tools/mmo-sim-party.js ] && node tools/mmo-sim-party.js
+# riding together (docs/ONLINE.md, "Riding together"): four games and a page from before seats against the real Room
+[ -f tools/mmo-sim-ride.js ] && node tools/mmo-sim-ride.js
 # the teacher view (docs/ONLINE.md, "The teacher view"): two games and a teacher's screen against the real World (Watch
 # included), and the screen in a real browser when a local world answers on 127.0.0.1:8787 (the tool's header says how to start
 # one; it never runs against a real world)
