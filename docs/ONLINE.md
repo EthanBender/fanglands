@@ -1209,6 +1209,9 @@ down." A rider whose line drops just goes from the seat on everyone else's scree
 `node tools/mmo-sim-ride.js` (four whole games and an old page against the real Room: hop on, full, riding along on every
 screen, no steering or swinging, chat, hop off, a gate and a door, every way down, the walker's one seat, the
 Barrelbeast's two, a dropped line either side, nothing owned changes, offline unchanged). `deploy.sh` runs both.
+`node tools/ride-browser.mjs` does it in three real game pages against a LOCAL world only (its header says how to start one):
+a computer driver, a computer rider on the E key, an iPad rider tapping HOP ON, each machine in turn, with screenshots from the
+driver's and a rider's screens at 1280 x 800 and at the iPad size, and the world's movement check reading zero.
 
 ## Every knight lives on the server
 
@@ -2976,7 +2979,7 @@ His own presence (he never receives it) goes by `hooks.presence` (`k.last`, with
 |---|---|
 | `VIEW_FORWARD` (his screen) | `p`, `left`, `mon`, `keeper`, `chat`, `crackers`, `boom`, `party_end`, `announce` |
 | `VIEW_STATUS` (the header only) | `muted`, `unmuted`, `chat_pause`, `strike` |
-| `VIEW_DROP` (never) | `welcome`, `who`, `role`, `sim`, `snap`, `hit`, `kill`, `hurt`, `gift`, `gift_ok`, `gift_back`, `prize`, `trade_ask`, `trade_asked`, `trade_ask_off`, `trade_no`, `trade_open`, `trade_state`, `trade_note`, `trade_end`, `trade_done`, `mod`, `modlist`, `spawn`, `spawn_clear`, `light_no`, `party_no`, `boss_call`, `boss_wait`, `hand`, `watching`, `error`, `pong`, `view` |
+| `VIEW_DROP` (never) | `welcome`, `who`, `role`, `sim`, `snap`, `hit`, `kill`, `hurt`, `gift`, `gift_ok`, `gift_back`, `prize`, `trade_ask`, `trade_asked`, `trade_ask_off`, `trade_no`, `trade_open`, `trade_state`, `trade_note`, `trade_end`, `trade_done`, `mod`, `modlist`, `spawn`, `spawn_clear`, `light_no`, `party_no`, `boss_call`, `boss_wait`, `hand`, `watching`, `error`, `pong`, `view`, `ride_no`, `ride_end` |
 
 `watch.test.mjs` fails on any type the contract, `room.js`, `sim/worlds.js` or `watch.js` sends a game that is in none of the
 three lists, or in two. An `error` to the kid of `kicked`, `words`, `elsewhere`, `banned` or `renamed` ends the view (`w_vend`).

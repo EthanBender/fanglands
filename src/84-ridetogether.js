@@ -225,11 +225,15 @@ const RIDE = (() => {
     const my = myMap(), R = REMOTE();
     for (const n in R) { const e = R[n]; if (!e.ride || e.map !== my || e.dead) continue; const M = machineOf(e.ride.d); if (!M) continue; const p = seatWorld(M, e.ride.s); e.shown.x = p.x; e.shown.y = p.y; }
   }
+  // first of every update hook, so the presence 73-players sends this frame already has him in his seat (after a pause or a
+  // sleeping tab the machine may have gone on: the world must never read his old place against the driver's new one)
+  HOOKS.update.unshift(() => {
+    if (!st.ride) return;
+    if (player.dead) st.ride = null;
+    else { const why = stopWhy(); if (why) setDown(why); else place(); }
+  });
   HOOKS.update.push(() => {
-    if (st.ride) {
-      if (player.dead) st.ride = null;
-      else { const why = stopWhy(); if (why) setDown(why); else place(); }
-    }
+    if (st.ride && !player.dead) place();   // and again after 73-players has slid the machine this frame: the seat as drawn
     glue();
     // the driver: who hopped on and off (only while he still drives: getting out sets everyone down, and that says itself)
     const kind = online() ? kindOf(player.mech) : null;
@@ -271,7 +275,6 @@ const RIDE = (() => {
     const coached = HK.teach('hopon', tm ? null : 'E', `Hop on with ${t.n}`, { sx, sy }, { emblem: 'friends' });
     if (!coached) HK.tag(g, sx, sy, 'Hop on', { side: 'right', key: tm ? null : 'E', emblem: tm ? 'friends' : null });
   });
-  HOOKS.keyHelp.push({ action: 'Hop on or off a friend\'s machine', codes: ['KeyE'] });
 
   // ---------- drawing: riders in their seats ----------
   // A rider is drawn seated (82-knightgear: no legs) at his seat, the size the driver is drawn, just after the machine in the

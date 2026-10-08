@@ -111,5 +111,6 @@
 "86-bandits.js",
 "86-banditart.js",
 "84-ridetogether.js",
-"tools/mmo-sim-ride.js"
+"tools/mmo-sim-ride.js",
+"tools/ride-browser.mjs"
 ]
