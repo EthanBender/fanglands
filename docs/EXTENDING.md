@@ -110,6 +110,17 @@ Everything a feature needs is reachable through globals and the `HOOKS` registry
   hideout) is staked with 93-spread's PROP cells under a place id of its own and a line in its PLAQUE table, and its step
   gets an Atlas port (`bandit_hills.hideout`). 84-crossroads' notice board takes a notice: push a string or a function to
   `CROSSROADS.NOTICES`.
+  **The roads** (`src/93-roads.js`, Stage 6) run LAST of all, a `HOOKS.built` pass after every place's: they read the
+  finished land and pave the six `MAIN_ROADS` as ROAD (three wide) with a VERGE kerb, keep every other track the dirt
+  Stage 4 laid, and stand the milestones, lanterns, cairns, the fork signposts and the places to stop for (`ROADS.pois`,
+  each `{ road, at: 0..1, side }`, never a tile). Nothing is paved inside a place's own box, a reserved plot, a built
+  place's box or the Ashfields' open ground: a road meets a place at its gate. So a new place needs nothing from the
+  roads: give it ports on its track (`TRACKS`) and the pass walks the track to its gate. But a new place (or any new
+  pass) changes the ground the roads are laid over, and the A* may then lay a stretch differently: run
+  `node tools/spread-footprint.mjs <the previous build>` and give the new rev's footprint the road tiles that moved too.
+  A fork (three or more legs) needs a node in `ATLAS.SIGNPOSTS` (`stage: 6` lets the roads pass stand its post), and
+  every signpost arm names the next stop and its walk from the road as laid (`ATLAS.legSecs`). Nothing may be built on
+  ROAD or VERGE (93-roads wraps `placeAction`).
   **DECO** (`src/83-deco.js`, Stage 5's one tile): open ground drawn as a kind from a side table (`DECO.kind(name,
   { draw, use, ground, flat, bridge })`, `DECO.put(api, x, y, kind)` in a `HOOKS.built` pass, `DECO.at`, `DECO.cells`):
   the Old Bridge's stone deck (`bridge: true`, counted as a crossing by the scarp-seal and river checks), reeds, wheat,

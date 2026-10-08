@@ -963,6 +963,71 @@ rail with the mare mounted from every side, the Bandit Hills' rail, Brin, Corvin
 book, Saltmere's rings, the bridge's signpost; laptop 1280x800 and iPad 1024x768); full map `fix5/fullmap-fixed.png`. The
 fingerprint baseline is this build's (36c5648ca969975e), for Stage 6's diff.
 
+## Stage 6: the roads (feat/roads, 7 Oct 2026)
+
+`src/93-roads.js` (new; feat/roads2's engine, e9f9429, ported for the 400x280 land, never merged) and `src/93-roadart.js`
+(stripped from the server copy: the named beasts' looks, the icons, the wiki page). Spec §5, §6 and §13 STAGE 6.
+
+- **What it is.** The six main roads (the Cave, Sea, Long, Goblin, Wolfwood and Ash Roads) are ROAD, three wide, with a
+  VERGE kerb (two new tile ids, 247 and 248, made by the pass after PROP and DECO). Every other track stays the dirt Stage 4
+  laid. 1,285 ROAD tiles and 665 VERGE tiles; 37 trees felled where going round cost more.
+- **How it is laid.** A `HOOKS.built` pass, last of all (no earlier pass sees it): each leg (one track point to the next)
+  by A* over a cost field (the old track 0.5, open ground 1, a wood 3, its own mulberry32 jitter), bounded to the leg's
+  box plus 24; 81 searches. Places' own boxes, reserved plots, built places, the Hollowford burn, a tile round every
+  building, door and person are adopted, never paved: a road meets a place at its gate. Nothing in the Ashfields is paved
+  (the open-ground rule: 1,987 open tiles before and after); past the Warden's gate the Ash Road is its old track across
+  the ash, marked by cairns.
+- **Signposts.** 15 forks, a signpost within 2 tiles of each: three new (the Glasshouse spur, the Old Barrow spur,
+  Dunstan's turn: `ATLAS.SIGNPOSTS` nodes with `stage: 6`), one moved in (the Skypier lane's). Every arm of all 17 posts
+  names the next stop on its road and the walk to it from the road as laid ("Millbrook, south-west, 20 seconds on foot."),
+  at 3.65 tiles a second (`ATLAS.legSecs`).
+- **Markers.** A milestone at each end of every main road (12; E names the road, the walk to the far end and every stop
+  on the way); 30 lantern posts along the main roads (lit at night, in 35-night's light list); 13 cairns on the tracks and
+  the Ash Road's ash (two short tracks, the Quarry Track and the Beacon Path, found no room for their first cairn).
+- **Places to stop for.** 35, each `{ road, at: 0..1, side }`, never a tile: roads2's 25 re-homed by road and 10 new
+  (the Broken Fence, the Burnt Farmstead, the Wayside Well, the Fallen Beacon, the Bandits' Lookout, the Fisher's Shrine,
+  the Hollow Oak, the Bone Pile, two lore boards). Six wayshrines with their blessings, the six named beasts (none
+  charges; roam 2), the three traders (Ivo, Rusty Kett, Cinder Meg; declared at load), the iron key and the strongbox.
+- **Nothing on the road.** `placeAction` refuses ROAD and VERGE ("This is the road. Build beside it.").
+
+**The footprint: WORLD_REV 7.** `ATLAS.REVS[7]` is made by the pass: every tile it paved, walked or stood a thing on,
+grown by 2, as 660 row runs (9,872 tiles). `node tools/spread-footprint.mjs <master 49df821 index.html>`: 2,043 tiles
+changed (map and variants), 0 outside; 3 people (the traders) and 6 spawns (the named beasts) added, all inside. A new
+place or pass later changes the ground the roads are laid on: its footprint must hold the road tiles that moved too
+(docs/EXTENDING.md).
+
+**The beat gaps (§6), held on every main road** (97-spreadchecks `BEAT_HELD` is now `MAIN_ROADS`): stop / glance gap in
+tiles: Cave 19 / 15, Sea 13 / 9, Long 17 / 17, Goblin 13 / 9, Wolfwood 9 / 4, Ash 17 / 15 (limits 73 / 36, beats
+within 10 tiles of the centre line).
+
+**The proofs** (93-roads' self-tests, roads2's re-pointed, and Stage 6's):
+- the network is one: a flood over its own tiles from the cave mouth reaches every place's port but the 12 listed with
+  their reason (the islands and the east by boat, the reserved plots);
+- a flood over ROAD tiles alone (through a place's own ground at its gates, the Ash Road's track across the ash, the
+  bridges) takes in all 1,285 ROAD tiles and all 21 ports on the six main roads;
+- three wide with a kerb (77% of the edges verged; the rest a tree, a wall, the water or a place), on the line of the
+  Stage 4 track (within 3);
+- nothing a place has is touched, nothing laid on anything but ordinary ground, the Ashfields' open ground kept;
+- a signpost within 2 of every fork; every arm with its walk;
+- the markers, the places to stop for, each kind of thing doing what it says;
+- the A* time budget: the pass 128 ms in all, its 81 searches 11 ms (limits 250 and 120);
+- the mare rides each main road within 10% of its length over 7.3 tiles a second (all within 1%: Cave 139.2 tiles 19.03 s,
+  Sea 89 tiles 12.08 s, Long 160.3 tiles 21.78 s, Goblin 70.2 tiles 9.53 s, Wolfwood 138.3 tiles 18.83 s, Ash 175.5 tiles
+  23.82 s).
+
+**The migration with the sweep.** `--rev-base` (master 49df821, rev 6): fixture + matrix 27/27 (658 planks back of the
+658 placed on the 660 boxes: two boxes' middles held one of the fixture's own diffs, and the tool now counts the planks
+it placed; 629 stumps and fires, 0 grew back); the real saves (the 7 Oct pre-teacher-chat export, locally) 94/94 through
+rev 6; straight (world 1 to rev 7) fixture + matrix + the same export 120/120; 0 stage changes, 0 lost machines, items or coins.
+
+**Proved on this build:** `./build.sh` (literals 0 bare, changetile, compass, boot budget: node 1,290 ms, Chromium 4x
+2,289 ms); headless ALL 1494; `--play` ALL 1495, the Fang dead; online 442; mmo-sim 43, `--room` 43, `--sim` 47; dom-keys
+16; mmo-sim-admin 8; mmo-sim-party 18; mmo-sim-teacher 9; sim-suite 28; mmo-sim-world 16; build-sim `--strip --reads`;
+atlas-drift; the footprint; the migration as above. Shots: `~/.fanglands/work/spread/s6b/shots/` (the Mill Lane fork and
+its signpost, a lantern road at night, the Cave Road's milestone, the Drovers' Track, the goblin-road bridge, the Old
+Bridge, a cairn on the ash, the mare on the Sea Road; laptop 1280x800 and iPad 1024x768); full map
+`s6b/fullmap-roads.png`. The fingerprint baseline is this build's (0a9081a8bd939131).
+
 ## Proving "nothing visible changed" (spec §9.4)
 
 ```
