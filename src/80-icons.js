@@ -16,7 +16,8 @@
 //   1. window.ICONS.set(id, fn) — a per-item drawing registry. A registered icon wins; an unregistered item
 //      still falls through to the core shape switch in src/08-draw.js, unchanged.
 //   2. window.ICONS.rarity(id) — five tiers worked out from the live tables (drop tables, shop stock, recipes,
-//      gathering, cooking), with value as the tiebreak. Rare and better get a coloured halo behind the icon.
+//      gathering, cooking), with value as the tiebreak, and a sixth above them, 'mega', that an item says itself
+//      (`rarity: 'mega'`, 54-megarare). Rare and better get a coloured halo behind the icon.
 //   3. window.ICONS.audit() — draws every item into a recording context, hashes the call sequence, and reports
 //      which items still draw the same thing. A self-test FAILS while any two match.
 //
@@ -68,8 +69,11 @@
     rare: { key: 'rare', name: 'Rare', order: 2, glow: '#58a6ff', ring: '#1f6feb', strength: 0.3 },
     epic: { key: 'epic', name: 'Epic', order: 3, glow: '#b58cff', ring: '#7b3fe4', strength: 0.44 },
     unique: { key: 'unique', name: 'Unique', order: 4, glow: '#f5c542', ring: '#a9750a', strength: 0.6 },
+    // above them all, and never read off the tables: an item a feature marks `rarity: 'mega'` (54-megarare). Gold
+    // in the middle of the glow, purple at its edge, a gold ring: the MEGA RARE banner's colours.
+    mega: { key: 'mega', name: 'Mega rare', order: 5, glow: '#f5c542', glow2: '#a24bff', ring: '#f5c542', strength: 0.64 },
   };
-  const TIER_ORDER = ['common', 'uncommon', 'rare', 'epic', 'unique'];
+  const TIER_ORDER = ['common', 'uncommon', 'rare', 'epic', 'unique', 'mega'];
 
   // The exact odds rollDrops rolls at, the same maths src/44-wiki.js prints: always 100%, one row of the
   // weighted table by weight, the rare table one time in `chance` and then by weight. Plus the two feature
@@ -151,6 +155,8 @@
   const TIER_CACHE = Object.create(null);
   function tierOf(id) {
     if (TIER_CACHE[id]) return TIER_CACHE[id];
+    const said = ITEMS[id] && ITEMS[id].rarity;
+    if (said && TIERS[said] && TIERS[said].order > TIERS.unique.order) return (TIER_CACHE[id] = TIERS[said]);
     const sc = score(id), v = (ITEMS[id] && ITEMS[id].value) || 0;
     let t = sc >= 40 ? TIERS.common : sc >= 12 ? TIERS.uncommon : sc >= 1.2 ? TIERS.rare : sc >= 0.1 ? TIERS.epic : TIERS.unique;
     if (v >= 900 && t.order < TIERS.uncommon.order) t = TIERS.uncommon;  // value is the tiebreak: nothing this dear is merely common
@@ -172,7 +178,8 @@
       gr = g.createRadialGradient(0, 0, r * 0.3, 0, 0, r);
       const rgb = hexRgb(tier.glow);
       gr.addColorStop(0, `rgba(${rgb},0)`); gr.addColorStop(0.45, `rgba(${rgb},${tier.strength})`);
-      gr.addColorStop(0.72, `rgba(${rgb},${tier.strength * 0.75})`); gr.addColorStop(1, `rgba(${rgb},0)`);
+      const rgb2 = tier.glow2 ? hexRgb(tier.glow2) : rgb;
+      gr.addColorStop(0.72, `rgba(${rgb2},${tier.strength * 0.75})`); gr.addColorStop(1, `rgba(${rgb2},0)`);
       m.set(key, gr);
     }
     return gr;
@@ -574,7 +581,7 @@
     get: id => REG[id] || null,
     has: id => !!REG[id],
     ids: () => Object.keys(REG),
-    rarity: id => tierOf(id).key,                        // 'common' | 'uncommon' | 'rare' | 'epic' | 'unique'
+    rarity: id => tierOf(id).key,                        // 'common' | 'uncommon' | 'rare' | 'epic' | 'unique' | 'mega'
     tier: id => tierOf(id),                              // the whole tier: name, order, glow, ring
     tierName: id => tierOf(id).name,
     supply: id => Object.assign({ score: +score(id).toFixed(3), value: (ITEMS[id] || {}).value || 0 }, supply()[id] || blank),

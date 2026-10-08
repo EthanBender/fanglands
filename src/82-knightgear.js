@@ -10,6 +10,9 @@
 //  3. Facing forward or side-on, "the sword should be in front": the weapon is in front of the shoulder and body.
 //     Facing away, the hands, the weapon and the shield or lantern are all BEHIND his body (an upright tip shows over his
 //     shoulder; the cape and its badge show on his back).
+//     The Void Scythe (54-megarare, 7 Oct 2026) stands upright like the spear, the hand at the waist: side-on its blade
+//     curves forward; facing us or away it is turned over his head. Its swing is a wider two-handed sweep (both hands on
+//     the shaft, the off hand leaves his side), and the blade turns back over in his hand as it eases to rest.
 //  4. Robes and cloaks are slim and open at the front, never "a brick": the necromancer robe has a dark lining with
 //     runes, a cord belt and a tattered hem; the silk and shadow cloaks are two panels over the tunic, the belt showing.
 //  5. More detail and more of a look of its own for every piece: every metal its own helm, shield, blade and armour
@@ -50,7 +53,7 @@
 // POSE. Where the weapon points and where the hand is ease from frame to frame. It lives in a WeakMap keyed by the
 // entity, never on it: the player object is saved whole into every save.
 //
-// window.KNIGHTGEAR = { draw, partsOf, gearKey, cleanGear, extent, fit, handAt, poseOf, STATS, PICS, WPICS, ... }
+// window.KNIGHTGEAR = { draw, weaponArt, partsOf, gearKey, cleanGear, extent, fit, handAt, poseOf, STATS, PICS, WPICS, ... }
 // ============================================================================
 const KNIGHTGEAR = (() => {
   // ---------- the clock and the colours of the knight being drawn ----------
@@ -130,14 +133,14 @@ const KNIGHTGEAR = (() => {
   const shieldFam = id => !id ? null : id === 'soul_lantern' ? 'lantern' : 'shield';
   const SHAPES = { sword: 1, dagger: 1, axe: 1, battleaxe: 1, warhammer: 1, bow: 1 };
   const shapeFam = s => SHAPES[s] ? s : 'sword';
-  const weaponFam = id => !id ? null : /spear/.test(id) ? 'spear' : id === 'fang_of_the_fang' ? 'fang' : id === 'bone_stave' ? 'stave' : id === 'skull_mace' ? 'mace' : shapeFam(ITEMS[id] && ITEMS[id].shape);
+  const weaponFam = id => !id ? null : /spear/.test(id) ? 'spear' : id === 'fang_of_the_fang' ? 'fang' : id === 'bone_stave' ? 'stave' : id === 'skull_mace' ? 'mace' : id === 'void_scythe' ? 'scythe' : shapeFam(ITEMS[id] && ITEMS[id].shape);
   const gemOf = id => !id ? null : /^sunstone/.test(id) ? '#ffcf5a' : /^stormstone/.test(id) ? '#efe8ff' : null;
   // which item slot an item goes in (the obsidian helm's armour slot is 'head': it is a helm)
   const slotOf = it => !it ? null : it.weapon ? 'weapon' : it.armour ? (it.armour.slot === 'head' ? 'helm' : it.armour.slot) : null;
   const SLOTS = ['helm', 'body', 'legs', 'shield', 'cape', 'weapon'];
   // pieces whose drawing moves with the clock (a picture of them is made at four phases)
   const ANIMATED = new Set(['mithril_helm', 'stormstone_helm', 'obsidian_helm', 'godly_helm', 'necro_robe', 'silk_cloak', 'shadow_cloak', 'hover_armour', 'stormstone_body', 'soul_lantern', 'stormstone_shield', 'gale_cloak']);
-  const WANIMATED = new Set(['mithril_sword', 'mithril_dagger', 'skysinger', 'sunstone_sword', 'stormstone_sword', 'bone_stave', 'dragon_spear']);
+  const WANIMATED = new Set(['mithril_sword', 'mithril_dagger', 'skysinger', 'sunstone_sword', 'stormstone_sword', 'bone_stave', 'dragon_spear', 'void_scythe']);
 
   // ---------- reading a look: the six pieces ----------
   // part = { id, fam, tier, color } (id null for a piece known only by its colour)
@@ -811,6 +814,8 @@ const KNIGHTGEAR = (() => {
       ell(g, 29, 0, 3.6, 3.4); g.fillStyle = '#efe9d8'; g.fill(); outline(g, 0.5);
       g.fillStyle = '#2a2420'; ell(g, 30.2, -1.2, 0.8, 0.9); g.fill(); ell(g, 30.2, 1.2, 0.8, 0.9); g.fill();
       const p = (0.4 + Math.sin(T * 3) * 0.2).toFixed(3); const gl = g.createRadialGradient(29, 0, 0, 29, 0, 7); gl.addColorStop(0, `rgba(160,255,200,${p})`); gl.addColorStop(1, 'rgba(160,255,200,0)'); g.fillStyle = gl; ell(g, 29, 0, 7, 7); g.fill();
+    } else if (fam === 'scythe') {
+      drawScythe(g);
     } else if (fam === 'spear') {
       haft(-18, 30);
       g.beginPath(); g.moveTo(29, -2.6); g.quadraticCurveTo(35, -3.6, 41, 0); g.quadraticCurveTo(35, 3.6, 29, 2.6); g.closePath(); g.fillStyle = c; g.fill(); outline(g, 0.6);
@@ -831,6 +836,60 @@ const KNIGHTGEAR = (() => {
       if (pull > 0.5) { g.strokeStyle = '#8a6a3a'; g.lineWidth = 1; g.beginPath(); g.moveTo(1.5 - pull, 0); g.lineTo(22, 0); g.stroke(); g.fillStyle = '#c9ccd3'; g.beginPath(); g.moveTo(22, -1.6); g.lineTo(25.5, 0); g.lineTo(22, 1.6); g.closePath(); g.fill(); g.fillStyle = '#e5484d'; g.beginPath(); g.moveTo(1.5 - pull, 0); g.lineTo(3.5 - pull, -1.6); g.lineTo(5 - pull, 0); g.lineTo(3.5 - pull, 1.6); g.closePath(); g.fill(); }
       g.restore();
     }
+  }
+  // THE VOID SCYTHE (54-megarare; the owner's inspiration picture, ~/.fanglands/work/scythe/inspo.png, drawn our own way):
+  // a dark shaft wrapped in a black vine with small gold runes, dark bands with an orange stripe at the butt and under
+  // the head, a purple orb at the butt, a dark metal head with an orange slit eye, and the crescent blade, peach at the
+  // head through pink to purple at the tip with a pale back edge, black tendrils curling over the head and the blade's
+  // root. In the weapon's own frame (+x up the shaft from the hand); the blade is on the +y side (the side a swing
+  // leads with); paintHeld turns it over (scale y -1) to rest over his head facing us or away.
+  function drawScythe(g) {
+    const sway = Math.sin(T * 3) * 0.6, pulse = 0.5 + Math.sin(T * 2.4) * 0.5;
+    // the orb's glow, behind everything
+    { const gl = g.createRadialGradient(-11.6, 0, 0, -11.6, 0, 6); gl.addColorStop(0, `rgba(180,110,255,${(0.35 + pulse * 0.25).toFixed(3)})`); gl.addColorStop(1, 'rgba(180,110,255,0)'); g.fillStyle = gl; ell(g, -11.6, 0, 6, 6); g.fill(); }
+    // the shaft
+    rr(g, -9.4, -1.35, 42, 2.7, 1.2); g.fillStyle = '#251e30'; g.fill(); outline(g, 0.5);
+    g.strokeStyle = 'rgba(255,255,255,0.13)'; g.lineWidth = 0.5; g.beginPath(); g.moveTo(-8, -0.6); g.lineTo(31, -0.6); g.stroke();
+    // the vine wound round it
+    g.strokeStyle = '#0b090f'; g.lineWidth = 0.8; g.lineCap = 'round'; g.beginPath();
+    for (let u = -6; u <= 29; u += 1) { const v = Math.sin(u * 0.62) * 1.5; if (u === -6) g.moveTo(u, v); else g.lineTo(u, v); }
+    g.stroke();
+    // gold runes between the turns of the vine
+    g.strokeStyle = '#e0b546'; g.lineWidth = 0.5;
+    for (const x of [-3, 2, 7, 12, 17, 22]) { g.beginPath(); g.moveTo(x - 0.8, -0.8); g.lineTo(x, 0); g.lineTo(x - 0.8, 0.8); g.stroke(); }
+    // the two dark bands, each with an orange stripe
+    for (const bx of [-10, 30.2]) { rr(g, bx, -1.95, 3.2, 3.9, 0.6); g.fillStyle = '#15111b'; g.fill(); outline(g, 0.4); g.fillStyle = '#ff8a3d'; g.fillRect(bx + 1.2, -1.95, 0.8, 3.9); }
+    // the orb at the butt
+    ell(g, -12.2, 0, 2.5, 2.5); { const og = g.createRadialGradient(-12.8, -0.8, 0.3, -12.2, 0, 2.6); og.addColorStop(0, '#e9d5ff'); og.addColorStop(0.45, '#a24bff'); og.addColorStop(1, '#4b1890'); g.fillStyle = og; } g.fill(); outline(g, 0.5);
+    // the back spike, the other side of the head
+    g.beginPath(); g.moveTo(37.2, -2.2); g.lineTo(40.2, -8.2); g.lineTo(34.4, -2.6); g.closePath();
+    { const sg = g.createLinearGradient(36, -2, 40, -8); sg.addColorStop(0, '#f0a0b8'); sg.addColorStop(1, '#9c5cf0'); g.fillStyle = sg; } g.fill(); outline(g, 0.5);
+    // the blade: the back (outer edge) round to the tip, then the cutting edge home
+    g.beginPath(); g.moveTo(38, 1.4); g.quadraticCurveTo(50, 14, 30.5, 28); g.quadraticCurveTo(35.4, 14.5, 32.4, 2.8); g.closePath();
+    { const bg = g.createLinearGradient(35, 2, 31, 27); bg.addColorStop(0, '#ffb38a'); bg.addColorStop(0.3, '#e77ac8'); bg.addColorStop(0.65, '#9a52f5'); bg.addColorStop(1, '#5a22c8'); g.fillStyle = bg; } g.fill(); outline(g, 0.6);
+    // the pale back edge, and a glint down the cutting edge
+    g.strokeStyle = 'rgba(244,232,255,0.9)'; g.lineWidth = 0.7; g.beginPath(); g.moveTo(38.6, 3); g.quadraticCurveTo(48, 14.4, 31.4, 26.6); g.stroke();
+    g.strokeStyle = `rgba(255,214,250,${(0.25 + pulse * 0.35).toFixed(3)})`; g.lineWidth = 0.5; g.beginPath(); g.moveTo(33.4, 4.2); g.quadraticCurveTo(35, 14.4, 31.6, 24.4); g.stroke();
+    // the head: dark metal, an orange slit eye
+    g.beginPath(); g.moveTo(32.8, -2.9); g.lineTo(38.6, -2.5); g.lineTo(40.8, 0); g.lineTo(38.6, 2.6); g.lineTo(32.8, 2.9); g.closePath();
+    { const hg = g.createLinearGradient(0, -3, 0, 3); hg.addColorStop(0, '#5a5566'); hg.addColorStop(0.5, '#34303d'); hg.addColorStop(1, '#1d1a24'); g.fillStyle = hg; } g.fill(); outline(g, 0.5);
+    { const eg = g.createRadialGradient(36.6, 0, 0, 36.6, 0, 4); eg.addColorStop(0, `rgba(255,150,60,${(0.45 + pulse * 0.3).toFixed(3)})`); eg.addColorStop(1, 'rgba(255,150,60,0)'); g.fillStyle = eg; ell(g, 36.6, 0, 4, 4); g.fill(); }
+    ell(g, 36.6, 0, 2, 1.35); g.fillStyle = '#ff8a1a'; g.fill(); g.strokeStyle = '#2a0c00'; g.lineWidth = 0.4; g.stroke();
+    ell(g, 36.6, 0, 0.45, 1.2); g.fillStyle = '#2a0a00'; g.fill();
+    // the black tendrils: one curling off the head, one over the blade's root, one on the blade, one down the shaft
+    g.strokeStyle = '#0b090f'; g.lineWidth = 0.9; g.lineCap = 'round';
+    g.beginPath(); g.moveTo(34.2, -2.6); g.quadraticCurveTo(32 + sway * 0.4, -6.4, 34.8, -6.9); g.arc(34.8, -5.9, 1, -Math.PI / 2, Math.PI * 1.3); g.stroke();
+    g.beginPath(); g.moveTo(33.6, 2.4); g.quadraticCurveTo(37.5, 4.2, 39.2 + sway * 0.3, 7.6); g.arc(38.2 + sway * 0.3, 7.8, 1, 0, Math.PI * 1.4); g.stroke();
+    g.beginPath(); g.moveTo(42.2, 10.6); g.quadraticCurveTo(39.8, 13, 40.4 + sway * 0.3, 15.6); g.arc(39.4 + sway * 0.3, 15.6, 1, 0, Math.PI * 1.5); g.stroke();
+    g.lineWidth = 0.8; g.beginPath(); g.moveTo(30, 1.6); g.quadraticCurveTo(27.5, 2.6 + sway * 0.3, 26, 1.2); g.arc(26, 0.3, 0.9, Math.PI / 2, Math.PI * 1.8); g.stroke();
+  }
+  // a weapon drawn on its own, in its own frame (the hand at 0, 0; +x up the shaft): 54-megarareart lays the Void Scythe
+  // on the ground with it. t: the clock its moving parts read (default the game's).
+  function weaponArt(g, id, t) {
+    if (!id || !ITEMS[id] || slotOf(ITEMS[id]) !== 'weapon') return false;
+    const T0 = T; T = typeof t === 'number' ? t : time;
+    try { drawWeapon(g, part(id, 'weapon'), -1); } finally { T = T0; }
+    return true;
   }
   // NOT IN THE SAMPLE (ported minimally, flagged to the owner): the work tools and the fishing rod, in the same outline style
   // heat (0 to 1): how hot a held stone is (its glow)
@@ -874,7 +933,7 @@ const KNIGHTGEAR = (() => {
   // how a knight stands with each kind of weapon (angles in his own frame: 0 = to his right, + = down the screen)
   function restAngle(fam, side) {
     if (fam === 'axe' || fam === 'battleaxe' || fam === 'warhammer' || fam === 'mace') return side ? -1.2 : -1.12;
-    if (fam === 'spear' || fam === 'stave') return side ? -1.4 : -1.48;
+    if (fam === 'spear' || fam === 'stave' || fam === 'scythe') return side ? -1.4 : -1.48;
     if (fam === 'bow') return side ? -0.08 : 0;
     // swords, daggers and the Fang: held upright too, blade up beside the shoulder (owner: "should be up like the battle axes")
     return side ? -1.2 : -1.12;
@@ -885,21 +944,32 @@ const KNIGHTGEAR = (() => {
   function angDiff(a, b) { let d = (b - a) % (Math.PI * 2); if (d > Math.PI) d -= Math.PI * 2; if (d < -Math.PI) d += Math.PI * 2; return d; }
   const POSE = new WeakMap();
   // at rest: the weapon's angle and the hand at his waist, for this facing and step
+  // `blade`: which side of the shaft a blade on one side is drawn (1 = the side a swing leads with, -1 = turned over). Only
+  // the scythe's differs: side-on its curve faces forward, facing us or away it rests turned over his head.
   function restPose(S, fam) {
     const side = !S.back && Math.abs(S.fxm) > 0.7 && Math.abs(S.fy) < 0.6, rh = fam === 'bow' ? REST_HAND.bow : REST_HAND.up;
-    return { wa: restAngle(fam, side) + S.step * 0.1, hx: rh.x, hy: rh.y + S.step * 0.5 };
+    return { wa: restAngle(fam, side) + S.step * 0.1, hx: rh.x, hy: rh.y + S.step * 0.5, blade: fam === 'scythe' && !side ? -1 : 1 };
   }
+  // how far a swing turns (from, to, about where he faces): the scythe's two-handed sweep is wider than a sword's cut
+  const ARC = { scythe: [-2, 1.7] }, ARC0 = [-1.4, 1.2];
+  const arcOf = fam => ARC[fam] || ARC0;
+  // a two-handed swing: both hands on the shaft, the off hand further down it (the shield or lantern stays where it hangs)
+  const twoHanded = (S, P) => !!P.weapon && P.weapon.fam === 'scythe' && S.swing >= 0 && !S.block;
   // once a draw per knight: the weapon's angle and the hand ease back to rest after a swing (dt from the game clock)
   function pose(e, S, fam) {
     let rec = POSE.get(e);
     const swing = S.swing, ang = S.ang;
     let target, tx, ty;
     // the hand: round the shoulder while he swings, down at his waist at rest
-    if (swing >= 0) { target = fam === 'bow' ? ang : ang + lerp(-1.4, 1.2, kEase(swing)); tx = SHOULDER.x + Math.cos(target) * REACH; ty = SHOULDER.y + Math.sin(target) * REACH; }
-    else { const r = restPose(S, fam); target = r.wa; tx = r.hx; ty = r.hy; }
-    if (!rec) { rec = { wa: target, hx: tx, hy: ty, mirror: S.mirror, t: time }; POSE.set(e, rec); return rec; }
+    let blade = 1;
+    if (swing >= 0) { const [a0, a1] = arcOf(fam); target = fam === 'bow' ? ang : ang + lerp(a0, a1, kEase(swing)); tx = SHOULDER.x + Math.cos(target) * REACH; ty = SHOULDER.y + Math.sin(target) * REACH; }
+    else { const r = restPose(S, fam); target = r.wa; tx = r.hx; ty = r.hy; blade = r.blade; }
+    if (!rec) { rec = { wa: target, hx: tx, hy: ty, blade, mirror: S.mirror, t: time }; POSE.set(e, rec); return rec; }
     const dt = clamp(time - rec.t, 0, 0.05), k = Math.min(1, dt * 11);
     rec.t = time;
+    if (typeof rec.blade !== 'number') rec.blade = blade;
+    // the blade turns over in his hand as it eases back to rest (it does not jump to the other side)
+    if (swing >= 0) rec.blade = 1; else if (rec.mirror !== S.mirror) rec.blade = blade; else rec.blade += (blade - rec.blade) * k;
     if (swing >= 0 || rec.mirror !== S.mirror) { rec.wa = target; rec.hx = tx; rec.hy = ty; }
     else { rec.wa += angDiff(rec.wa, target) * k; rec.hx += (tx - rec.hx) * k; rec.hy += (ty - rec.hy) * k; }
     rec.mirror = S.mirror;
@@ -920,10 +990,19 @@ const KNIGHTGEAR = (() => {
   // mirrored facing left): 26-boats' pot rope starts there. null before he is drawn.
   function handAt(e) { const r = e && POSE.get(e); return r ? { x: (r.mirror ? -r.hx : r.hx) * 1.08, y: r.hy * 1.08 } : null; }
 
-  function drawTrail(g, ang, swing) {
-    const a0 = ang - 1.4, a1 = ang + lerp(-1.4, 1.2, kEase(swing));
-    g.save(); g.translate(SHOULDER.x, SHOULDER.y); g.strokeStyle = `rgba(255,255,255,${(0.42 * (1 - swing)).toFixed(3)})`; g.lineWidth = 5; g.lineCap = 'round';
-    g.beginPath(); g.arc(0, 0, 28, a0, a1); g.stroke(); g.restore();
+  function drawTrail(g, ang, swing, fam) {
+    const [f0, f1] = arcOf(fam), a0 = ang + f0, a1 = ang + lerp(f0, f1, kEase(swing));
+    g.save(); g.translate(SHOULDER.x, SHOULDER.y); g.lineCap = 'round';
+    if (fam === 'scythe') {
+      // the scythe's sweep: a wide violet crescent out where the blade goes, a pink-gold edge inside it
+      const a = 1 - swing;
+      g.strokeStyle = `rgba(150,80,255,${(0.42 * a).toFixed(3)})`; g.lineWidth = 9; g.beginPath(); g.arc(0, 0, 38, a0, a1); g.stroke();
+      if (a1 > a0 + 0.2) { g.strokeStyle = `rgba(255,190,150,${(0.55 * a).toFixed(3)})`; g.lineWidth = 2.4; g.beginPath(); g.arc(0, 0, 33, a0 + 0.15, a1); g.stroke(); }
+    } else {
+      g.strokeStyle = `rgba(255,255,255,${(0.42 * (1 - swing)).toFixed(3)})`; g.lineWidth = 5;
+      g.beginPath(); g.arc(0, 0, 28, a0, a1); g.stroke();
+    }
+    g.restore();
   }
 
   // ---------- the knight ----------
@@ -969,7 +1048,7 @@ const KNIGHTGEAR = (() => {
     if (S.back) {
       if (stage !== 'rest') {
         if (up) raisedShield(g, S, P);
-        else { g.save(); g.translate(0, S.bob); if (P.shield) drawShield(g, P.shield, false); drawOffHand(g, P.body, S.step); g.restore(); }
+        else { g.save(); g.translate(0, S.bob); if (P.shield) drawShield(g, P.shield, false); if (!twoHanded(S, P)) drawOffHand(g, P.body, S.step); g.restore(); }
       }
       if (stage === 'behind') return;
     } else if (P.cape) drawCape(g, P.cape, S.step, false);
@@ -981,7 +1060,7 @@ const KNIGHTGEAR = (() => {
     drawShoulders(g, P.body);
     if (!S.back) {
       if (GIRL) girlBraid(g, S.side, false);
-      if (!up) { drawOffHand(g, P.body, S.step); if (P.shield) drawShield(g, P.shield, false); }
+      if (!up) { if (!twoHanded(S, P)) drawOffHand(g, P.body, S.step); if (P.shield) drawShield(g, P.shield, false); }
       if (GIRL && showsHair(P.helm)) girlHairBehind(g);
     }
     drawHead(g, P.helm, S.fxm, S.fy, S.back);
@@ -1007,15 +1086,17 @@ const KNIGHTGEAR = (() => {
     const rec = S.rec;
     if (W) {
       g.save(); g.translate(rec.hx, rec.hy + S.bob); g.rotate(rec.wa);
+      if (typeof rec.blade === 'number' && rec.blade !== 1) g.scale(1, rec.blade);
       if (!(wpic && wpic(g, W, S.swing))) drawWeapon(g, W, S.swing);
       g.restore();
     }
     g.save(); g.translate(0, S.bob);
+    if (W && twoHanded(S, P)) drawWeaponArm(g, P.body, rec.hx - Math.cos(rec.wa) * 10, rec.hy - Math.sin(rec.wa) * 10);
     if (W) drawWeaponArm(g, P.body, rec.hx, rec.hy);
     else if (S.swing >= 0 && look.fists) drawWeaponArm(g, P.body, SHOULDER.x + Math.cos(S.ang) * (4 + S.swing * 12), SHOULDER.y + Math.sin(S.ang) * (4 + S.swing * 12));
     else drawWeaponArm(g, P.body, REST_HAND.up.x - 0.4, REST_HAND.up.y - 0.6 + S.step * 1.4);
     g.restore();
-    if (W && S.swing >= 0 && S.swing < 0.9 && W.fam !== 'bow') { g.save(); g.translate(0, S.bob); drawTrail(g, S.ang, S.swing); g.restore(); }
+    if (W && S.swing >= 0 && S.swing < 0.9 && W.fam !== 'bow') { g.save(); g.translate(0, S.bob); drawTrail(g, S.ang, S.swing, W.fam); g.restore(); }
   }
   function holdOf(e, S, look) { return look.tool || look.rod ? toolPose(e, S, look) : null; }
 
@@ -1118,11 +1199,11 @@ const KNIGHTGEAR = (() => {
     // at rest once the weapon has eased to within a little of where it rests: walking, the rest itself moves with the
     // step (0.1 a step) and the ease always trails it, so a near miss is the rest (else every walking knight with a
     // weapon would need a second set of pictures without it)
-    if (!hold && S.swing < 0) { const r = restPose(S, fam); if (!W || (Math.abs(angDiff(S.rec.wa, r.wa)) < 0.22 && Math.abs(S.rec.hx - r.hx) < 1.2 && Math.abs(S.rec.hy - r.hy) < 1.2)) rest = r; }
+    if (!hold && S.swing < 0) { const r = restPose(S, fam); if (!W || (Math.abs(angDiff(S.rec.wa, r.wa)) < 0.22 && Math.abs(S.rec.hx - r.hx) < 1.2 && Math.abs(S.rec.hy - r.hy) < 1.2 && Math.abs((typeof S.rec.blade === 'number' ? S.rec.blade : 1) - r.blade) < 0.2)) rest = r; }
     // walking, the step itself moves the clock on (4 pictures a walk, not 32); standing, the clock's own 4 phases
     const anim = !moving && (animatedBody(P) || (!!rest && !!W && WANIMATED.has(W.id))), ph = anim ? Math.floor(time * 4) % PHASES : 0;
     const tPic = moving ? sb * 0.29 : ph * 0.37 + 0.2;
-    const key = gearKey(P) + '|' + (rest ? 'R' + (look.fists ? 'f' : '') : '') + '|' + (GIRL ? 'g' + HAIR + RIB : 'b' + HAIR) + '|' + TUNIC + SKIN + '|' + pdir + '|' + sb + '|' + ph + '|' + ss;
+    const key = gearKey(P) + '|' + (rest ? 'R' + (look.fists ? 'f' : '') : twoHanded(S, P) ? '2' : '') + '|' + (GIRL ? 'g' + HAIR + RIB : 'b' + HAIR) + '|' + TUNIC + SKIN + '|' + pdir + '|' + sb + '|' + ph + '|' + ss;
     let p = lruGet(PICS, key);
     if (!p) {
       T = tPic;
@@ -1511,6 +1592,26 @@ const KNIGHTGEAR = (() => {
         const near = (p, x, y) => !!p && Math.abs(p.x - x) <= 0.3 && Math.abs(p.y - y) <= 0.3;
         const nums = near(REST_HAND.up, 10.4, 4.8) && near(REST_HAND.bow, 10.8, 3.6);
         check(P0 + 'at rest every weapon family (' + Object.keys(fams).length + ') stands upright with the hand at his waist (REST_HAND 10.4, 4.8; the bow at his side, 10.8, 3.6), drawn below the shoulder plates at the belt at all four facings; a swing lifts the hand round the shoulder and half a second after it the hand is back at the waist', nums && !bad.length && Object.keys(fams).length >= 10, { nums, rest: REST_HAND, bad, fams: Object.keys(fams) }); }
+
+      // 3b. the Void Scythe (54-megarare): side-on its blade faces forward; facing us or away it rests turned over his head;
+      // a swing leads with the blade, both hands on the shaft (the off hand leaves his side); after it the blade turns
+      // back over in his hand, never jumping
+      if (ITEMS.void_scythe) {
+        const look = lookWith({ weapon: 'void_scythe' }), sides = [];
+        for (const fc of FACES) { const e = ent(fc); time = 200; draw(recorder().g, e, look, null); sides.push(+POSE.get(e).blade.toFixed(2)); }
+        const count = r => ({ hands: r.ops.filter(o => /^ellipse \S+ \S+ 2\.2 2\.2/.test(o)).length, off: r.ops.filter(o => /^ellipse -10\.4 \S+ 2\.0 2\.0/.test(o)).length });
+        const e = ent(FACES[1]); time = 300; const r0 = recorder(); draw(r0.g, e, look, null); const still = count(r0);
+        e.attackT = 0.11; time += 1 / 60; const r1 = recorder(); draw(r1.g, e, look, null); const swing = count(r1), lead = POSE.get(e).blade;
+        e.attackT = 0; for (let i = 0; i < 30; i++) { time += 1 / 60; draw(recorder().g, e, look, null); }
+        const sideBack = POSE.get(e).blade;
+        const d = ent(FACES[0]); time = 400; draw(recorder().g, d, look, null); d.attackT = 0.11; time += 1 / 60; draw(recorder().g, d, look, null);
+        d.attackT = 0; const turn = [];
+        for (let i = 0; i < 30; i++) { time += 1 / 60; draw(recorder().g, d, look, null); turn.push(POSE.get(d).blade); }
+        const smooth = turn.every((b, i) => i === 0 || Math.abs(b - turn[i - 1]) < 0.35) && turn.some(b => b > -0.9 && b < 0.9) && turn[turn.length - 1] < -0.95;
+        check(P0 + 'the Void Scythe rests with its blade forward side-on and turned over his head facing us or away; a swing leads with the blade, two hands on the shaft and none at his side; after it the blade turns back over smoothly',
+          sides.join() === '-1,1,-1,1' && still.off === 1 && swing.off === 0 && swing.hands === still.hands + 1 && lead === 1 && Math.abs(sideBack - 1) < 0.01 && smooth,
+          { sides, still, swing, lead, sideBack: +sideBack.toFixed(2), turn: turn.filter((b, i) => i % 5 === 0).map(b => +b.toFixed(2)) });
+      }
 
       // 4. what is in front and what is behind: facing us, the weapon after the body, shoulders and head, the shield after
       // the body; facing away, both hands, the weapon and the shield before the body
@@ -1984,6 +2085,6 @@ const KNIGHTGEAR = (() => {
     } finally { time = time0; DPR = dpr0; T = 0; }
   });
 
-  return { draw, partsOf, gearKey, cleanGear, extent, fit, handAt, poseOf: e => POSE.get(e), STATS, PICS, WPICS, clearPics, picCap: () => picCap, KG, SLOTS, REST_HAND, SHOULDER, REACH };
+  return { draw, weaponArt, partsOf, gearKey, cleanGear, extent, fit, handAt, poseOf: e => POSE.get(e), STATS, PICS, WPICS, clearPics, picCap: () => picCap, KG, SLOTS, REST_HAND, SHOULDER, REACH };
 })();
 window.KNIGHTGEAR = KNIGHTGEAR;

@@ -53,9 +53,11 @@ mute (5 minutes, 1 hour, 1 day, until unmuted), unmute, kick, ban and unban othe
 keeper of that map makes them; they never respawn); throw drop parties (crackers on the ground around the admin;
 the first knight to light one gets a prize from the admin's list, and a party hat, 1 in 10 to 1 in 10,000, is
 rolled first); and powers over their own knight only (Unlock everything, after a pinned backup; Put my knight back;
-Can't be hurt; Teleport; Give me an item). The server checks `accounts.role` in the database on every admin message;
+Can't be hurt; Teleport; Give me an item; Summon a ride: Cinder the mare, a walker, a bulldozer or a Barrelbeast
+beside them, out in the world only). The server checks `accounts.role` in the database on every admin message;
 the game hiding buttons is never the lock. Nobody can mute, kick or ban an admin from inside the game; this page can.
-Every role change, mute, kick, ban, party and party hat is written to `mod_log` and shown under **What admins did**.
+Every role change, mute, kick, ban, party, party hat and summon is written to `mod_log` and shown under **What admins did**
+("MudGoll summoned a bulldozer").
 The whole contract is `docs/ONLINE.md`, "Admins and drop parties".
 
 ## The tables, and how they change

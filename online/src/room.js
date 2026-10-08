@@ -85,6 +85,7 @@ export const CAPS = {
   modlist: { rate: 1, burst: 2 },
   spawn: { rate: 1, burst: 3 },
   spawn_clear: { rate: 1, burst: 2 },
+  summon: { rate: 1, burst: 3 },
   party: { rate: 0.2, burst: 2 },
   party_end: { rate: 1, burst: 2 },
   light: { rate: 4, burst: 8 },
@@ -137,6 +138,8 @@ export const ATTACH_MAX = 1800;        // bytes of JSON a socket's attachment ma
 // How long each mute lasts; 'always' means until an admin (or the parent page) turns chat back on.
 export const MUTE_SPANS = { '5m': 5 * 60 * 1000, '1h': 3600 * 1000, '1d': 24 * 3600 * 1000, always: ALWAYS };
 export const SPAWN_MAX = 20;           // monsters in one spawn message
+// the rides an admin can summon beside him (docs/ONLINE.md, "Summoning a ride"): the mare, the walker, the bulldozer, the Barrelbeast
+export const SUMMON_KINDS = ['horse', 'walker', 'dozer', 'beast'];
 export const KICK_TEXT = 'An admin sent you out of the world. You can come back in.';
 // a teacher sent the knight off for the rest of the day (docs/ONLINE.md, "The teacher view"): kicked, why 'sentoff', close 4005
 export const SENDOFF_TEXT = 'A teacher sent you off Fanglands for the rest of today. Your knight is safe. You can play again tomorrow.';
@@ -428,6 +431,7 @@ export class Room {
       case 'modlist': return this.onModlist(k);
       case 'spawn': return this.onSpawn(k, m);
       case 'spawn_clear': return this.onSpawnClear(k);
+      case 'summon': return this.onSummon(k, m);
       case 'party': return this.onParty(k, m);
       case 'party_end': return this.onPartyEnd(k);
       case 'light': return this.onLight(k, m);
@@ -766,6 +770,23 @@ export class Room {
     if (!this.asAdmin(k)) return;
     const keeper = this.keeperOf(k.map);
     if (keeper) this.send(keeper.sock, { t: 'spawn_clear', by: k.name });
+  }
+
+  // ---------- summoning a ride (admins only): the admin's own game puts it down beside him, on this answer only ----------
+  // summon {kind, req}: the role is checked here (a player is answered error admin and nothing is written); out in the world
+  // only (a knight the world has in a place, his island included, is answered code 'place'); every one allowed is written to
+  // mod_log ("MudGoll summoned a bulldozer" on the parent page) before the answer goes. req is echoed so the game puts down
+  // only what it asked for.
+  onSummon(k, m) {
+    const admin = this.asAdmin(k);
+    if (!admin) return;
+    const kind = SUMMON_KINDS.includes(m.kind) ? m.kind : null;
+    const req = Number.isInteger(m.req) && m.req >= 0 && m.req <= 1e9 ? m.req : null;
+    const answer = extra => this.send(k.sock, Object.assign({ t: 'summon', kind }, req === null ? {} : { req }, extra));
+    if (!kind) return answer({ ok: false, code: 'bad' });
+    if (k.map && wireMap(k.map) !== OVERWORLD) return answer({ ok: false, code: 'place' });
+    this.store.log({ at: this.now(), by: admin.name, act: 'summon', target: admin.name, detail: kind });
+    answer({ ok: true });
   }
 
   // ---------- drop parties ----------

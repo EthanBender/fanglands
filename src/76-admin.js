@@ -19,6 +19,8 @@
 //   F. tabs other files add with ADMIN.addTab (78-accounts: Accounts; 79-ownerteachers: Teachers, shown only to an owner's
 //      knight). Their drawing, state and tests live in their own
 //      file; this one only lays the tab buttons out (in two rows when the panel is too narrow for one) and hands over.
+//   G. powers other files add with ADMIN.addPower (76-summon: Summon a ride): one more row of the Powers list, and the
+//      view it opens; the same split as F
 // Wraps by reassignment, all with explicit arguments: hurtPlayer and die (Can't be hurt), pointerDown (where the last
 // tap was, for Teleport), drawPanels (the Teleport button over the world map, and the one search box), closePanel (the
 // search box goes when the panel does). Feature file: HOOKS only otherwise. window.ADMIN is the register.
@@ -50,6 +52,15 @@
     if (!spec || typeof spec.id !== 'string' || typeof spec.draw !== 'function' || TABS.some(t => t[0] === spec.id) || EXTRA.some(t => t.id === spec.id)) return false;
     EXTRA.push(spec); return true;
   }
+  // G. powers from other files (76-summon: Summon a ride): entry() answers one row of the Powers list ({ key, text, color,
+  // enabled, action, line }), drawn after the five above; view(g, x, y, w, h, T) draws the Powers tab while S.view.kind is
+  // that power's `view`. Their drawing, state and tests live in their own file.
+  const POWERS = [];
+  function addPower(spec) {
+    if (!spec || typeof spec.key !== 'string' || typeof spec.entry !== 'function' || POWERS.some(p => p.key === spec.key)) return false;
+    POWERS.push(spec); return true;
+  }
+  const powerView = kind => POWERS.find(p => p.view && p.view === kind && typeof p.draw === 'function') || null;
   const SUBTITLE = {
     knights: 'Mute, send out or ban a knight. Nobody can do that to an admin.',
     powers: 'These change only your own knight.',
@@ -334,6 +345,8 @@
     const what = `${commas(gave)} ${plural(def.name, gave)}`;
     notify(gave < qty ? `Gave ${what} (the rest did not fit).` : banked ? `Gave ${what} (${commas(banked)} went to your bank).` : `Gave ${what}.`);
     floatText(player.x, player.y - 34, `+${commas(gave)} ${def.name}`, def.color || GOLD); sfx('pickup');
+    // a mega rare (54-megarare) is handed over with its gold-and-purple MEGA RARE banner, and written in its log
+    if (window.MEGA_RARE && MEGA_RARE.isMega(id)) MEGA_RARE.given(id, gave, 'admin');
     save(); return { gave, packed, banked, refused: qty - gave };
   }
 
@@ -666,7 +679,7 @@
     const x = px + 18, y = py + 60 + rows * (T + 6) + 4, cw = w - 36, ch = py + h - 12 - y;
     if (ex) ex.draw(g, x, y, cw, ch, T);
     else if (S.tab === 'knights') { if (S.view && S.view.kind === 'mute') drawMuteChooser(g, x, y, cw, ch, T); else drawKnights(g, x, y, cw, ch, T); }
-    else if (S.tab === 'powers') { if (S.view && S.view.kind === 'give') drawGive(g, x, y, cw, ch, T); else drawPowers(g, x, y, cw, ch, T); }
+    else if (S.tab === 'powers') { const pv = S.view && powerView(S.view.kind); if (pv) pv.draw(g, x, y, cw, ch, T); else if (S.view && S.view.kind === 'give') drawGive(g, x, y, cw, ch, T); else drawPowers(g, x, y, cw, ch, T); }
     else if (S.tab === 'monsters') drawMonsters(g, x, y, cw, ch, T);
     else drawParty(g, x, y, cw, ch, T);
   };
@@ -754,6 +767,7 @@
       { key: 'admin:teleport', text: 'Teleport', color: '#21262d', enabled: !inInstance(), action: startTeleport, line: inInstance() ? 'Teleport works on the overworld.' : 'Tap a place on the world map to go there.' },
       { key: 'admin:give', text: 'Give me an item', color: '#21262d', enabled: true, action: () => { S.view = { kind: 'give' }; freshSearch(); }, line: 'Anything in the game, as many as you like.' },
     ];
+    for (const p of POWERS) { const e = p.entry(); if (e) entries.push(e); }
     const withLines = T + 26, bare = T + 8;
     let cols = 1, rowH = withLines;
     if (entries.length * withLines > h) { cols = w >= 480 ? 2 : 1; if (Math.ceil(entries.length / cols) * withLines > h) rowH = bare; }
@@ -911,6 +925,7 @@
     mute, unmute, kick, ban, unban, askModlist, get modlist() { return S.modlist; },
     isSpawn, SPAWN_LIVE_MAX, UNLOCKS, modSentence, plural, amount, monName, setSearch, setQty, state: S,
     addTab, tabs: () => allTabs().map(t => t[0]),
+    addPower, kit: { btn, row, note, fit, inInstance }, GOLD, SEL,
   };
   window.ADMIN = ADMIN;
 
@@ -1022,9 +1037,14 @@
         const listed = buttons.some(b => b.label === 'admin:item:iron_bar') && !buttons.some(b => b.label === 'admin:item:wood');
         F.clickButton('admin:item:iron_bar'); F.clickButton('admin:qty:100'); notice = null; F.clickButton('admin:giveitem');
         const viaPanel = countItem('iron_bar') === 100 && !!notice && notice.text === 'Gave 100 iron bars.';
+        // a mega rare (54-megarare) given here comes with its MEGA RARE banner and a line in its log
+        player.inv = new Array(INV_SLOTS).fill(null); levelBanner = null; const n0 = window.MEGA_RARE ? MEGA_RARE.LOG.length : 0;
+        const rs = window.MEGA_RARE ? give('void_scythe', 1) : null, mb = levelBanner;
+        const mega = !window.MEGA_RARE || (!!rs && rs.gave === 1 && countItem('void_scythe') === 1 && !!mb && mb.style === 'mega' && mb.text === 'MEGA RARE' && mb.sub === 'Void Scythe' && MEGA_RARE.LOG.length === n0 + 1 && MEGA_RARE.LOG[n0].how === 'admin' && MEGA_RARE.LOG[n0].id === 'void_scythe');
+        levelBanner = null;
         const words = [plural('Iron bar', 2), plural('Wolf', 3), plural('Coins', 5), plural('Fang of the Fang', 2), plural('Goblin soldier', 1), plural('Cave spider', 4), plural('Raw shrimp', 9)].join('|');
         setSearch(''); S.view = null; closePanel(); player.inv = inv0; player.bank = bank0;
-        check(P + 'Give me an item: 250 iron bars with one pack slot free go 50 to the pack and 200 to the bank; with the bank full the rest is refused with the exact number; the panel searches, picks, sets 100 and gives', split && refused && listed && viaPanel && words === 'iron bars|wolves|coins|fangs of the Fang|goblin soldier|cave spiders|raw shrimp', { split, t1, refused, t2, listed, viaPanel, words }); }
+        check(P + 'Give me an item: 250 iron bars with one pack slot free go 50 to the pack and 200 to the bank; with the bank full the rest is refused with the exact number; the panel searches, picks, sets 100 and gives; the Void Scythe comes with its MEGA RARE banner and a line in the mega rare log', split && refused && listed && viaPanel && mega && words === 'iron bars|wolves|coins|fangs of the Fang|goblin soldier|cave spiders|raw shrimp', { split, t1, refused, t2, listed, viaPanel, mega, words }); }
 
       // ---- Teleport: the map's own button over the picture takes the tap; the knight lands on that tile; overworld only ----
       { refill(); closePanel(); const target = h.openSpot(ATLAS.world.tx(60), ATLAS.world.ty(30));
