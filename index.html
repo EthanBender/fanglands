@@ -20354,13 +20354,7 @@ window.SETTINGS = SETTINGS;
     dragons: { giver: 'Dunstan the dung farmer, the Ashfields', reward: '150 coins, 150 Farming xp, his stall opens', kind: 'Side quest' },
     board: { giver: 'The notice board in Thistledown square (and by the cave road)', reward: 'Coins and xp per job; the Duke pays a steel bar', kind: 'Tiny quests' },
     tinker: { giver: 'Tinkerton, Grubmarket (the Far Shore)', reward: "400 coins, Tinker's goggles, his shop opens", kind: 'Side quest' },
-    // Necromancy's five (89-oldbarrow)
-    nec_bramble: { giver: 'Granny Wick, the Old Barrow (combat 5)', reward: "450 Necromancy xp, the Barrow wand, Soul Bolt and Ghostlight, Bramble's collar", kind: 'Necromancy' },
-    nec_bell: { giver: 'Granny Wick, the Old Barrow (Necromancy 5)', reward: '1,200 Necromancy xp, Raise Bones, the Little Bell', kind: 'Necromancy' },
-    nec_lanterns: { giver: 'Granny Wick, the Old Barrow (Necromancy 18, combat 25)', reward: "3,000 Necromancy xp, Grave Walk, Ned's lucky turnip", kind: 'Necromancy' },
-    nec_king: { giver: 'Granny Wick, the Old Barrow (Necromancy 40)', reward: "10,000 Necromancy xp, Raise Risen (at 50), the King's seal", kind: 'Necromancy' },
-    nec_name: { giver: 'Granny Wick, the Old Barrow (Necromancy 60, combat 60)', reward: '25,000 Necromancy xp, Call the Last Knight (at 95), and the names home', kind: 'Necromancy' },
-    nec_ghosts: { giver: 'Speak with the Dead (Ghostlight)', reward: "250 Necromancy xp and a soul shard each; all twelve: Rattle's story and 2,000 xp", kind: 'Necromancy' },
+    // (Necromancy's quests, nec_*: 89-oldbarrow writes their rows with WIKI.add, from its own names and numbers)
     gnash: { giver: 'King Gnash, Castle Gnash', reward: 'His treasury: 3 steel bars, 2 mithril bars, his crown', kind: 'Side quest' },
     rebuild: { giver: "The board in Hollowford's square", reward: 'A town again; 500 coins at the end', kind: 'Side quest' },
     guild: { giver: 'Old Tam, Hollowford', reward: 'Ranks, a chest, a cape (500 coins) and staff', kind: 'Side quest' },
@@ -72543,7 +72537,7 @@ const NECRO = (() => {
   // THE CHOICES (spec section 9: the designer's picks, built as the owner's standing rule says). Each is ONE line here.
   // ======================================================================================================================
   const CHOICES = {
-    TEACHERS: { keeper: 'Granny Wick', skull: 'Rattle' },   // 1. who teaches, at the Old Barrow (89-oldbarrow reads both names)
+    TEACHERS: { keeper: 'Granny Wick', keeperShort: 'Granny', skull: 'Rattle' },   // 1. who teaches at the Old Barrow (every line that names them reads these)
     BAR: 'spirit',                                          // 2. a Spirit bar that refills by itself, plus supplies (no runes)
     COUNTS_TO_COMBAT: false,                                // 3. Necromancy is not in combatLevel() (a core const: true is not built)
     SCYTHE: { monster: 'the_hollow', chance: 250 },          // 4. the Void Scythe: the Hollow, 1 in 250 per paid kill (MEGA_RARE.SOURCES)
@@ -72557,7 +72551,7 @@ const NECRO = (() => {
     WATCH_XP: { dusk: 20, midnight: 110, deep: 380 },       // 12. the cape at about 95 hours: the Lantern Watch's pay per wave (× wave number)
     UNDERTAKER: 'separate',                                 // 13. the queued Undertaker idea is not built here
     SHARD_PRICE: 25,                                        // 14. Granny Wick sells soul shards at this many coins
-    ALL_GHOSTS: { xp: 2000, reward: "Rattle's story" },     // 15. meeting all 12 ghosts: Rattle's own story and this much XP
+    ALL_GHOSTS: { xp: 2000 },                               // 15. meeting all 12 ghosts: the skull's own story (TEACHERS.skull) and this much XP
   };
 
   // ---------- small helpers ----------
@@ -72666,7 +72660,7 @@ const NECRO = (() => {
   const canKnow = s => L() >= s.lv && taught(s);
   // why not, in plain words (null when it can be cast at all)
   function lockedWhy(s) {
-    if (!taught(s)) return s.q === 'q1' || s.q === 'q1b' ? 'Granny Wick teaches it at the Old Barrow.' : 'A quest at the Old Barrow teaches it.';
+    if (!taught(s)) return s.q === 'q1' || s.q === 'q1b' ? `${CHOICES.TEACHERS.keeper} teaches it at the Old Barrow.` : 'A quest at the Old Barrow teaches it.';
     if (L() < s.lv) return `Needs Necromancy ${s.lv}.`;
     return null;
   }
@@ -72850,6 +72844,9 @@ const NECRO = (() => {
   }
   const GRAVE_XP = { cross: 25, grave: 60, headstone: 150 };
   function refuse(text) { notify(text); return false; }
+  // a supply's name for a count: grave dust has no plural ("2 grave dust"), bones and shards do
+  const NO_PLURAL = new Set(['grave_dust']);
+  const supplyName = (id, q) => ITEMS[id].name.toLowerCase() + (q > 1 && !NO_PLURAL.has(id) && !/s$/.test(ITEMS[id].name) ? 's' : '');
   function cast(id) {
     const s = SPELL[id]; if (!s) return false;
     if (player.dead) return false;
@@ -72861,8 +72858,9 @@ const NECRO = (() => {
     if (spirit() < need) return refuse(`Not enough spirit (${Math.floor(spirit())} of ${need}). It refills by itself.`);
     const ok = DO[id](s);
     if (!ok) return false;
-    N().spirit -= need; N().known[id] = true;
-    if (s.rest) { if (s.id === 'walk') Q().walkUntil = (player.dayTime || 0) + s.rest; else Q().knightUntil = (player.dayTime || 0) + s.rest; }
+    N().known[id] = true;
+    if (id !== 'walk') N().spirit -= need;   // Grave Walk pays its spirit, its dust and its rest when the knight lands (stepWalk)
+    if (s.rest && s.id !== 'walk') Q().knightUntil = (player.dayTime || 0) + s.rest;
     else CD[id] = time + s.cd;
     STATS.cast++; lookC++; lookS = id;
     return true;
@@ -72911,9 +72909,9 @@ const NECRO = (() => {
       if (window.__instance) return refuse('Grave Walk only works under the open sky.');
       if (time - lastBlow < 10) return refuse('Too much fighting. Grave Walk needs 10 quiet seconds.');
       if (countItem('grave_dust') < 1) return refuse('Grave Walk needs 1 grave dust.');
-      CH.walk = { t: 0, x: player.x, y: player.y, hp: player.hp };
+      CH.walk = { t: 0, x: player.x, y: player.y, hp: player.hp, need: costOf(SPELL.walk) };
       notify('Stand still. The mist is rising.');
-      return true;   // the dust and the rest are paid now; moving breaks the channel (and the spell is spent)
+      return true;   // nothing is paid yet: the spirit, the dust and the rest are paid when he lands; a broken channel costs nothing
     },
   };
   // where Grave Walk lands: the Old Barrow's lych-gate (89-oldbarrow sets it); null until the place is built
@@ -72928,7 +72926,7 @@ const NECRO = (() => {
       const xp = GRAVE_XP[g.grade] || 25; gainXp('necromancy', xp); floatText(tc(g.m.x), tc(g.m.y) - 30, `+${xp} Necromancy`, '#4fd1b5', 12);
       makeHelper(kind, { x: tc(g.m.x), y: tc(g.m.y) });
     } else {
-      for (const [id, n] of supplies) if (countItem(id) < n) return refuse(`${SPELL[kind === 'sq' ? 'raise' : kind === 'rg' ? 'risen' : 'brute'].name} needs ${supplies.map(([i, q]) => q + ' ' + ITEMS[i].name.toLowerCase() + (q > 1 && !/s$/.test(ITEMS[i].name) ? 's' : '')).join(' and ')}, or one of your own graves.`);
+      for (const [id, n] of supplies) if (countItem(id) < n) return refuse(`${SPELL[kind === 'sq' ? 'raise' : kind === 'rg' ? 'risen' : 'brute'].name} needs ${supplies.map(([i, q]) => q + ' ' + supplyName(i, q)).join(' and ')}, or one of your own graves.`);
       for (const [id, n] of supplies) removeItem(id, n);
       makeHelper(kind, { x: player.x + player.facing.x * 40, y: player.y + player.facing.y * 40 });
     }
@@ -72945,7 +72943,8 @@ const NECRO = (() => {
     CH.walk = null;
     const at = landing.at();
     if (!at) { notify('The mist has nowhere to take you yet.'); return; }
-    removeItem('grave_dust', 1);
+    if (countItem('grave_dust') < 1) { notify('The mist needs 1 grave dust.'); return; }
+    removeItem('grave_dust', 1); N().spirit = Math.max(0, N().spirit - (c.need || 0)); Q().walkUntil = (player.dayTime || 0) + SPELL.walk.rest;
     FLASHES.push({ kind: 'mist', x: player.x, y: player.y, t: 0, life: 1.2, map: 'over' });
     const s = safeSpot(tc(at[0]), tc(at[1]), player.r, 'player') || { x: tc(at[0]), y: tc(at[1]) };
     player.x = s.x; player.y = s.y; player.action = null;
@@ -73101,15 +73100,24 @@ const NECRO = (() => {
   });
   hudSeatFace('swing', { id: 'bolt', prio: 5, when: () => focusInHand() && !player.mech && !player.dead && !ridingAlong(), emblem: 'bolt', ribbon: 'BOLT', key: 'Space', name: 'Soul Bolt',
     lit: () => !!boltTarget(), cool: () => { const l = coolLeft(SPELL.bolt); return l > 0 ? { frac: l / SPELL.bolt.cd, text: '' } : null; }, action: () => touch.taps.push('attack') });
-  hudSeatFace('ctx', { id: 'cast', prio: 8, when: () => !player.mech && !player.dead && !ridingAlong() && SPELLS.some(canKnow), emblem: () => (SPELL[N().ready] || SPELL.bolt).em, ribbon: 'CAST', key: 'Z',
+  const CAST_FACE = { emblem: () => (SPELL[N().ready] || SPELL.bolt).em, ribbon: 'CAST', key: 'Z',
     name: () => 'Cast ' + (SPELL[N().ready] || SPELL.bolt).name, on: () => N().ready === 'light' && !!N().gl,
     cool: () => { const s = SPELL[N().ready] || SPELL.bolt, l = coolLeft(s); return l > 0 ? { frac: Math.min(1, l / (s.rest || s.cd || 1)), text: l >= 1 ? String(Math.ceil(l)) : '' } : null; },
-    action: () => castReady() });
+    action: () => castReady() };
+  const castable = () => !player.mech && !player.dead && !ridingAlong() && SPELLS.some(canKnow);
+  hudSeatFace('ctx', Object.assign({ id: 'cast', prio: 8, when: castable }, CAST_FACE));
+  // Necromancy's own places are instances, where LEAVE (prio 30) always holds the ctx seat: there CAST sits above it, and LEAVE
+  // comes back within CAST_LEAVE_NEAR tiles of the way out (the L key and E on the exit leave from anywhere, as before)
+  const CAST_OVER_LEAVE = new Set(['barrow_deep', 'afterlands']), CAST_LEAVE_NEAR = 3;
+  const nearWayOut = () => { const id = mapNow(), inst = window.INSTANCES && INSTANCES.get(id), e = inst && (inst.exit || inst.entry); if (!e) return true;   // (the Afterlands has no exit tile: its steps up are by its entry)
+    return Math.max(Math.abs(Math.floor(player.x / TILE) - e[0]), Math.abs(Math.floor(player.y / TILE) - e[1])) <= CAST_LEAVE_NEAR; };
+  hudSeatFace('ctx', Object.assign({ id: 'cast_in', prio: 31, when: () => CAST_OVER_LEAVE.has(mapNow()) && castable() && !nearWayOut() }, CAST_FACE));
   hudControl({ id: 'spells', emblem: 'skull', key: 'U', label: () => 'SPELLS', on: () => panel === 'spells', action: () => { if (panel === 'spells') closePanel(); else openPanel('spells'); } });
 
+  const SPELLBOOK_CUT = new Set();   // spells whose line was cut off in a draw (N16 wants none, at every size)
   HOOKS.panel.spells = g => {
     const K = PANEL_KIT, Rm = K.room(), T = HK.T, { R, G } = Rm, p = N();
-    const W = Math.min(Rm.aw, 560), cw = W - 36, rh = R + 20, pagerH = R + 14, footH = R + 12;
+    const W = Math.min(Rm.aw, 560), cw = W - 36, narrow = cw < 440, rh = Math.max(R + 20, narrow ? 72 : 60), pagerH = R + 14, footH = R + 12;
     const top = 62 + 22, avail = Rm.ah - top - footH - pagerH - 12;
     const per = Math.max(2, Math.min(SPELLS.length, Math.floor(avail / (rh + G))));
     const pages = Math.ceil(SPELLS.length / per), H = top + per * (rh + G) + footH + pagerH + 6;
@@ -73125,7 +73133,9 @@ const NECRO = (() => {
       K.name(g, s.name, x + 12, y + 19 + st.dy, nameW, { size: 13.5, color: on ? (sel ? T.goldHi : T.ink) : T.inkMute, fitId: 'spells:name' });
       K.name(g, 'Lv ' + s.lv, x + cw - 12, y + 19 + st.dy, 64, { size: 12, align: 'right', color: lv >= s.lv ? T.good : T.inkMute, fitId: 'spells:lv' });
       const cost = [costOf(s) ? costOf(s) + ' spirit' : null, s.rest ? 'rest ' + mmss(s.rest) : s.cd >= 1 ? s.cd + ' s' : null].filter(Boolean).join(' · ');
-      K.para(g, why ? why : (cost ? cost + ' · ' : '') + s.what, x + 12, y + 19 + 17 + st.dy, cw - 24, { size: 11.5, min: 10, lines: 1, color: on ? T.inkDim : T.inkMute, fitId: 'spells:text' });
+      // the line under the name wraps to two (three on a phone; a long one, Ghostlight's, is never cut off); SPELLBOOK_CUT lists any that still run out
+      const pr = K.para(g, why ? why : (cost ? cost + ' · ' : '') + s.what, x + 12, y + 19 + 16 + st.dy, cw - 24, { size: 11.5, min: 10, lines: narrow ? 3 : 2, lh: 13, color: on ? T.inkDim : T.inkMute, fitId: 'spells:text' });
+      if (pr.more) SPELLBOOK_CUT.add(s.id);
       y += rh + G;
     }
     const fy = y0 + h - 14 - pagerH - R;
@@ -73322,6 +73332,12 @@ const NECRO = (() => {
           laid && ok && !!sq && markerGone && paid === 25 && notAMonster && caps.join() === '0,1,2,3' && second === false && brute && load3 === 3 && over === false && helperDmg > 0 && srcs.every(s => s === 'necro') && srcs.length > 0 && helperXp === helperDmg && gone,
           { laid, ok, sq: !!sq, markerGone, paid, caps, second, brute, load3, over, helperDmg, helperXp, srcs: srcs.slice(0, 3), gone }); }
       freshState(); solo([]); empty();
+      // ---- N5b the refusal's words: grave dust has no plural ----
+      { setLv(80); wear('barrow_wand'); quest.graves = []; N().spirit = 99; notice = null; const no1 = cast('risen'), t1 = notice ? notice.text : '';
+        for (const k in CD) delete CD[k]; notice = null; const no2 = cast('brute'), t2 = notice ? notice.text : '';
+        check(P + 'N5b a raise with no supplies says "2 grave dust and 5 bones" and "1 brute bone and 3 grave dust" (grave dust has no plural)',
+          no1 === false && no2 === false && /needs 2 grave dust and 5 bones,/.test(t1) && /needs 1 brute bone and 3 grave dust,/.test(t2) && !/dusts/.test(t1 + t2), { t1, t2 }); }
+      freshState(); solo([]); empty();
       // ---- N6 the ward ----
       { setLv(12); wear('barrow_wand'); addItem('bone', 3); N().spirit = 20; player.hp = player.maxHp;
         const ok = cast('ward'), amt = WARD.amount, hp0 = player.hp; hurtPlayer(amt + 3, player.x + 20, player.y); const took = hp0 - player.hp;
@@ -73333,12 +73349,13 @@ const NECRO = (() => {
         INSTANCES.enter('spider_den'); notice = null; r.instance = !cast('walk') && /open sky/.test(notice ? notice.text : ''); INSTANCES.leave(); open();
         lastBlow = time; notice = null; r.fight = !cast('walk') && /quiet/.test(notice ? notice.text : ''); lastBlow = -1e9;
         player.mech = { kind: 'horse', hp: 10, maxHp: 10 }; notice = null; r.riding = !cast('walk') && /Climb down/.test(notice ? notice.text : ''); player.mech = keep.mech;
-        Q().walkUntil = 0; r.start = cast('walk'); tick(30); player.x += 30; tick(2); r.broken = !CH.walk && countItem('grave_dust') === 3;
+        Q().walkUntil = 0; const sp0 = N().spirit; r.start = cast('walk'); tick(30); player.x += 30; tick(2); r.broken = !CH.walk && countItem('grave_dust') === 3 && coolLeft(SPELL.walk) <= 0 && N().spirit >= sp0;
+        N().spirit = 30;
         Q().walkUntil = 0; const j0 = window.PLAYERS ? PLAYERS.presence().j : 0; r.start2 = cast('walk'); tick(140);
         const at = ATLAS.port('necromancy.door'), j1 = window.PLAYERS ? PLAYERS.presence().j : 0;
         r.landed = Math.floor(player.x / TILE) === Math.round(at[0]) && Math.abs(Math.floor(player.y / TILE) - Math.round(at[1])) <= 1 && countItem('grave_dust') === 2; r.jump = j1 === j0 + 1;
         r.rest = coolLeft(SPELL.walk) > 100 && RESTS_AWAY.RESTS.some(([k, f]) => k === 'necro' && f === 'walkUntil');
-        check(P + 'N7 Grave Walk: refused in an instance, within 10 s of a blow and while riding; a step during the 2 s channel breaks it; still for 2 s he wakes at the Old Barrow\'s lych-gate, one grave dust spent, a jump on presence (j + 1), and a 120 s rest on the day clock (96-rests lists it)',
+        check(P + 'N7 Grave Walk: refused in an instance, within 10 s of a blow and while riding; a step during the 2 s channel breaks it and costs nothing (no dust, no spirit, no rest); still for 2 s he wakes at the Old Barrow\'s lych-gate, one grave dust spent, a jump on presence (j + 1), and a 120 s rest on the day clock (96-rests lists it)',
           r.instance && r.fight && r.riding && r.start && r.broken && r.start2 && r.landed && r.jump && r.rest, r); }
       freshState(); empty();
       // ---- N8 Ghost Step ----
@@ -73437,7 +73454,7 @@ const NECRO = (() => {
           for (const [w, hh] of HK.audit.SIZES) for (const t of [true, false]) {
             window.innerWidth = w; window.innerHeight = hh; resize(); window.__forceTouch = t;
             for (const name of ['spells', 'altar']) for (const pg of [0, 1, 2]) {
-              closePanel(); openPanel(name); PANEL_KIT.page(name, pg);
+              closePanel(); openPanel(name); PANEL_KIT.page(name, pg); SPELLBOOK_CUT.clear();
               HK.FIT.on = true; HK.FIT.log.length = 0; if (window.SETTINGS) SETTINGS.set('text', 'large');
               drawHud(HK.audit.fitCtx()); HK.FIT.on = false;
               const all = buttons.filter(b => !b.offscreen && b.w > 0), i = all.findIndex(b => b.label === '×'), mine = i >= 0 ? all.slice(i) : [];
@@ -73450,6 +73467,7 @@ const NECRO = (() => {
               for (let a = 0; a < mine.length; a++) for (let c = a + 1; c < mine.length; c++) { const A = mine[a], B = mine[c], gap = t ? 8 : 0;
                 if (A.x < B.x + B.w + gap && B.x < A.x + A.w + gap && A.y < B.y + B.h + gap && B.y < A.y + A.h + gap && !(A.label === B.label)) { if (!(A.x < B.x + B.w && B.x < A.x + A.w && A.y < B.y + B.h && B.y < A.y + A.h) && gap === 0) continue; problems.push(where + ': ' + A.label + ' near ' + B.label); } }
               for (const p of HK.audit.fitIssues(where)) problems.push(p);
+              for (const id of SPELLBOOK_CUT) problems.push(where + ': the line under ' + SPELL[id].name + ' is cut off');
             }
           }
         } finally {
@@ -73457,7 +73475,35 @@ const NECRO = (() => {
           if (kw.w) Object.defineProperty(window, 'innerWidth', kw.w); if (kw.h) Object.defineProperty(window, 'innerHeight', kw.h);
           resize(); window.__forceTouch = kw.t; if (window.SETTINGS && text0) SETTINGS.set('text', text0);
         }
-        check(P + 'N16 the spellbook and the Bone Altar keep the panel contract at every size, touch and mouse, Large text: on screen, 44 px on touch and 8 px apart, every string fits', problems.length === 0, { problems: problems.slice(0, 8), n: problems.length });
+        check(P + 'N16 the spellbook and the Bone Altar keep the panel contract at every size, touch and mouse, Large text: on screen, 44 px on touch and 8 px apart, every string fits, no spell\'s line cut off', problems.length === 0, { problems: problems.slice(0, 8), n: problems.length });
+      }
+      // ---- N16b CAST inside Necromancy's own places: on touch, away from the way out the ctx seat is CAST (not LEAVE), on screen
+      // and 44 px at every size; within CAST_LEAVE_NEAR tiles of the exit it is LEAVE again ----
+      if (typeof HK !== 'undefined' && HK.audit && HK.audit.SIZES && window.INSTANCES) {
+        const own = k => Object.getOwnPropertyDescriptor(window, k), kw = { w: own('innerWidth'), h: own('innerHeight'), t: window.__forceTouch };
+        const bad = [], seen = []; const back = { x: player.x, y: player.y };
+        setLv(99); for (const s of SPELLS) N().known[s.id] = true; N().ready = 'light'; wear('bone_stave');
+        try {
+          for (const id of CAST_OVER_LEAVE) {
+            if (INSTANCES.active()) INSTANCES.leave();
+            INSTANCES.enter(id); const inst = INSTANCES.get(id), e = inst.exit || inst.entry;
+            if (INSTANCES.active() !== id || !e) { bad.push(id + ': not entered'); continue; }
+            let far = null; for (let y = 1; y < inst.h - 1 && !far; y++) for (let x = 1; x < inst.w - 1 && !far; x++) if (!SOLID.has(inst.tiles[y * inst.w + x]) && Math.max(Math.abs(x - e[0]), Math.abs(y - e[1])) >= 8) far = [x, y];
+            for (const [where, at, want] of [['far', far, /^Cast /], ['near', inst.entry, /^Leave$/]]) for (const [w, hh] of HK.audit.SIZES) {
+              window.innerWidth = w; window.innerHeight = hh; resize(); window.__forceTouch = true; closePanel();
+              player.x = tc(at[0]); player.y = tc(at[1]); drawHud(HK.audit.fitCtx());
+              const b = buttons.find(q => q.seat === 'ctx' && !q.offscreen), nm = b ? String(b.name || '') : '';
+              seen.push(`${id} ${where} ${w}x${hh}: ${nm}`);
+              if (!b || !want.test(nm)) bad.push(`${id} ${where} ${w}x${hh}: ctx seat is ${nm || 'empty'}`);
+              else if (b.x < 0 || b.y < 0 || b.x + b.w > w || b.y + b.h > hh || b.w < 44 || b.h < 44) bad.push(`${id} ${where} ${w}x${hh}: ${nm} off screen or small`);
+            }
+          }
+        } finally {
+          if (INSTANCES.active()) INSTANCES.leave(); player.x = back.x; player.y = back.y; N().ready = 'bolt';
+          if (kw.w) Object.defineProperty(window, 'innerWidth', kw.w); if (kw.h) Object.defineProperty(window, 'innerHeight', kw.h);
+          resize(); window.__forceTouch = kw.t;
+        }
+        check(P + 'N16b in the Barrow Deep and the Afterlands, on touch at every size, the ctx seat is CAST away from the way out (LEAVE would hide it) and LEAVE within 3 tiles of the exit; on screen and 44 px', bad.length === 0, { bad: bad.slice(0, 8), n: bad.length, seen: seen.length });
       }
       // ---- N17 the teacher view: a friend's necromancy is drawn from presence alone, with no update run ----
       { const R = PLAYERS.remote; R.__view = { n: '__view', map: PLAYERS.mapId(), x: player.x + 40, y: player.y, shown: { x: player.x + 40, y: player.y }, facing: { x: 1, y: 0 }, look: { necro: { c: 2, s: 'bolt', tx: 's1', gl: 1, w: 5, h: [['sq', 20, 10, 1, 9], ['bb', -30, 10, -1, 4]] } }, lastAt: nowMs(), hp: 10, mhp: 10 };
@@ -73540,7 +73586,11 @@ const OLD_BARROW = (() => {
   const LIFT = { candle: 22, lamp: 46, head: 30 };   // pixels above a thing's feet where its light or tag sits
   const REACHES = [36, 62, 100];                      // how far in front of the knight E looks, in pixels
   const SEED = (() => { let h = 2166136261; for (const c of '89-oldbarrow') h = Math.imul(h ^ c.charCodeAt(0), 16777619); return h >>> 0; })();
-  const GRANNY = C.TEACHERS.keeper, RATTLE = C.TEACHERS.skull;
+  const GRANNY = C.TEACHERS.keeper, GRANNY_SHORT = C.TEACHERS.keeperShort, RATTLE = C.TEACHERS.skull, RATTLE_STORY = `${RATTLE}'s story`;
+  // the words a kid sees for a button: on touch the BOLT face's own word (a wand in hand turns SWING into BOLT), and the throne's
+  // USE (keyName('KeyE') has no touch word)
+  const BOLT_KEY = () => touchMode() ? 'BOLT' : keyName('Space');
+  const THRONE_LINE = () => 'The throne is a rematch now. Use the throne (E, or the USE button) to spar with the King.';
 
   // ---------- the plan: one glyph a tile, rows from the box's top-left (16 x 14) ----------
   //   #  the barrow mound (solid: a grassy hump with kerb stones)    D  the stair down (DUNGEON_DOOR into the Barrow Deep)
@@ -73576,7 +73626,7 @@ const OLD_BARROW = (() => {
   // lying face-down in the builders' spoil
   const TRAIL = [[7, 4], [9, 4], [11, 4], [13, 3], [15, 2], [17, 1], [19, 0], [21, -1], [23, -2], [24, -4], [25, -6]];
   const SPOIL = [25, -7];   // the stone, face-down
-  const COTTAGE = BF.pt({ id: 'barrow_cottage', x: 11, y: 5, w: 4, h: 4, name: "Granny Wick's cottage", roof: '#4a4038', door: 1, f: [[T.BED, 1, 1], [T.TABLE, 2, 1]] });
+  const COTTAGE = BF.pt({ id: 'barrow_cottage', x: 11, y: 5, w: 4, h: 4, name: `${GRANNY}'s cottage`, roof: '#4a4038', door: 1, f: [[T.BED, 1, 1], [T.TABLE, 2, 1]] });
   COTTAGE.oldbarrow = true;
   const GRANNY_NPC = BF.pt({ id: 'granny_wick', name: GRANNY, x: PT.granny[0], y: PT.granny[1], tunic: '#2f3a2a', hair: '#d8d4cc', woman: true, apron: true, role: 'barrow_keeper', shop: 'barrow_candles' });
   GRANNY_NPC.oldbarrow = true;
@@ -73598,7 +73648,7 @@ const OLD_BARROW = (() => {
 
   // ---------- DECO kinds (walkable): the candle circle and the old graves ----------
   const ART = () => window.NECRO_ART || null;
-  DECO.kind('barrow_candle', { flat: true, use: 'Granny Wick\'s candles. They help lost ghosts find their way to rest. Stand among them and your spirit comes back twice as fast.',
+  DECO.kind('barrow_candle', { flat: true, use: `${GRANNY}'s candles. They help lost ghosts find their way to rest. Stand among them and your spirit comes back twice as fast.`,
     draw(g, px, py, c, tx, ty) { const a = ART(); if (a) a.candleCell(g, px, py, tx, ty); } });
   DECO.kind('old_grave', { flat: true, use: (c, tx, ty) => graveWords(tx, ty),
     draw(g, px, py, c, tx, ty) { const a = ART(); if (a) a.oldGrave(g, px, py, tx, ty, tobiasHere(tx, ty)); } });
@@ -73706,10 +73756,10 @@ const OLD_BARROW = (() => {
     const c = THINGS.get(idx(tx, ty)); if (!c) return false;
     if (c.kind === 'altar') { openPanel('altar'); return true; }
     if (c.kind === 'rattle') { rattleTalk(); return true; }
-    if (c.kind === 'dummy') { notify(NECRO.focusInHand() ? `Bolt the dummy (${keyName('Space')}). It does not mind.` : 'A bone dummy for practising spells. Hold a wand and bolt it.'); return true; }
+    if (c.kind === 'dummy') { notify(NECRO.focusInHand() ? `Bolt the dummy (${BOLT_KEY()}). It does not mind.` : 'A bone dummy for practising spells. Hold a wand and bolt it.'); return true; }
     if (c.kind === 'mound') { notify(nightNow() ? 'The barrow mound. Little lights drift over the grass at night. They mean no harm.' : 'The barrow mound, where the first Wolfwood folk buried their kings.'); return true; }
     if (c.kind === 'ruin') { notify('The chapel\'s old wall. The roof fell in long ago.'); return true; }
-    if (c.kind === 'lantern') { notify('A lantern on a post. Granny Wick lights them at dusk.'); return true; }
+    if (c.kind === 'lantern') { notify(`A lantern on a post. ${GRANNY} lights them at dusk.`); return true; }
     return false;
   });
   const nightNow = () => !!(window.NIGHT && NIGHT.phase && NIGHT.phase() !== 'day');
@@ -73776,12 +73826,12 @@ const OLD_BARROW = (() => {
   // =====================================================================================================================
   const say2 = (lines, who) => { for (const l of lines) say(l, who); };
   const L = () => NECRO.level();
-  SHOPS.barrow_candles = { name: "Granny Wick's shelf", stock: [['soul_shard', C.SHARD_PRICE]], buys: [], rate: 1, buysWords: 'Granny Wick buys nothing. "I have more bones than I know what to do with, dear."' };
+  SHOPS.barrow_candles = { name: `${GRANNY}'s shelf`, stock: [['soul_shard', C.SHARD_PRICE]], buys: [], rate: 1, buysWords: `${GRANNY} buys nothing. "I have more bones than I know what to do with, dear."` };
   const AFTER = [
     'Most of them only want someone to remember them. Remember that, and you will be a good keeper.',
-    "Soul shards on my shelf, twenty-five coins each, if you run short. Nobody should ever be stuck for a shard.",
+    `Soul shards on my shelf, ${C.SHARD_PRICE} coins each, if you run short. Nobody should ever be stuck for a shard.`,
     'The candles do the hard work. I just keep them lit.',
-    'Rattle has told you the joke about the skeleton and the party? He tells everybody. Every single body.',
+    `${RATTLE} has told you the joke about the skeleton and the party? He tells everybody. Every single body.`,
   ];
   let afterN = 0;
   HOOKS.talk.barrow_keeper = n => grannyTalk(n);
@@ -73791,10 +73841,10 @@ const OLD_BARROW = (() => {
     if (q.q1 === 0) {
       if (combatLevel() < 5) { say2(["Well now, a knight. You'll want to swing a sword a while before the dead will listen to you, dear.", 'Come back at combat level 5.'], GRANNY); return; }
       q.q1 = 1; NECRO.learn('bolt'); giveOrDrop('barrow_wand', 1, player.x, player.y); sfx('quest');
-      say2(["You heard Rattle? Not just clacking, but the words? Most folk only hear clacking. You've got the knack.",
+      say2([`You heard ${RATTLE}? Not just clacking, but the words? Most folk only hear clacking. You've got the knack.`,
         "Necromancy isn't bossing the dead about. It's listening. Most of them only want someone to remember them.",
         'Here: my old Barrow wand. Hold it and swing, and it throws a Soul Bolt. Practise on my bone dummies. They don\'t mind.'], GRANNY);
-      notify(`Hold the Barrow wand, face a bone dummy and press ${keyName('Space')}. Necromancy 3 to go on.`); save(); return;
+      notify(`Hold the Barrow wand, face a bone dummy and ${touchMode() ? 'tap' : 'press'} ${BOLT_KEY()}. Necromancy 3 to go on.`); save(); return;
     }
     if (q.q1 === 1) {
       if (lv < 3) { say(`Keep at the dummies, dear. Come back at Necromancy 3. You are ${lv}.`, GRANNY); return; }
@@ -73843,7 +73893,7 @@ const OLD_BARROW = (() => {
   // Rattle: a court jester buried here 400 years ago, still telling terrible jokes. Anyone sees and hears him.
   const JOKES = [
     "Why didn't the skeleton go to the party? He had no BODY to go with. I'll be here all week. I'll be here all century.",
-    "What do you call a skeleton who won't work? Lazy bones. Granny calls me that. Every day.",
+    `What do you call a skeleton who won't work? Lazy bones. ${GRANNY_SHORT} calls me that. Every day.`,
     "Why are skeletons so calm? Nothing gets under their skin.",
     "I tried to be a drummer once. Too many bones in the band. We kept falling apart.",
     "Knock knock. Who's there? Tibia. Tibia who? Tibia honest, I forgot the rest.",
@@ -73856,11 +73906,11 @@ const OLD_BARROW = (() => {
     const met = Object.keys(NECRO.N().ghosts).filter(k => GHOST_IDS.includes(k)).length;
     if (met >= GHOST_IDS.length && !q.rattleStory) {
       q.rattleStory = true; gainXp('necromancy', C.ALL_GHOSTS.xp); sfx('quest');
-      levelBanner = { text: 'ALL TWELVE GHOSTS', sub: C.ALL_GHOSTS.reward, t: 3.5 };
+      levelBanner = { text: 'ALL TWELVE GHOSTS', sub: RATTLE_STORY, t: 3.5 };
       say2(['Twelve! You found all twelve of us. Then you have earned it: my story.', 'Four hundred years ago I told the old king a joke so good he laughed until he cried. Then he made me promise to save the best one for someone who would really listen.',
         'Here it is. What is the best thing about being a skeleton? ... You always have a funny bone. And now so do you.'], RATTLE); save(); return;
     }
-    if (q.q1 === 0) { say2([JOKES[0], 'Granny! A live one! Talk to Granny Wick, knight. She is by the cottage.'], RATTLE); return; }
+    if (q.q1 === 0) { say2([JOKES[0], `${GRANNY_SHORT}! A live one! Talk to ${GRANNY}, knight. She is by the cottage.`], RATTLE); return; }
     say(JOKES[RT.n++ % JOKES.length], RATTLE);
   }
   // Rattle cracks a joke as the knight walks in (once a visit)
@@ -74106,7 +74156,8 @@ const OLD_BARROW = (() => {
   }
   function keeperTick(dt) {
     const b = bellMon(); if (!b) return;
-    // keep the bell and candles where they stand (harmless and still: nothing moves them but a stray shove)
+    // keep the bell and candles where they stand (nothing may move them: each goes back to its own spot every tick)
+    for (const m of [b, ...candles()]) { if (!m.pin) m.pin = pinOf(m); if (m.pin) { m.x = m.pin.x; m.y = m.pin.y; } }
     const w = waveOf(b.state);
     if (!b.nw) b.nw = { t: 0, pause: 0, hold: 0 };     // after a keeper handoff the timers start again from the streamed state
     const nw = b.nw, lit = candles().filter(c => c.hp > 0);
@@ -74135,8 +74186,17 @@ const OLD_BARROW = (() => {
     // the fallen are taken away once their death has played (they never come back)
     for (let i = monsters.length - 1; i >= 0; i--) { const m = monsters[i]; if ((WATCH_FOES.has(m.type) || m.type === 'name_wisp') && m.dead && m.deadT > 1.6) monsters.splice(i, 1); }
   }
-  // the candles and the bell cannot be hurt by a knight (a sword on one puts back what it took)
-  HOOKS.hit.push((m, dmg) => { if (m && !m.remote && (m.type === 'watch_candle' || m.type === 'watch_bell') && dmg > 0) m.hp += dmg; });
+  // the candles and the bell cannot be hit at all: no damage, no XP, no shove and no 'hit' sent online (a sword, an arrow,
+  // a bomb or a spell on one does nothing). Wrapped here, outside 75-coop's wrapper, so nothing below it ever sees the blow.
+  const UNHITTABLE = new Set(['watch_candle', 'watch_bell']);
+  const _hitMonster = hitMonster;
+  hitMonster = function (m, dmg, knock, fromBomb, source) {
+    if (m && UNHITTABLE.has(m.type)) return;
+    return _hitMonster(m, dmg, knock, fromBomb, source);
+  };
+  hitMonster.__inner = _hitMonster;
+  // where each candle and the bell stand: their spawn tile's centre (DEEP.candles, DEEP.bell)
+  const pinOf = m => { const at = m.type === 'watch_bell' ? DEEP.bell : DEEP.candles.reduce((b, c) => (!b || dist(tc(c[0]), tc(c[1]), m.x, m.y) < dist(tc(b[0]), tc(b[1]), m.x, m.y)) ? c : b, null); return at ? { x: tc(at[0]), y: tc(at[1]) } : null; };
   // each knight's own pay: he stood in the hall and landed a hit this watch; every wave the bell moves on pays him
   const PAY = { last: null, hitAt: -1e9, start: 1e9, waves: 0, paid: 0, get hit() { return this.hitAt >= this.start; }, set hit(v) { this.hitAt = v ? time : -1e9; } };
   HOOKS.hit.push((m, dmg, source) => { if (m && WATCH_FOES.has(m.type) && (source === 'player' || source === 'necro' || source === undefined)) PAY.hitAt = time; });
@@ -74170,7 +74230,7 @@ const OLD_BARROW = (() => {
     if (running()) { notify('The Watch is already running. Keep the candles lit!'); return; }
     const b = bellMon(); if (b && (b.state === 'won' || b.state === 'lost')) { notify('The bell is still ringing. Wait for it to fall quiet.'); return; }
     const r = window.COOP && COOP.call ? COOP.call('watch_' + key) : (startWatch(key), 'woke');
-    say(B().q1 >= DONE ? 'The bell tolls. The restless are coming for the candles. Keep one burning through six waves!' : 'The bell tolls. (Finish Bramble\'s Last Walk with Granny Wick and the Watch will pay you Necromancy.)', 'The Barrow Deep');
+    say(B().q1 >= DONE ? 'The bell tolls. The restless are coming for the candles. Keep one burning through six waves!' : `The bell tolls. (Finish Bramble's Last Walk with ${GRANNY} and the Watch will pay you Necromancy.)`, 'The Barrow Deep');
     return r;
   }
   HOOKS.bossCall = HOOKS.bossCall || {};
@@ -74337,11 +74397,11 @@ const OLD_BARROW = (() => {
   // cannot rest. Stages: 0 not started ... 9 (DONE). Story items declare their giver.
   // =====================================================================================================================
   Object.assign(ITEMS, {
-    tobias_stone: { name: "Tobias's stone", value: 0, color: '#8a8a82', shape: 'rock', stack: 1, unique: true, giver: 'the builders\' spoil by the Old Barrow (Q1, Granny Wick)' },
-    bramble_collar: { name: "Bramble's collar", value: 0, color: '#8a5a2a', shape: 'silk', stack: 1, unique: true, giver: 'Bramble, at the Old Barrow (Q1, Granny Wick)' },
-    little_bell: { name: 'The Little Bell', value: 0, color: '#d9b25c', shape: 'coins', stack: 1, unique: true, giver: 'Ambrose the bell-ringer, Hollowford (Q2, Granny Wick)' },
-    neds_turnip: { name: "Ned's lucky turnip", value: 1, color: '#e2d6e8', shape: 'potato', stack: 1, unique: true, giver: 'Old Ned, in the Afterlands (Q3, Granny Wick)' },
-    kings_seal: { name: "The King's seal", value: 0, color: '#d9b25c', shape: 'coins', stack: 1, unique: true, giver: 'the Barrow King (Q4, Granny Wick)' },
+    tobias_stone: { name: "Tobias's stone", value: 0, color: '#8a8a82', shape: 'rock', stack: 1, unique: true, giver: `the builders' spoil by the Old Barrow (Q1, ${GRANNY})` },
+    bramble_collar: { name: "Bramble's collar", value: 0, color: '#8a5a2a', shape: 'silk', stack: 1, unique: true, giver: `Bramble, at the Old Barrow (Q1, ${GRANNY})` },
+    little_bell: { name: 'The Little Bell', value: 0, color: '#d9b25c', shape: 'coins', stack: 1, unique: true, giver: `Ambrose the bell-ringer, Hollowford (Q2, ${GRANNY})` },
+    neds_turnip: { name: "Ned's lucky turnip", value: 1, color: '#e2d6e8', shape: 'potato', stack: 1, unique: true, giver: `Old Ned, in the Afterlands (Q3, ${GRANNY})` },
+    kings_seal: { name: "The King's seal", value: 0, color: '#d9b25c', shape: 'coins', stack: 1, unique: true, giver: `the Barrow King (Q4, ${GRANNY})` },
   });
   for (const k of ['tobias_stone', 'bramble_collar', 'little_bell', 'neds_turnip', 'kings_seal']) ITEMS[k].id = k;
   if (window.KEYRING && KEYRING.register) {
@@ -74360,6 +74420,7 @@ const OLD_BARROW = (() => {
   QUEST_DEFS.nec_king = { name: 'The Barrow King' };
   QUEST_DEFS.nec_name = { name: 'The Name on the Stone' };
   const REWARD = { q1: 450, q2: 1200, q3: 3000, q4: 10000, q5: 25000 };
+  const GHOST = { xp: 250 }, GHOST_XP = GHOST.xp;   // each ghost met the first time pays this (and a soul shard)
   const complete = (title, xp) => { gainXp('necromancy', xp); levelBanner = { text: 'QUEST COMPLETE', sub: title, t: 3.5 }; sfx('quest'); };
 
   // ---------- the ghosts (Speak with the Dead): seen only in a Ghostlight (Rattle and Ambrose by anyone) ----------
@@ -74367,10 +74428,10 @@ const OLD_BARROW = (() => {
   const GHOST_NAME = { rattle: RATTLE, bramble: 'Bramble', ambrose: 'Ambrose', ned: 'Old Ned', barrow_king: 'the Barrow King', corwin: C.LAST_KNIGHT, pell: 'Mistress Pell', hob: 'Wee Hob', finn: 'Old Finn', snik: 'Snik', osric_ghost: 'Brother Osric', ivy: 'Lady Ivy' };
   function meetGhost(id) {
     const p = NECRO.N(); if (p.ghosts[id] || !GHOST_IDS.includes(id)) return false;
-    p.ghosts[id] = true; gainXp('necromancy', 250); giveOrDrop('soul_shard', 1, player.x, player.y);
+    p.ghosts[id] = true; gainXp('necromancy', GHOST_XP); giveOrDrop('soul_shard', 1, player.x, player.y);
     const n = GHOST_IDS.filter(k => p.ghosts[k]).length;
-    notify(`Ghosts met: ${n} / ${GHOST_IDS.length}. +250 Necromancy and a soul shard.`);
-    if (n === GHOST_IDS.length) say('Twelve! Go and tell Rattle. He has been saving something for you.', GRANNY);
+    notify(`Ghosts met: ${n} / ${GHOST_IDS.length}. +${GHOST_XP} Necromancy and a soul shard.`);
+    if (n === GHOST_IDS.length) say(`Twelve! Go and tell ${RATTLE}. He has been saving something for you.`, GRANNY);
     save(); return true;
   }
   // a spot near a place's point: open ground (or a floor), 4+ tiles off every rail and signpost, found the same way on
@@ -74448,7 +74509,7 @@ const OLD_BARROW = (() => {
       meetGhost('ambrose'); q.q2 = 2; NECRO.learn('raise');
       NECRO.makeHelper('sq', { x: gh.x, y: gh.y }, { quest: 'ambrose', look: 'ambrose', maxHit: 3 });
       say('The skeleton turns its head. It looks lost, not hungry. It wants to walk east, and cannot remember why.', 'The Voice');
-      say2(["Granny Wick's lesson comes back to you: Raise Bones. You lend it a little strength, and it stands straighter.", 'Walk with it to Hollowford. Someone there might know it.'], 'The Voice');
+      say2([`${GRANNY}'s lesson comes back to you: Raise Bones. You lend it a little strength, and it stands straighter.`, 'Walk with it to Hollowford. Someone there might know it.'], 'The Voice');
       notify('You learned Raise Bones. Your new friend follows you now.'); save(); return;
     }
     if (gh.id === 'ned') {
@@ -74556,7 +74617,7 @@ const OLD_BARROW = (() => {
     meetGhost('barrow_king'); giveOrDrop('kings_seal', 1, player.x, player.y); complete('The Barrow King', REWARD.q4);
     say2(['The King kneels. He is not angry. "I was testing you. Hear me."', '"A Hollow thing crawled up through the crypt from the Afterlands, hungry for names. I sealed it in my vault, with my own name as the lock."',
       '"That is why I cannot rest. And it reaches through the walls and scrapes at my people\'s names. Take my seal. And my blessing: from Necromancy 50, your raised dead may be Risen guards."'], 'The Barrow King');
-    notify('The throne is a rematch now: E on it to spar with the King.');
+    notify(THRONE_LINE());
   }
   const NAMES = [];   // the stolen names streaming out of the vault (this knight's own picture): { x, y, t }
   function finishHollow(m) {
@@ -74611,26 +74672,37 @@ const OLD_BARROW = (() => {
   // ---------- the book (44-wiki: the QUEST_INFO rows are its own; these pages are written here) ----------
   if (window.WIKI) {
     const SP = NECRO.SPELLS;
+    // the five quests' rows (the ghosts' row is ghostPage's), made from the names and numbers above, so a choice changes in one line
+    const comma = v => String(v).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    const at = `${GRANNY}, the Old Barrow`;
+    for (const [id, giver, reward] of [
+      ['nec_bramble', `${at} (combat 5)`, `${comma(REWARD.q1)} Necromancy xp, the Barrow wand, Soul Bolt and Ghostlight, Bramble's collar`],
+      ['nec_bell', `${at} (Necromancy 5)`, `${comma(REWARD.q2)} Necromancy xp, Raise Bones, the Little Bell`],
+      ['nec_lanterns', `${at} (Necromancy 18, combat 25)`, `${comma(REWARD.q3)} Necromancy xp, Grave Walk, Ned's lucky turnip`],
+      ['nec_king', `${at} (Necromancy 40)`, `${comma(REWARD.q4)} Necromancy xp, Raise Risen (at 50), the King's seal`],
+      ['nec_name', `${at} (Necromancy 60, combat 60)`, `${comma(REWARD.q5)} Necromancy xp, Call the Last Knight (at 95), and the names home`],
+    ]) WIKI.add('quests', { id, name: QUEST_DEFS[id] ? QUEST_DEFS[id].name : id, giver, reward, kind: 'Necromancy' });
     const skillLines = () => {
       const out = ['Necromancy is listening to the dead. You ask old bones and lost ghosts for help; they help, and then they go back to rest.', `Start: ${GRANNY} at the Old Barrow (combat level 5).`, { t: 'SPELLS', c: '#d9b25c' }];
       for (const s of SP) out.push(`Lv ${s.lv} · ${s.name}: ${s.what}${s.spirit ? ' ' + s.spirit + ' spirit.' : ''}${s.rest ? ' Rests ' + Math.round(s.rest / 60) + ' minutes.' : s.cd >= 1 ? ' Every ' + s.cd + ' s.' : ''}`);
       out.push({ t: 'SPIRIT AND POWER', c: '#d9b25c' }, 'Spirit = 20 + your level + your power, and it refills by itself: twice as fast out of a fight, twice again in a lit candle circle. The Bone Altar fills it; a soul shard gives 15.',
         'Power is what your necromancer gear adds: the wand 2, the Gravewood stave 6, the Bone stave 10, the Void Scythe 15, the hood 4, the robe 8, the wraps 5, the Soul lantern 6, the cape 3, and +5 for the whole Barrow-bound set.',
-        { t: 'SUPPLIES', c: '#d9b25c' }, 'Bones, grave dust, soul shards, brute bones and dragon bones. Granny Wick sells soul shards for ' + C.SHARD_PRICE + ' coins.',
+        { t: 'SUPPLIES', c: '#d9b25c' }, 'Bones, grave dust, soul shards, brute bones and dragon bones. ' + GRANNY + ' sells soul shards for ' + C.SHARD_PRICE + ' coins.',
         { t: 'WAYS TO EARN XP', c: '#d9b25c' }, '2 xp a point of spell damage, 1 a point of helper damage.', 'Raising your own graves: wood cross 25, grave 60, headstone 150.', 'Offering at the Bone Altar: bone 15, brute bone 70 (Lv 30), dragon bone 160 (Lv 45).',
-        `The Lantern Watch: every wave pays ${C.WATCH_XP.dusk} (Dusk, Lv 10), ${C.WATCH_XP.midnight} (Midnight, Lv 40) or ${C.WATCH_XP.deep} (Deep, Lv 70) times the wave number.`, 'Meeting a ghost: 250 the first time, and a soul shard.', 'Five quests at the Old Barrow, and the Gravewood stave (400).');
+        `The Lantern Watch: every wave pays ${C.WATCH_XP.dusk} (Dusk, Lv 10), ${C.WATCH_XP.midnight} (Midnight, Lv 40) or ${C.WATCH_XP.deep} (Deep, Lv 70) times the wave number.`, `Meeting a ghost: ${GHOST_XP} the first time, and a soul shard.`, 'Five quests at the Old Barrow, and the Gravewood stave (400).');
       return out;
     };
     WIKI.add('skills', { id: 'necromancy', name: 'Necromancy', get lines() { return skillLines(); } });
-    WIKI.add('places', { id: 'old_barrow', name: 'The Old Barrow', lines: ['Where the first Wolfwood folk buried their kings, long before Thistledown. A roofless chapel, the Bone Altar, Granny Wick\'s cottage and a barrow mound with a stair down.', `${GRANNY} teaches Necromancy here, and ${RATTLE} tells jokes from his post.`, 'The candle circle doubles your spirit\'s refill. The bone dummies take Soul Bolts for practice (up to 300 xp a day).'] });
+    WIKI.add('places', { id: 'old_barrow', name: 'The Old Barrow', lines: ['Where the first Wolfwood folk buried their kings, long before Thistledown. A roofless chapel, the Bone Altar, ' + GRANNY + '\'s cottage and a barrow mound with a stair down.', `${GRANNY} teaches Necromancy here, and ${RATTLE} tells jokes from his post.`, 'The candle circle doubles your spirit\'s refill. The bone dummies take Soul Bolts for practice (up to 300 xp a day).'] });
     WIKI.add('places', { id: 'barrow_deep', name: 'The Barrow Deep', lines: ['Under the Old Barrow. The Candle Hall holds the Lantern Watch: ring a bell-rope and keep at least one candle burning through six waves.', "Past the Ossuary (Bramble's collar opens the bone hand) is the King's Hall, and behind the King's own seal, the Sealed Vault.", 'Both of its bosses come back to fight again after a five minute rest.'] });
     ghostPage();
   }
+  function GHOSTS_REWARD() { return `${GHOST_XP} Necromancy xp and a soul shard each; all twelve: ${RATTLE_STORY} and ${String(C.ALL_GHOSTS.xp).replace(/\B(?=(\d{3})+(?!\d))/g, ',')} xp`; }
   // "Ghosts met n / 12": only the ghosts met are named (nothing is spoiled); written again whenever the count moves
   function ghostPage() {
     if (!window.WIKI) return;
     const g = player && player.necro && player.necro.ghosts ? player.necro.ghosts : {}, met = GHOST_IDS.filter(k => g[k]);
-    WIKI.add('quests', { id: 'nec_ghosts', name: 'Ghosts met', lines: [`Ghosts met: ${met.length} / ${GHOST_IDS.length}.`, 'Turn on your Ghostlight and talk to the ghosts you see. The wanderers come out at night.'].concat(met.map(k => GHOST_NAME[k])) });
+    WIKI.add('quests', { id: 'nec_ghosts', name: 'Ghosts met', kind: 'Necromancy', giver: 'Speak with the Dead (Ghostlight)', reward: GHOSTS_REWARD(), lines: [`Ghosts met: ${met.length} / ${GHOST_IDS.length}.`, 'Turn on your Ghostlight and talk to the ghosts you see. The wanderers come out at night.'].concat(met.map(k => GHOST_NAME[k])) });
   }
   let ghostN = -1;
   HOOKS.update.push(() => { const g = player.necro && player.necro.ghosts, n = g ? GHOST_IDS.filter(k => g[k]).length : 0; if (n !== ghostN) { ghostN = n; ghostPage(); } });
@@ -74766,7 +74838,15 @@ const OLD_BARROW = (() => {
         // the Deep Watch's 1 in 40 kit roll, the dice pinned under it
         Math.random = () => 0; const d0 = drops.length; PAY.last = 'w6'; PAY.hit = true; bellMon().state = 'won'; bellMon().maxHp = 3; payTick(); const kit = drops.slice(d0).some(d => MONSTER_DEFS.zombie_brute.drops.rare.table.some(t => t[0] === d.id)); Math.random = keep.rnd;
         bellMon().state = 'idle'; bellMon().maxHp = 1; for (const c of candles()) c.hp = c.maxHp;
+        // a candle and the bell are not training dummies: 50 sword swings on each pay no XP, take no hp and move neither
+        { drain(); setLv('melee', 70); player.equip.weapon = 'dragon_spear'; if (!countItem('dragon_spear')) addItem('dragon_spear', 1);
+          const swing = (m, n) => { const at = { x: m.x, y: m.y, hp: m.hp }, mx = player.skills.melee.xp, hx = player.skills.hitpoints.xp; let sent = 0;
+            const was = NET.send; NET.send = msg => { if (msg && msg.t === 'hit') sent++; };
+            try { for (let i = 0; i < n; i++) { player.x = m.x; player.y = m.y + 34; player.facing = { x: 0, y: -1 }; player.attackCd = 0; playerAttack(); F.step([]); } } finally { NET.send = was; }
+            return m.x === at.x && m.y === at.y && m.hp === at.hp && !m.dead && player.skills.melee.xp === mx && player.skills.hitpoints.xp === hx && sent === 0; };
+          r.dummy = swing(candles()[0], 50) && swing(bellMon(), 50); player.equip.weapon = keep.equip.weapon; }
         INSTANCES.leave();
+        check(P2 + 'N13b the Watch\'s candles and bell cannot be hit: 50 sword swings on a candle and 50 on the bell give no melee or Hitpoints XP, take no hp, send no hit and move neither', !!r.dummy, { dummy: r.dummy });
         check(P2 + 'N13 the Lantern Watch: on a puppet view a rope asks the keeper and spawns nothing; the keeper\'s bell streams w1 to w6 then won; a knight in the hall with a hit landed is paid each wave once (Dusk: 20 x 1 + ... + 20 x 6 = 420) and 3 soul shards on a win; losing every candle ends it as lost; a won Deep Watch rolls 1 in 40 for a kit piece',
           r.puppet && r.started && r.states === 'w1 w2 w3 w4 w5 w6 won' && r.won && r.paid === 420 && r.shards >= 3 && r.lost && kit, Object.assign(r, { kit })); }
       drain();
@@ -74808,6 +74888,31 @@ const OLD_BARROW = (() => {
         const lines = sk && sk.lines ? sk.lines.map(l => typeof l === 'string' ? l : l.t).join(' ') : '';
         const spells = NECRO.SPELLS.every(sp => lines.indexOf(sp.name) >= 0), qs = ['nec_bramble', 'nec_bell', 'nec_lanterns', 'nec_king', 'nec_name'].every(id => !!WIKI.get('quests', id));
         check(P2 + 'N18 the book: the Necromancy page lists all 12 spells, the supplies and the ways to earn xp; the Old Barrow and the Barrow Deep have pages, the five quests are in it, and "Ghosts met" counts', spells && /SUPPLIES/.test(lines) && /WAYS TO EARN XP/.test(lines) && !!ob && !!bd && qs && !!gm && /Ghosts met: \d+ \/ 12/.test(gm.lines[0]), { spells, ob: !!ob, bd: !!bd, qs, gm: !!gm }); }
+      // ---- N21 the choices are one-line changes: no teacher's name typed out by hand in these files (the TEACHERS line is the one
+      // place), Granny's shelf line says C.SHARD_PRICE, and the ghosts' reward says C.ALL_GHOSTS.xp ----
+      { const src = String(window.__gameSource || ''), hand = [], HAND_RE = new RegExp(['Gra' + 'nny', 'Rat' + 'tle', 'twenty-' + 'five'].join('|'));
+        for (const part of src.split(/\n\/\/ ---- src\//)) {
+          const file = part.slice(0, part.indexOf(' ')); if (!/^(89-oldbarrow|89-necromancy|89-necroart|44-wiki)\.js$/.test(file)) continue;
+          part.split('\n').forEach((ln, i) => { const code = ln.replace(/^\s*\/\/.*$/, '').replace(/\s\/\/\s.*$/, '');
+            if (/TEACHERS: \{|check\(P2? \+/.test(code)) return; if (HAND_RE.test(code)) hand.push(file + ':' + i + ' ' + code.trim().slice(0, 80)); }); }
+        // (the server's stripped copy has only a stub for the book: there the two wiki parts are not asked)
+        const wikiOn = !!(window.WIKI && typeof WIKI.get === 'function' && typeof (WIKI.get('quests', 'main') || {}).name === 'string');
+        const comma = String(C.ALL_GHOSTS.xp).replace(/\B(?=(\d{3})+(?!\d))/g, ','), gh = WIKI.get('quests', 'nec_ghosts') || {}, q1 = WIKI.get('quests', 'nec_bramble') || {};
+        const shelf = AFTER.some(l => l.includes(C.SHARD_PRICE + ' coins each')), ghosts = GHOSTS_REWARD().includes(comma + ' xp') && (!wikiOn || (String(gh.reward).includes(comma + ' xp') && String(gh.reward).includes(RATTLE_STORY)));
+        const giver = !wikiOn || (String(q1.giver).startsWith(GRANNY + ',') && q1.name === QUEST_DEFS.nec_bramble.name);
+        check(P2 + 'N21 every choice is one line: no teacher name typed by hand in 89-oldbarrow, 89-necromancy, 89-necroart or 44-wiki (only the TEACHERS line), her shelf line reads SHARD_PRICE, the ghosts\' wiki reward reads ALL_GHOSTS.xp and the quests\' givers read TEACHERS',
+          src.length > 0 && hand.length === 0 && shelf && ghosts && giver, { hand: hand.slice(0, 8), n: hand.length, shelf, ghosts, giver, reward: gh.reward }); }
+      // ---- N20 the words on a touch screen: the first lesson names the BOLT button (a wand in hand turns SWING into BOLT), the
+      // throne names USE (keyName('KeyE') is the raw 'KeyE' there) ----
+      { const kt = window.__forceTouch, kq = JSON.stringify(quest.barrow || {}); const r = {};
+        try {
+          window.__forceTouch = true; drain(); for (const k of ['melee', 'hitpoints', 'defence']) setLv(k, 40);
+          B().q1 = 0; notice = null; grannyTalk(); r.lesson = notice ? notice.text : ''; drain();
+          player.equip.weapon = 'barrow_wand'; r.face = HK.faceOf ? (HK.faceOf('swing') || {}).ribbon : null;
+          notice = null; finishKing(); r.throne = notice ? notice.text : ''; drain();
+        } finally { window.__forceTouch = kt; quest.barrow = JSON.parse(kq); player.equip.weapon = keep.equip.weapon; }
+        check(P2 + 'N20 on touch the first lesson says "tap BOLT" (the word on the swing seat with the wand in hand) and the throne line says "E, or the USE button", never SWING or KeyE',
+          /tap BOLT\./.test(r.lesson) && r.face === 'BOLT' && /E, or the USE button/.test(r.throne) && !/SWING|KeyE/.test(r.lesson + r.throne), r); }
     } finally {
       Math.random = keep.rnd; if (window.INSTANCES && INSTANCES.active()) INSTANCES.leave();
       player.x = keep.x; player.y = keep.y; player.facing = keep.facing; player.equip = keep.equip; player.inv = keep.inv; player.hp = keep.hp; player.keyring = keep.keyring; player.dayTime = keep.day; quest.stage = keep.stage;
@@ -74822,7 +74927,7 @@ const OLD_BARROW = (() => {
   return {
     ID, DEEP_ID, PLAN, PT, P, BF, TRAIL, SPOIL, COTTAGE, GRANNY_NPC, THINGS, STATS, FOOT, RING, DEEP, DPROP, WATCH, BOSS, OFFER, STAVE, GHOST_IDS, GHOST_NAME, WANDERERS, LANTERNS, NED_AT, REWARD, DONE, NAMES, PAY, OPEN,
     B, post: () => POST, rail: () => RAIL, wandererAt, ghostsNow, visibleGhosts, meetGhost, talkGhost, grannyTalk, rattleTalk, offer, startWatch, keeperTick, payTick, bellMon, candles, running, foes, spawnBoss, bossTick, bossBlows, live, courtiers, callKing, callHollow,
-    chapelAt, spoilUse, setStone, syncDoors, moundBox, inDeep, kingResting, hollowResting, tierByN, isWatchFoe,
+    chapelAt, spoilUse, setStone, syncDoors, finishKing, moundBox, inDeep, kingResting, hollowResting, tierByN, isWatchFoe,
   };
 })();
 window.OLD_BARROW = OLD_BARROW;
