@@ -38,6 +38,10 @@ const OLD_BARROW = (() => {
   const REACHES = [36, 62, 100];                      // how far in front of the knight E looks, in pixels
   const SEED = (() => { let h = 2166136261; for (const c of '89-oldbarrow') h = Math.imul(h ^ c.charCodeAt(0), 16777619); return h >>> 0; })();
   const GRANNY = C.TEACHERS.keeper, RATTLE = C.TEACHERS.skull;
+  // the words a kid sees for a button: on touch the BOLT face's own word (a wand in hand turns SWING into BOLT), and the throne's
+  // USE (keyName('KeyE') has no touch word)
+  const BOLT_KEY = () => touchMode() ? 'BOLT' : keyName('Space');
+  const THRONE_LINE = () => 'The throne is a rematch now. Use the throne (E, or the USE button) to spar with the King.';
 
   // ---------- the plan: one glyph a tile, rows from the box's top-left (16 x 14) ----------
   //   #  the barrow mound (solid: a grassy hump with kerb stones)    D  the stair down (DUNGEON_DOOR into the Barrow Deep)
@@ -203,7 +207,7 @@ const OLD_BARROW = (() => {
     const c = THINGS.get(idx(tx, ty)); if (!c) return false;
     if (c.kind === 'altar') { openPanel('altar'); return true; }
     if (c.kind === 'rattle') { rattleTalk(); return true; }
-    if (c.kind === 'dummy') { notify(NECRO.focusInHand() ? `Bolt the dummy (${keyName('Space')}). It does not mind.` : 'A bone dummy for practising spells. Hold a wand and bolt it.'); return true; }
+    if (c.kind === 'dummy') { notify(NECRO.focusInHand() ? `Bolt the dummy (${BOLT_KEY()}). It does not mind.` : 'A bone dummy for practising spells. Hold a wand and bolt it.'); return true; }
     if (c.kind === 'mound') { notify(nightNow() ? 'The barrow mound. Little lights drift over the grass at night. They mean no harm.' : 'The barrow mound, where the first Wolfwood folk buried their kings.'); return true; }
     if (c.kind === 'ruin') { notify('The chapel\'s old wall. The roof fell in long ago.'); return true; }
     if (c.kind === 'lantern') { notify('A lantern on a post. Granny Wick lights them at dusk.'); return true; }
@@ -291,7 +295,7 @@ const OLD_BARROW = (() => {
       say2(["You heard Rattle? Not just clacking, but the words? Most folk only hear clacking. You've got the knack.",
         "Necromancy isn't bossing the dead about. It's listening. Most of them only want someone to remember them.",
         'Here: my old Barrow wand. Hold it and swing, and it throws a Soul Bolt. Practise on my bone dummies. They don\'t mind.'], GRANNY);
-      notify(`Hold the Barrow wand, face a bone dummy and press ${keyName('Space')}. Necromancy 3 to go on.`); save(); return;
+      notify(`Hold the Barrow wand, face a bone dummy and ${touchMode() ? 'tap' : 'press'} ${BOLT_KEY()}. Necromancy 3 to go on.`); save(); return;
     }
     if (q.q1 === 1) {
       if (lv < 3) { say(`Keep at the dummies, dear. Come back at Necromancy 3. You are ${lv}.`, GRANNY); return; }
@@ -1063,7 +1067,7 @@ const OLD_BARROW = (() => {
     meetGhost('barrow_king'); giveOrDrop('kings_seal', 1, player.x, player.y); complete('The Barrow King', REWARD.q4);
     say2(['The King kneels. He is not angry. "I was testing you. Hear me."', '"A Hollow thing crawled up through the crypt from the Afterlands, hungry for names. I sealed it in my vault, with my own name as the lock."',
       '"That is why I cannot rest. And it reaches through the walls and scrapes at my people\'s names. Take my seal. And my blessing: from Necromancy 50, your raised dead may be Risen guards."'], 'The Barrow King');
-    notify('The throne is a rematch now: E on it to spar with the King.');
+    notify(THRONE_LINE());
   }
   const NAMES = [];   // the stolen names streaming out of the vault (this knight's own picture): { x, y, t }
   function finishHollow(m) {
@@ -1323,6 +1327,17 @@ const OLD_BARROW = (() => {
         const lines = sk && sk.lines ? sk.lines.map(l => typeof l === 'string' ? l : l.t).join(' ') : '';
         const spells = NECRO.SPELLS.every(sp => lines.indexOf(sp.name) >= 0), qs = ['nec_bramble', 'nec_bell', 'nec_lanterns', 'nec_king', 'nec_name'].every(id => !!WIKI.get('quests', id));
         check(P2 + 'N18 the book: the Necromancy page lists all 12 spells, the supplies and the ways to earn xp; the Old Barrow and the Barrow Deep have pages, the five quests are in it, and "Ghosts met" counts', spells && /SUPPLIES/.test(lines) && /WAYS TO EARN XP/.test(lines) && !!ob && !!bd && qs && !!gm && /Ghosts met: \d+ \/ 12/.test(gm.lines[0]), { spells, ob: !!ob, bd: !!bd, qs, gm: !!gm }); }
+      // ---- N20 the words on a touch screen: the first lesson names the BOLT button (a wand in hand turns SWING into BOLT), the
+      // throne names USE (keyName('KeyE') is the raw 'KeyE' there) ----
+      { const kt = window.__forceTouch, kq = JSON.stringify(quest.barrow || {}); const r = {};
+        try {
+          window.__forceTouch = true; drain(); for (const k of ['melee', 'hitpoints', 'defence']) setLv(k, 40);
+          B().q1 = 0; notice = null; grannyTalk(); r.lesson = notice ? notice.text : ''; drain();
+          player.equip.weapon = 'barrow_wand'; r.face = HK.faceOf ? (HK.faceOf('swing') || {}).ribbon : null;
+          notice = null; finishKing(); r.throne = notice ? notice.text : ''; drain();
+        } finally { window.__forceTouch = kt; quest.barrow = JSON.parse(kq); player.equip.weapon = keep.equip.weapon; }
+        check(P2 + 'N20 on touch the first lesson says "tap BOLT" (the word on the swing seat with the wand in hand) and the throne line says "E, or the USE button", never SWING or KeyE',
+          /tap BOLT\./.test(r.lesson) && r.face === 'BOLT' && /E, or the USE button/.test(r.throne) && !/SWING|KeyE/.test(r.lesson + r.throne), r); }
     } finally {
       Math.random = keep.rnd; if (window.INSTANCES && INSTANCES.active()) INSTANCES.leave();
       player.x = keep.x; player.y = keep.y; player.facing = keep.facing; player.equip = keep.equip; player.inv = keep.inv; player.hp = keep.hp; player.keyring = keep.keyring; player.dayTime = keep.day; quest.stage = keep.stage;
@@ -1337,7 +1352,7 @@ const OLD_BARROW = (() => {
   return {
     ID, DEEP_ID, PLAN, PT, P, BF, TRAIL, SPOIL, COTTAGE, GRANNY_NPC, THINGS, STATS, FOOT, RING, DEEP, DPROP, WATCH, BOSS, OFFER, STAVE, GHOST_IDS, GHOST_NAME, WANDERERS, LANTERNS, NED_AT, REWARD, DONE, NAMES, PAY, OPEN,
     B, post: () => POST, rail: () => RAIL, wandererAt, ghostsNow, visibleGhosts, meetGhost, talkGhost, grannyTalk, rattleTalk, offer, startWatch, keeperTick, payTick, bellMon, candles, running, foes, spawnBoss, bossTick, bossBlows, live, courtiers, callKing, callHollow,
-    chapelAt, spoilUse, setStone, syncDoors, moundBox, inDeep, kingResting, hollowResting, tierByN, isWatchFoe,
+    chapelAt, spoilUse, setStone, syncDoors, finishKing, moundBox, inDeep, kingResting, hollowResting, tierByN, isWatchFoe,
   };
 })();
 window.OLD_BARROW = OLD_BARROW;

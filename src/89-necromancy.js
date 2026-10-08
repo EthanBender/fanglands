@@ -339,6 +339,9 @@ const NECRO = (() => {
   }
   const GRAVE_XP = { cross: 25, grave: 60, headstone: 150 };
   function refuse(text) { notify(text); return false; }
+  // a supply's name for a count: grave dust has no plural ("2 grave dust"), bones and shards do
+  const NO_PLURAL = new Set(['grave_dust']);
+  const supplyName = (id, q) => ITEMS[id].name.toLowerCase() + (q > 1 && !NO_PLURAL.has(id) && !/s$/.test(ITEMS[id].name) ? 's' : '');
   function cast(id) {
     const s = SPELL[id]; if (!s) return false;
     if (player.dead) return false;
@@ -418,7 +421,7 @@ const NECRO = (() => {
       const xp = GRAVE_XP[g.grade] || 25; gainXp('necromancy', xp); floatText(tc(g.m.x), tc(g.m.y) - 30, `+${xp} Necromancy`, '#4fd1b5', 12);
       makeHelper(kind, { x: tc(g.m.x), y: tc(g.m.y) });
     } else {
-      for (const [id, n] of supplies) if (countItem(id) < n) return refuse(`${SPELL[kind === 'sq' ? 'raise' : kind === 'rg' ? 'risen' : 'brute'].name} needs ${supplies.map(([i, q]) => q + ' ' + ITEMS[i].name.toLowerCase() + (q > 1 && !/s$/.test(ITEMS[i].name) ? 's' : '')).join(' and ')}, or one of your own graves.`);
+      for (const [id, n] of supplies) if (countItem(id) < n) return refuse(`${SPELL[kind === 'sq' ? 'raise' : kind === 'rg' ? 'risen' : 'brute'].name} needs ${supplies.map(([i, q]) => q + ' ' + supplyName(i, q)).join(' and ')}, or one of your own graves.`);
       for (const [id, n] of supplies) removeItem(id, n);
       makeHelper(kind, { x: player.x + player.facing.x * 40, y: player.y + player.facing.y * 40 });
     }
@@ -606,9 +609,10 @@ const NECRO = (() => {
   hudSeatFace('ctx', Object.assign({ id: 'cast_in', prio: 31, when: () => CAST_OVER_LEAVE.has(mapNow()) && castable() && !nearWayOut() }, CAST_FACE));
   hudControl({ id: 'spells', emblem: 'skull', key: 'U', label: () => 'SPELLS', on: () => panel === 'spells', action: () => { if (panel === 'spells') closePanel(); else openPanel('spells'); } });
 
+  const SPELLBOOK_CUT = new Set();   // spells whose line was cut off in a draw (N16 wants none, at every size)
   HOOKS.panel.spells = g => {
     const K = PANEL_KIT, Rm = K.room(), T = HK.T, { R, G } = Rm, p = N();
-    const W = Math.min(Rm.aw, 560), cw = W - 36, rh = R + 20, pagerH = R + 14, footH = R + 12;
+    const W = Math.min(Rm.aw, 560), cw = W - 36, narrow = cw < 440, rh = Math.max(R + 20, narrow ? 72 : 60), pagerH = R + 14, footH = R + 12;
     const top = 62 + 22, avail = Rm.ah - top - footH - pagerH - 12;
     const per = Math.max(2, Math.min(SPELLS.length, Math.floor(avail / (rh + G))));
     const pages = Math.ceil(SPELLS.length / per), H = top + per * (rh + G) + footH + pagerH + 6;
@@ -624,7 +628,9 @@ const NECRO = (() => {
       K.name(g, s.name, x + 12, y + 19 + st.dy, nameW, { size: 13.5, color: on ? (sel ? T.goldHi : T.ink) : T.inkMute, fitId: 'spells:name' });
       K.name(g, 'Lv ' + s.lv, x + cw - 12, y + 19 + st.dy, 64, { size: 12, align: 'right', color: lv >= s.lv ? T.good : T.inkMute, fitId: 'spells:lv' });
       const cost = [costOf(s) ? costOf(s) + ' spirit' : null, s.rest ? 'rest ' + mmss(s.rest) : s.cd >= 1 ? s.cd + ' s' : null].filter(Boolean).join(' · ');
-      K.para(g, why ? why : (cost ? cost + ' · ' : '') + s.what, x + 12, y + 19 + 17 + st.dy, cw - 24, { size: 11.5, min: 10, lines: 1, color: on ? T.inkDim : T.inkMute, fitId: 'spells:text' });
+      // the line under the name wraps to two (three on a phone; a long one, Ghostlight's, is never cut off); SPELLBOOK_CUT lists any that still run out
+      const pr = K.para(g, why ? why : (cost ? cost + ' · ' : '') + s.what, x + 12, y + 19 + 16 + st.dy, cw - 24, { size: 11.5, min: 10, lines: narrow ? 3 : 2, lh: 13, color: on ? T.inkDim : T.inkMute, fitId: 'spells:text' });
+      if (pr.more) SPELLBOOK_CUT.add(s.id);
       y += rh + G;
     }
     const fy = y0 + h - 14 - pagerH - R;
@@ -821,6 +827,12 @@ const NECRO = (() => {
           laid && ok && !!sq && markerGone && paid === 25 && notAMonster && caps.join() === '0,1,2,3' && second === false && brute && load3 === 3 && over === false && helperDmg > 0 && srcs.every(s => s === 'necro') && srcs.length > 0 && helperXp === helperDmg && gone,
           { laid, ok, sq: !!sq, markerGone, paid, caps, second, brute, load3, over, helperDmg, helperXp, srcs: srcs.slice(0, 3), gone }); }
       freshState(); solo([]); empty();
+      // ---- N5b the refusal's words: grave dust has no plural ----
+      { setLv(80); wear('barrow_wand'); quest.graves = []; N().spirit = 99; notice = null; const no1 = cast('risen'), t1 = notice ? notice.text : '';
+        for (const k in CD) delete CD[k]; notice = null; const no2 = cast('brute'), t2 = notice ? notice.text : '';
+        check(P + 'N5b a raise with no supplies says "2 grave dust and 5 bones" and "1 brute bone and 3 grave dust" (grave dust has no plural)',
+          no1 === false && no2 === false && /needs 2 grave dust and 5 bones,/.test(t1) && /needs 1 brute bone and 3 grave dust,/.test(t2) && !/dusts/.test(t1 + t2), { t1, t2 }); }
+      freshState(); solo([]); empty();
       // ---- N6 the ward ----
       { setLv(12); wear('barrow_wand'); addItem('bone', 3); N().spirit = 20; player.hp = player.maxHp;
         const ok = cast('ward'), amt = WARD.amount, hp0 = player.hp; hurtPlayer(amt + 3, player.x + 20, player.y); const took = hp0 - player.hp;
@@ -937,7 +949,7 @@ const NECRO = (() => {
           for (const [w, hh] of HK.audit.SIZES) for (const t of [true, false]) {
             window.innerWidth = w; window.innerHeight = hh; resize(); window.__forceTouch = t;
             for (const name of ['spells', 'altar']) for (const pg of [0, 1, 2]) {
-              closePanel(); openPanel(name); PANEL_KIT.page(name, pg);
+              closePanel(); openPanel(name); PANEL_KIT.page(name, pg); SPELLBOOK_CUT.clear();
               HK.FIT.on = true; HK.FIT.log.length = 0; if (window.SETTINGS) SETTINGS.set('text', 'large');
               drawHud(HK.audit.fitCtx()); HK.FIT.on = false;
               const all = buttons.filter(b => !b.offscreen && b.w > 0), i = all.findIndex(b => b.label === '×'), mine = i >= 0 ? all.slice(i) : [];
@@ -950,6 +962,7 @@ const NECRO = (() => {
               for (let a = 0; a < mine.length; a++) for (let c = a + 1; c < mine.length; c++) { const A = mine[a], B = mine[c], gap = t ? 8 : 0;
                 if (A.x < B.x + B.w + gap && B.x < A.x + A.w + gap && A.y < B.y + B.h + gap && B.y < A.y + A.h + gap && !(A.label === B.label)) { if (!(A.x < B.x + B.w && B.x < A.x + A.w && A.y < B.y + B.h && B.y < A.y + A.h) && gap === 0) continue; problems.push(where + ': ' + A.label + ' near ' + B.label); } }
               for (const p of HK.audit.fitIssues(where)) problems.push(p);
+              for (const id of SPELLBOOK_CUT) problems.push(where + ': the line under ' + SPELL[id].name + ' is cut off');
             }
           }
         } finally {
@@ -957,7 +970,7 @@ const NECRO = (() => {
           if (kw.w) Object.defineProperty(window, 'innerWidth', kw.w); if (kw.h) Object.defineProperty(window, 'innerHeight', kw.h);
           resize(); window.__forceTouch = kw.t; if (window.SETTINGS && text0) SETTINGS.set('text', text0);
         }
-        check(P + 'N16 the spellbook and the Bone Altar keep the panel contract at every size, touch and mouse, Large text: on screen, 44 px on touch and 8 px apart, every string fits', problems.length === 0, { problems: problems.slice(0, 8), n: problems.length });
+        check(P + 'N16 the spellbook and the Bone Altar keep the panel contract at every size, touch and mouse, Large text: on screen, 44 px on touch and 8 px apart, every string fits, no spell\'s line cut off', problems.length === 0, { problems: problems.slice(0, 8), n: problems.length });
       }
       // ---- N16b CAST inside Necromancy's own places: on touch, away from the way out the ctx seat is CAST (not LEAVE), on screen
       // and 44 px at every size; within CAST_LEAVE_NEAR tiles of the exit it is LEAVE again ----
