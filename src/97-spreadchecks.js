@@ -202,7 +202,13 @@
     const res = [];
     for (const s of seams()) {
       const runs = [];
-      for (const L0 of s.lines) {
+      const RV = new Set(['ROAD', 'VERGE'].map(Tn).filter(v => v >= 0)), along = (x0, y0, dx, dy) => { let n = 0; for (let t = -16; t <= 16; t++) { const x = x0 + dx * t, y = y0 + dy * t; if (inMap(x, y) && RV.has(map[y * MAP_W + x])) n++; } return n; };
+      for (const L1 of s.lines) {
+        // (a line that runs along a main road (Stage 6: the Long Road comes into Hollowford along the burn's lines) reads the
+        // road's own straight edge, not the seam: it is stepped off the road, up to 6 tiles either side, to the nearest line
+        // that only crosses it)
+        let L0 = L1;
+        if (along(L1.x, L1.y, L1.dx, L1.dy) >= 8) for (let o = 1; o <= 6 && L0 === L1; o++) for (const sg of [1, -1]) { const x = L1.x + L1.dy * o * sg, y = L1.y + L1.dx * o * sg; if (L0 === L1 && along(x, y, L1.dx, L1.dy) < 3) L0 = { x, y, dx: L1.dx, dy: L1.dy }; }
         // the border on this line: the first tile (from A's side) that is B's region, within 12 of the seam's line
         let L = L0; if (s.bRegion) for (let t = -12; t <= 12; t++) { const x = L0.x + L0.dx * t, y = L0.y + L0.dy * t; if (inMap(x, y) && s.bRegion.includes(regionAt(x, y).name)) { L = { x, y, dx: L0.dx, dy: L0.dy }; break; } }
         // how far B (or the fade) reaches onto A's side of the border, plus how far A (or the fade) reaches onto B's
@@ -396,7 +402,7 @@
         check(PF + "the scarp seal: from the cave mouth the Wolfwood is reached by exactly the Old Bridge, the goblin-road bridge and the Agility 18 steps (all three shut: none of it; each one alone: all of it)",
           r.none.length === 0 && Object.values(r.each).every(n => n === 5) && Object.values(r.tiles).every(n => n > 0), r); }
       { const r = transects();
-        check(PF + "the land seams blend over 8 tiles or more: 20 lines across each (the Wolfwood / Jungle giants, the Ashfields' fade into the Jungle, the Jungle's edge on the Wilds, the burn round Hollowford, the quarry's edge), the median line's mixed run 8+ and no more than 5 lines nearly ruled (under 3: a road or a ford crossing); cliffs, water and story gates are exempt (SEAM_EXEMPT)",
+        check(PF + "the land seams blend over 8 tiles or more: 20 lines across each (the Wolfwood / Jungle giants, the Ashfields' fade into the Jungle, the Jungle's edge on the Wilds, the burn round Hollowford, the quarry's edge), the median line's mixed run 8+ and no more than 5 lines nearly ruled (under 3: a road or a ford crossing; a line along a main road is stepped off it); cliffs, water and story gates are exempt (SEAM_EXEMPT)",
           r.length === 5 && r.every(s => s.median >= 8 && s.runs.filter(v => v < 3).length <= 5), { seams: r.map(s => ({ id: s.id, median: s.median, min: s.min, ruled: s.runs.filter(v => v < 3).length, runs: s.runs.join(' ') })), exempt: SEAM_EXEMPT }); }
       { const bad = roadsClear();
         check(PF + "the main roads are clear surface: no solid tile and no builders' prop on either lane of the six main roads (gates, doors, the story signpost and Hollowford's ruins aside)", bad.length === 0, { bad: bad.slice(0, 10), more: Math.max(0, bad.length - 10) }); }

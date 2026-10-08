@@ -1183,8 +1183,10 @@ resize();
     const legs = [];
     for (const id of ROAD_IDS) {
       const pts = TRACKS[id], pl = track(id);
-      let best = -1, bd = 2.5; pl.forEach((p, k) => { const d = Math.hypot(p[0] - nx, p[1] - ny); if (d < bd) { bd = d; best = k; } });
-      if (best < 0 && place) for (const k of [0, pl.length - 1]) { const q = pts[k]; if (q[0] === 'port' && q[1].split('.')[0] === place && Math.hypot(pl[k][0] - nx, pl[k][1] - ny) <= 20) best = k; }
+      let best = -1, bd = 2.5, gate = null; pl.forEach((p, k) => { const d = Math.hypot(p[0] - nx, p[1] - ny); if (d < bd) { bd = d; best = k; } });
+      // (a road that leaves the place by another of its ports: `gate` is that port's point, and the walk to it across the
+      // place is part of the arm's walk, signText)
+      if (best < 0 && place) for (const k of [0, pl.length - 1]) { const q = pts[k]; if (q[0] === 'port' && q[1].split('.')[0] === place && Math.hypot(pl[k][0] - nx, pl[k][1] - ny) <= 20) { best = k; gate = pl[k]; } }
       // (Stage 6: a node on a road's line between two of its points, a T: the road runs both ways from it, the Glasshouse
       // spur's fork on the Long Road)
       let seg = -1, segT = 0;
@@ -1203,7 +1205,7 @@ resize();
         let stopK = end; for (let k = b + dir; k !== end; k += dir) { const q = pts[k], pl0 = q[0] === 'port' ? q[1].split('.')[0] : null;
           if (pl0 && STOP_PLACES.has(pl0) && pl0 !== place && Math.hypot(pl[k][0] - nx, pl[k][1] - ny) > 2.5) { stopK = k; break; } }
         const to = endWords(pts[end], id, place), next = stopK === end ? to : placeWords(pts[stopK][1].split('.')[0]);
-        legs.push({ road: id, to, dir: word, past, next, k: kf, stopK }); }
+        legs.push({ road: id, to, dir: word, past, next, k: kf, stopK, gate }); }
     }
     return legs;
   }
@@ -1227,12 +1229,29 @@ resize();
     const at = signNode(tx, ty); if (!at) return null;
     const { node, place } = at, arms = [], cap = w => w.charAt(0).toUpperCase() + w.slice(1);
     // each arm: the next stop, its way, the walk (once the roads are laid), and the road's far end if that is further on
-    for (const l of signArms(tx, ty)) { const secs = A.legSecs && l.k !== undefined ? A.legSecs(l.road, l.k, l.stopK) : null, w = walkWords(secs);
+    // (an arm whose road leaves by another gate of the place the post stands in (Hollowford's square) adds the walk from the
+    // post to that gate, straight across: legSecs' fourth argument, in tiles)
+    for (const l of signArms(tx, ty)) { const secs = A.legSecs && l.k !== undefined ? A.legSecs(l.road, l.k, l.stopK, l.gate ? Math.hypot(l.gate[0] - tx, l.gate[1] - ty) : 0) : null, w = walkWords(secs);
       arms.push('→ ' + cap(l.next || l.to) + ', ' + l.dir + (w ? ', ' + w : '') + (l.next && l.next !== l.to ? ', then ' + l.to : l.past ? ', past ' + l.past : '') + '.'); }
     // a post at a place's own gate or door says where it stands (Thistledown's west gate: the town is through it)
     if (place && PLACE_WORDS[place]) { const b = box(place), here = b && (tx < b[0] || tx > b[2] || ty < b[1] || ty > b[3]) ? null : 'here';
       if (here) arms.unshift('Here: ' + cap(at.here || placeWords(place)) + '.'); else if (b) { const a = Math.atan2((b[1] + b[3]) / 2 - ty, (b[0] + b[2]) / 2 - tx); arms.unshift('→ ' + cap(placeWords(place)) + ', ' + COMPASS[((Math.round(a / (Math.PI / 4)) % 8) + 8) % 8] + '.'); } }
     return arms.length ? arms.join('   ') : null;
+  }
+  // the story signpost's words (02-world's SIGN_TILE, chapter 4; 06-systems says them and moves the quest on): its arms
+  // read from the roads like every other post's (Stage 6: the next stop, its way and the walk), in the story post's
+  // capitals, and Hollowford struck through and scorched, reached by the Long Road from the town the east arm names
+  function storySignText() {
+    const node = pointOf(['port', 'signpost.sign']), up = w => w.toUpperCase(), seen = new Set(), arms = [];
+    const strike = w => w.toUpperCase().split('').map(c => c + '̶').join('');
+    const legs = signLegs(node[0], node[1], 'signpost').filter(l => { const k = (l.next || l.to) + '|' + l.dir; if (seen.has(k)) return false; seen.add(k); return true; });
+    const secsOf = l => A.legSecs && l.k !== undefined ? A.legSecs(l.road, l.k, l.stopK) : null;
+    for (const l of legs) { const w = walkWords(secsOf(l)); arms.push('→ ' + up(l.next || l.to) + ', ' + l.dir + (w ? ', ' + w : '') + (l.next && l.next !== l.to ? ', then ' + l.to : '') + '.'); }
+    // Hollowford: the arm whose next stop is the town the Long Road leaves from, then the whole Long Road
+    const LR = TRACKS.r3_long, from = LR[0][0] === 'port' ? LR[0][1].split('.')[0] : null, via = legs.find(l => l.stopK !== undefined && TRACKS[l.road][l.stopK][0] === 'port' && TRACKS[l.road][l.stopK][1].split('.')[0] === from);
+    if (via) { const a = secsOf(via), b = A.legSecs ? A.legSecs('r3_long', 0, LR.length - 1) : null, w = walkWords(a !== null && b !== null ? a + b : null);
+      arms.push('→ ' + strike(placeWords('hollowford')) + ' (scorched), ' + via.dir + ' through ' + placeWords(from) + ', then ' + ROAD_WORDS.r3_long + (w ? ', ' + w : '') + '.'); }
+    return arms.join('   ');
   }
   function guards() {
     const out = [];
@@ -1298,7 +1317,7 @@ resize();
   Object.assign(A, {
     ANCHORS, PORTS, PORT_REL, TRACKS, WORLD, PINS, NESTED, OWNERS, REVS, PLAN: { W: PLAN_W, H: PLAN_H },
     frame, world: W, port, box, track, guards, anchorOf, oldToNew, oldToNewWorld,
-    MAIN_ROADS, ROAD_IDS, SIGNPOSTS, GROUNDS, pointOf, reserved, reservedAt, onMainRoad, signText, signLegs, signArms, walkWords, signWords: id => placeWords(id), legSecs: null, BUILT, markBuilt, isBuilt, builtAt, planFrame,
+    MAIN_ROADS, ROAD_IDS, SIGNPOSTS, GROUNDS, pointOf, reserved, reservedAt, onMainRoad, signText, storySignText, signLegs, signArms, walkWords, signWords: id => placeWords(id), legSecs: null, BUILT, markBuilt, isBuilt, builtAt, planFrame,
     frameProblems: () => problems.slice(), strict: () => [...STRICT.values()].map(e => e.slice()),
   });
 
@@ -2685,11 +2704,13 @@ function useAction() {
   const npc = npcInFront();
   const { tx, ty } = frontTile(player);
   const t = tileAt(tx, ty);
-  // a wandering villager standing in front of a board, station or door does not block it
-  if (npc && !(npc.wander && (SOLID.has(t) || PUSH_THROUGH.has(t)))) { talkTo(npc); return; }
+  // a wandering villager standing in front of a board, station or door does not block it; nor does anyone near a signpost
+  // the knight faces (Stage 6: Dunstan, two tiles from the post at his turn, answered for it)
+  if (npc && !((npc.wander || t === T.SIGN) && (SOLID.has(t) || PUSH_THROUGH.has(t)))) { talkTo(npc); return; }
   const b = buildingAt(tx, ty);
-  // the story's signpost (02-world's SIGN_TILE) moves the quest on; every other signpost reads its arms from the Atlas
-  if (t === T.SIGN && tx === SIGN_TILE.x && ty === SIGN_TILE.y) { say("→ THISTLEDOWN, east, 1 mile.   → GREY QUARRY, north.   → H̶O̶L̶L̶O̶W̶F̶O̶R̶D̶ (scorched), south-east over the Old Bridge.", 'Signpost'); if (quest.stage === 4) advanceQuest(5); return; }
+  // the story's signpost (02-world's SIGN_TILE) moves the quest on (its words: ATLAS.storySignText, the roads' arms with
+  // their walks and Hollowford struck through); every other signpost reads its arms from the Atlas
+  if (t === T.SIGN && tx === SIGN_TILE.x && ty === SIGN_TILE.y) { say(ATLAS.storySignText(), 'Signpost'); if (quest.stage === 4) advanceQuest(5); return; }
   if (t === T.SIGN) { say((window.ATLAS && ATLAS.signText && !window.__instance && ATLAS.signText(tx, ty)) || 'An old signpost. The words have worn away.', 'Signpost'); return; }
   if (t === T.CHEST) { if (b && b.coffin) { openPanel('coffin'); return; } if (b && b.id === 'bank') { openPanel('bank'); return; } openLootChest(tx, ty); return; }
   if (t === T.GOLDPILE) { notify("Death's gold. He is watching. Leave it."); return; }
@@ -5122,7 +5143,8 @@ window.FANGLANDS = {
     { // the signpost shows the struck-out name, not a note saying it was crossed out
       dialog.queue.length = 0; dialog.cur = null; F.tp(SIGN_TILE.x - 1, SIGN_TILE.y); F.face(SIGN_TILE.x, SIGN_TILE.y); F.press('KeyE'); F.sim(2, []);
       const txt = (dialog.cur && dialog.cur.text) || ''; const struck = 'HOLLOWFORD'.split('').map(c => c + '̶').join('');
-      check('signpost: HOLLOWFORD is struck through (U+0336 after every letter) and scorched, never "crossed out"', txt.includes('̶') && txt.includes(struck) && /scorched/.test(txt) && !/crossed out/.test(txt) && /THISTLEDOWN, east, 1 mile/.test(txt), { txt });
+      check('signpost: HOLLOWFORD is struck through (U+0336 after every letter) and scorched, never "crossed out"; every arm (the cave, Thistledown, Grey Quarry, Hollowford by the Long Road) names its way and the walk (Stage 6), never "1 mile"', txt.includes('̶') && txt.includes(struck) && /scorched/.test(txt) && !/crossed out/.test(txt) && !/mile/.test(txt)
+        && ['THE CAVE', 'THISTLEDOWN', 'GREY QUARRY'].every(w => new RegExp('→ ' + w + ', [a-z-]+, \\d+ (seconds|minutes?|and a half minutes) on foot\\.').test(txt)) && /\(scorched\), east through Thistledown, then the Long Road, [^.]* on foot\./.test(txt), { txt });
       dialog.queue.length = 0; dialog.cur = null; }
     { // gear tiers: every new item exists with the stated stats, colour, shape, stack 1, id; recipes at the stated level; bronze in the shops; sappers can drop bombs
       const A = { bronze_helm: ['helm', 3, '#b8863a'], bronze_body: ['body', 7, '#b8863a'], bronze_legs: ['legs', 5, '#b8863a'], bronze_shield: ['shield', 4, '#b8863a'], steel_legs: ['legs', 14, '#d5d9e0'], steel_shield: ['shield', 12, '#d5d9e0'] };
@@ -81151,10 +81173,8 @@ const MOUNT_LOOK = (() => {
     const P = new Uint8Array(MAP_W * MAP_H);
     const mark = b => { for (let y = Math.max(0, b[1]); y <= Math.min(MAP_H - 1, b[3]); y++) for (let x = Math.max(0, b[0]); x <= Math.min(MAP_W - 1, b[2]); x++) P[y * MAP_W + x] = 1; };
     for (const id of Object.keys(A.ANCHORS)) { if (OPEN_PLACES.has(id)) continue; const b = A.box(id); if (b) mark(b); }
-    // Hollowford's burn: the scorched ring the fire left round the ruins, 8 tiles out (97-spreadchecks' seam transects read
-    // its blend into the wood; a road paved through it would rule three of their lines): the roads come in on their old tracks
-    // (16 on its west side, where the transects run 16 tiles out into the wood: the Long Road comes in on its old track)
-    { const b = A.box('hollowford'); mark([b[0] - 16, b[1] - 8, b[2] + 8, b[3] + 8]); }
+    // (Hollowford's burn, the scorched ring round the ruins, is NOT kept: the Long Road and the Goblin Road are paved up to
+    // the town's own ground like every road at every place; 97-spreadchecks' seam transects step over a road's tiles)
     for (const [, info] of A.BUILT) if (info.box) mark(info.box);
     mark([VILLAGE.x0 - 1, VILLAGE.y0 - 1, VILLAGE.x1 + 1, VILLAGE.y1 + 1]);
     { const CP = A.frame('camp'), r = CP.box([147, 20, 158, 40]); mark([r[0] - 1, r[1] - 1, r[2] + 1, r[3] + 1]); }   // the palisade and a tile round it
@@ -81255,6 +81275,27 @@ const MOUNT_LOOK = (() => {
   // the Ashfields' open ground (11-main's count: grass, dirt and scorch between the ash), before and after the pass
   const afGreen = () => { const G = new Set([T.GRASS, T.DIRT, Tn('SCORCH')].filter(v => v >= 0)); let n = 0; for (let i = 0; i < map.length; i++) if (G.has(map[i]) && inAF(i % MAP_W, (i / MAP_W) | 0)) n++; return n; };
   RD.afGreen = afGreen;
+  // the cells Stage 4 laid each main road's dirt on (02-world's lay: two wide along its track's straight lines)
+  function oldLine() {
+    const OLD = new Uint8Array(MAP_W * MAP_H);
+    for (const id of A.MAIN_ROADS) { const pl = A.track(id);
+      for (let k = 1; k < pl.length; k++) { const [ax, ay] = pl[k - 1], [bx, by] = pl[k], n = Math.max(1, Math.round(Math.max(Math.abs(bx - ax), Math.abs(by - ay)))), level = Math.abs(bx - ax) >= Math.abs(by - ay);
+        for (let q = 0; q <= n; q++) { const x = Math.round(ax + (bx - ax) * q / n), y = Math.round(ay + (by - ay) * q / n);
+          for (const [px, py] of [[x, y], level ? [x, y + 1] : [x - 1, y]]) if (inMap(px, py)) OLD[py * MAP_W + px] = 1; } } }
+    return OLD;
+  }
+  // the dirt a main road no longer uses: DIRT reached from its old line through dirt (8 ways, up to 6 steps), not on the
+  // network, not in a place's ground (`own`), not on the ash, and not touching a track's own dirt
+  function oldDirt(OLD, own) {
+    const D = T.DIRT, depth = new Int8Array(MAP_W * MAP_H).fill(-1), q = [], out = [];
+    for (let i = 0; i < OLD.length; i++) if (OLD[i]) { depth[i] = 0; q.push(i); }
+    for (let k = 0; k < q.length; k++) { const c = q[k], x = c % MAP_W, y = (c / MAP_W) | 0; if (depth[c] >= 6) continue;
+      for (const [dx, dy] of N8) { const nx = x + dx, ny = y + dy; if (!inMap(nx, ny)) continue; const j = ny * MAP_W + nx; if (depth[j] >= 0 || map[j] !== D) continue; depth[j] = depth[c] + 1; q.push(j); } }
+    for (const i of q) { if (map[i] !== D || NET[i] || own[i]) continue; const x = i % MAP_W, y = (i / MAP_W) | 0;
+      if (inAF(x, y) || N8.some(([dx, dy]) => { const nx = x + dx, ny = y + dy; if (!inMap(nx, ny)) return false; const j = ny * MAP_W + nx; return NET[j] && map[j] === D; })) continue;
+      out.push(i); }
+    return out;
+  }
   function lay(api) {
     const t0 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
     const set = api.setTile;
@@ -81307,6 +81348,13 @@ const MOUNT_LOOK = (() => {
         if (NET[ny * MAP_W + nx] && t === T.DIRT) continue;   // a track's own dirt is the track's
         put(nx, ny, T_VERGE, 'verge'); S.verges++; }
     }
+    // the old dirt a main road left: Stage 4 laid each main road as a dirt track two wide on its track's straight lines
+    // (02-world), with the dirt that spreads off them; where the road as laid leaves that line (the Cave Road east along the
+    // story signpost's row, where the dirt went south and round), that dirt is a spur to nowhere: it goes back to grass
+    // (beside the road, the verge took it above). oldDirt (shared with the self-test) says which.
+    S.unlaid = 0;
+    const OLD = oldLine();
+    for (const i of oldDirt(OLD, PROTECT)) { put(i % MAP_W, (i / MAP_W) | 0, T.GRASS, 'old dirt'); S.unlaid++; }
     for (let i = 0; i < map.length; i++) if (NET[i] && map[i] !== T_ROAD && map[i] !== T_VERGE) S.adopted++;
     RD.changed = changed;
     S.ms = Math.round(((typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0) * 10) / 10;
@@ -81380,10 +81428,14 @@ const MOUNT_LOOK = (() => {
 
   // ---------- the footprint: every tile the pass changed or walked, grown by 2, as row runs (REVS[7]) ----------
   const REV = 7, FOOT = [];
-  if (A.REVS) A.REVS[REV] = { stage: '6', by: '93-roads', why: 'the roads: every tile the roads pass paved, walked or stood a thing on, grown by 2 (the road corridors and the cells beside them)', boxes: FOOT };
+  if (A.REVS) A.REVS[REV] = { stage: '6', by: '93-roads', why: 'the roads: every tile the roads pass changed or stood a thing, a person or a beast on, grown by 2 (the road corridors and the cells beside them)', boxes: FOOT };
   function footprint() {
     const grow = 2, mark = new Uint8Array(MAP_W * MAP_H), src = RD.changed;
-    for (let i = 0; i < src.length; i++) if (src[i] || NET[i]) { const x = i % MAP_W, y = (i / MAP_W) | 0;
+    // only what the pass changed or stood (the road and its verge, the felled trees and the old dirt, every thing, marker and
+    // moved sign) and where it put people and beasts (the traders, the named beasts): the tracks and the stretches of a road
+    // it only walked are not swept (a knight's machine 13 tiles from any new road is not his to lose); placePois marks a
+    // trader's and a beast's cell in RD.changed
+    for (let i = 0; i < src.length; i++) if (src[i]) { const x = i % MAP_W, y = (i / MAP_W) | 0;
       for (let dy = -grow; dy <= grow; dy++) for (let dx = -grow; dx <= grow; dx++) if (inMap(x + dx, y + dy)) mark[(y + dy) * MAP_W + x + dx] = 1; }
     FOOT.length = 0;
     for (let y = 0; y < MAP_H; y++) { let x = 0; while (x < MAP_W) { if (!mark[y * MAP_W + x]) { x++; continue; } const x0 = x; while (x < MAP_W && mark[y * MAP_W + x]) x++; FOOT.push([x0, y, x - 1, y]); } }
@@ -81828,16 +81880,21 @@ const MOUNT_LOOK = (() => {
       if (map[idx(m.x, m.y)] !== DECO.id) continue; out.push({ x: tc(m.x), y: m.y * TILE + TILE - 49, r: 110, kind: 'road lantern' }); }
   });
   // the stops along a road, in its order: the places its track names and the things beside it
+  // (a track point's place: a port's, or a place's own point; and that place in words, null when it has none)
+  const placeOfPt = q => q[0] === 'port' ? q[1].split('.')[0] : q[0] !== 'n' && q[0] !== 'w' ? q[0] : null;
+  const wordsOf = pl => { if (!pl || !A.signWords) return null; const w = A.signWords(pl); return w && w !== pl ? w : null; };
+  // (never the places the road starts or ends at: the Long Road's milestone by Thistledown does not list Thistledown, nor
+  // its own far end, by another of their ports on the way)
   function stopsOf(R) {
-    const out = [], pts = A.TRACKS[R.id], seen = new Set();
-    pts.forEach((q, k) => { const pl = q[0] === 'port' ? q[1].split('.')[0] : null; if (k === 0 || k === pts.length - 1 || !pl) return; const w = A.signWords ? A.signWords(pl) : pl; if (seen.has(w)) return; seen.add(w); out.push({ s: R.cum[k], name: w }); });
+    const out = [], pts = A.TRACKS[R.id], seen = new Set(), ends = new Set([placeOfPt(pts[0]), placeOfPt(pts[pts.length - 1])].filter(Boolean));
+    pts.forEach((q, k) => { const pl = q[0] === 'port' ? q[1].split('.')[0] : null; if (k === 0 || k === pts.length - 1 || !pl || ends.has(pl)) return; const w = A.signWords ? A.signWords(pl) : pl; if (seen.has(w)) return; seen.add(w); out.push({ s: R.cum[k], name: w }); });
     for (const p of RD.pois || []) if (p.road === R.id && p.at) out.push({ s: p.s || 0, name: p.name });
     return out.sort((a, b) => a.s - b.s).map(o => o.name);
   }
   RD.stopsOf = stopsOf;
   KINDS.milestone = { say: 'The milestone',
     use: c => { const R = RD.roads[c.road]; if (!R) return 'A milestone, worn smooth.';
-      const ends = A.TRACKS[R.id], far = c.end ? ends[0] : ends[ends.length - 1], farName = far[0] === 'port' && A.signWords ? A.signWords(far[1].split('.')[0]) : 'the far end';
+      const ends = A.TRACKS[R.id], far = c.end ? ends[0] : ends[ends.length - 1], farName = wordsOf(placeOfPt(far)) || 'the far end';
       const list = stopsOf(R), there = A.walkWords(R.length / WALK);
       return `${R.name}. ${R.sub}. To ${farName}: ${there} (half that on a horse).` + (list.length ? ` On the way: ${(c.end ? list.slice().reverse() : list).join(', ')}.` : ''); },
     // a squat grey stone with a rounded top and three cut lines
@@ -81946,7 +82003,8 @@ const MOUNT_LOOK = (() => {
     RD.stats.phases = ph; RD.stats.passMs = Math.round((now() - T0) * 10) / 10;
   });
   // the walk time of a leg (01-atlas signText asks it for every arm): the road's laid length over a knight's foot speed
-  A.legSecs = (id, k0, k1) => { const L = RD.span(id, k0, k1); return L === null ? null : L / WALK; };
+  // (`lead`: tiles walked before the leg starts, from a post across its own place to the gate the road leaves by)
+  A.legSecs = (id, k0, k1, lead) => { const L = RD.span(id, k0, k1); return L === null ? null : (L + (lead || 0)) / WALK; };
 
   // ---------- nothing is built on the road ----------
   { const _placeAction = placeAction;
@@ -82089,6 +82147,26 @@ const MOUNT_LOOK = (() => {
       const wide = A.MAIN_ROADS.every(id => { const R = RD.roads[id]; let three = 0, n = 0; for (const [x, y] of R.path) { if (PROTECT[y * MAP_W + x] || inAF(x, y)) continue; n++; const lr = map[y * MAP_W + x] === T_ROAD && ((isRoad(x - 1, y) && isRoad(x + 1, y)) || (isRoad(x, y - 1) && isRoad(x, y + 1))); if (lr) three++; } return n === 0 || three / n > 0.85; });
       check(P + `${roadN} tiles of road surface on the six main roads, three wide down the middle of the way, its edges kerbed by a verge (${Math.round(kerbed / Math.max(1, edges) * 100)}% of them: the rest a tree, a wall, the water or a place's ground), and every road on the line of the track Stage 4 laid (within 3 of it, outside the places)`,
         roadN > 1000 && kerbed / edges > 0.55 && wide && !off.length, { roadN, edges, kerbed, off, wide, verges: S.verges, felled: S.felled }); }
+    // 2b. paved all the way: on every main road, every cell of its way outside a place's own ground (its Atlas box, a built
+    //     place, a tile round a building, door or person), the ash and the water is ROAD: no stretch is left dirt for a
+    //     test's sake (the Long Road and the Goblin Road were dirt for 16 and 8 tiles short of Hollowford, its burn kept
+    //     for 97's seam lines); and the old dirt a main road left where it moved off its Stage 4 line is grass again (the
+    //     spur south of the story signpost)
+    { const own = new Uint8Array(MAP_W * MAP_H), mark = b => { for (let y = Math.max(0, b[1]); y <= Math.min(MAP_H - 1, b[3]); y++) for (let x = Math.max(0, b[0]); x <= Math.min(MAP_W - 1, b[2]); x++) own[y * MAP_W + x] = 1; };
+      for (const id of Object.keys(A.ANCHORS)) { if (OPEN_PLACES.has(id)) continue; const b = A.box(id); if (b) mark(b); }
+      for (const [, info] of A.BUILT) if (info.box) mark(info.box);
+      for (const b of BUILDINGS) mark([b.x - 1, b.y - 1, b.x + b.w, b.y + b.h]); for (const n of NPCS) mark([n.x - 1, n.y - 1, n.x + 1, n.y + 1]);
+      const runs = {}, WET = new Set(['WATER', 'BRIDGE'].map(Tn).filter(v => v >= 0));
+      for (const id of A.MAIN_ROADS) { let run = 0, worst = 0, at = null;
+        for (const [x, y] of RD.roads[id].path) { const i = y * MAP_W + x;
+          if (own[i] || PROTECT[i] || inAF(x, y) || WET.has(map[i]) || (window.DECO && DECO.isBridge(i)) || map[i] === T_ROAD) { run = 0; continue; }
+          if (++run > worst) { worst = run; at = [x, y]; } }
+        runs[id] = worst ? { worst, at } : 0; }
+      const both = new Uint8Array(MAP_W * MAP_H); for (let i = 0; i < both.length; i++) both[i] = own[i] || PROTECT[i];
+      const ghost = oldDirt(oldLine(), both).map(i => [i % MAP_W, (i / MAP_W) | 0]);
+      const [sx, sy] = A.port('signpost.sign').map(Math.round), spur = ghost.filter(([x, y]) => Math.abs(x - sx) <= 6 && y > sy && y - sy <= 8);
+      check(P + `every main road is paved all the way between places (outside a place's own ground, the ash and the water no cell of its way is left dirt: longest unpaved stretch ${Math.max(0, ...Object.values(runs).map(r => r ? r.worst : 0))} tiles), right up to Hollowford by the Long Road and the Goblin Road; the old dirt a road left off its Stage 4 line is grass again (${S.unlaid} tiles, the story signpost's spur among them)`,
+        Object.values(runs).every(r => !r || r.worst <= 2) && !ghost.length && !spur.length, { runs, ghost: ghost.slice(0, 10), spur, unlaid: S.unlaid }); }
     // 3. what it may not touch: no road, verge or thing inside a place's ground, a reserved plot or a built place (a road
     //    meets them at their gates), nothing laid on anything but ordinary ground, the Ashfields' open ground kept
     { const bad = [];
@@ -82103,7 +82181,15 @@ const MOUNT_LOOK = (() => {
         !bad.length && !inBuild && !onNpc.length && RD.afAfter >= RD.afBefore, { bad: bad.slice(0, 8), more: Math.max(0, bad.length - 8), inBuild, onNpc, afBefore: RD.afBefore, afAfter: RD.afAfter, laid: RD.laid.length }); }
     // 4. a signpost within 2 tiles of every fork (a node where three or more roads' legs meet): its road's tiles there
     { const forks = RD.forkList || [], bad = forks.filter(f => f.sign > 2).map(f => f.at.join(',') + ' ' + f.roads.join('/') + ' ' + f.sign);
-      check(P + `a signpost stands within 2 tiles of every one of the ${forks.length} forks (where three or more road legs meet), three of them new (the Glasshouse spur, the Old Barrow spur, Dunstan's turn) and one moved in (the Skypier lane's)`, forks.length >= 14 && !bad.length && !S.signsMissing.length, { bad, missing: S.signsMissing, added: S.signsAdded, moved: S.signsMoved }); }
+      // E at each post, from every open side facing it, reads the post (no one near it answers instead: Dunstan did, two
+      // tiles from the post at his turn)
+      const posts = (SP ? SP.signs.map(q => [q[0], q[1]]) : []).concat([[SIGN_TILE.x, SIGN_TILE.y]]), wrong = [];
+      h.peace(true); const px0 = player.x, py0 = player.y;
+      for (const [x, y] of posts) for (const [dx, dy] of N8) { const ax = x + dx, ay = y + dy; if (!inMap(ax, ay) || SOLID.has(tileAt(ax, ay)) || buildingAt(ax, ay)) continue;
+        dialog.queue.length = 0; dialog.cur = null; F.tp(ax, ay); F.face(x, y); F.press('KeyE');
+        const d = [dialog.cur, ...dialog.queue].find(Boolean); if (!d || d.who !== 'Signpost') wrong.push(x + ',' + y + ' from ' + ax + ',' + ay + ': ' + (d ? d.who : 'nothing')); }
+      dialog.queue.length = 0; dialog.cur = null; player.x = px0; player.y = py0; h.peace(false);
+      check(P + `a signpost stands within 2 tiles of every one of the ${forks.length} forks (where three or more road legs meet), three of them new (the Glasshouse spur, the Old Barrow spur, Dunstan's turn) and one moved in (the Skypier lane's); E at each of the ${posts.length} posts, from every open side, reads the post`, forks.length >= 14 && !bad.length && !S.signsMissing.length && !wrong.length, { bad, missing: S.signsMissing, added: S.signsAdded, moved: S.signsMoved, wrong: wrong.slice(0, 8) }); }
     // 5. every arm of every road's signpost names the next stop on that road and the walk to it; the walk is the road's laid
     //    length over a knight's foot speed (3.65 tiles a second)
     { const bad = [], sample = {};
@@ -82113,8 +82199,16 @@ const MOUNT_LOOK = (() => {
       if (mill) sample.mill = A.signText(mill[0], mill[1]);
       // the walk: the Cave Road's laid length from the cave to the Mill Lane fork, in seconds, as its arm says it
       const R = RD.roads.r1_cave, k = A.TRACKS.r1_cave.findIndex(q => q[0] === 'n' && q[1] === A.pointOf(A.SIGNPOSTS[0].at)[0]), secs = R && k > 0 ? R.cum[k] / WALK : null;
-      check(P + `every arm of every road's signpost (${SP ? SP.signs.length : 0}) names the next stop on its road and the walk to it ("→ Millbrook, south-west, 20 seconds on foot."), from the road's laid length at 3.65 tiles a second`,
-        !bad.length && !!mill && new RegExp('The cave, north-west, ' + A.walkWords(secs).replace(/ on foot$/, '') + ' on foot').test(sample.mill), { bad: bad.slice(0, 4), sample, caveSecs: secs && Math.round(secs * 10) / 10 }); }
+      // a post at a place's own node (Hollowford's square): an arm whose road leaves by another gate counts the walk from
+      // the post to that gate too (the Bandit Hills, 8.7 s of track and 18.4 tiles across the square: 15 seconds, not 10)
+      const across = [];
+      for (const [x, y, nx, ny] of (SP ? SP.signs : [])) { const node = A.SIGNPOSTS.find(q => { const p = A.pointOf(q.at).map(Math.round); return p[0] === nx && p[1] === ny; }); if (!node || node.at[0] !== 'port') continue;
+        const t = A.signText(x, y) || '';
+        for (const l of A.signArms(x, y)) { const pt = A.track(l.road)[Math.round(l.k)], np = A.pointOf(node.at); if (Math.hypot(pt[0] - np[0], pt[1] - np[1]) <= 2.5) continue;
+          const want = A.walkWords(RD.span(l.road, l.k, l.stopK) / WALK + Math.hypot(pt[0] - x, pt[1] - y) / WALK), name = (l.next || l.to);
+          across.push({ at: [x, y], arm: name, want, ok: t.includes(name.charAt(0).toUpperCase() + name.slice(1) + ', ' + l.dir + ', ' + want) }); } }
+      check(P + `every arm of every road's signpost (${SP ? SP.signs.length : 0}) names the next stop on its road and the walk to it ("→ Millbrook, south-west, 20 seconds on foot."), from the road's laid length at 3.65 tiles a second; at a place's own post an arm that leaves by another gate adds the walk across to it (${across.length} arms: ${across.map(a => a.arm.replace(/^the /i, '') + ' ' + a.want.replace(/ on foot$/, '')).join(', ')})`,
+        !bad.length && !!mill && new RegExp('The cave, north-west, ' + A.walkWords(secs).replace(/ on foot$/, '') + ' on foot').test(sample.mill) && across.length >= 2 && across.every(a => a.ok), { bad: bad.slice(0, 4), sample, caveSecs: secs && Math.round(secs * 10) / 10, across }); }
     // 6. the markers: a milestone at each end of every main road (E names the road, the far end with its walk, and every
     //    stop on the way), lanterns along the main roads lit at night, cairns along the tracks and the Ash Road's ash
     { const stones = [...RD.things].filter(([, c]) => c.kind === 'milestone'), byRoad = {}; for (const [, c] of stones) byRoad[c.road] = (byRoad[c.road] || 0) + 1;
@@ -82125,9 +82219,16 @@ const MOUNT_LOOK = (() => {
       const lant = Object.values(RD.roads).reduce((n, r) => n + (r.marks || []).filter(m => m.kind === 'road_lantern').length, 0), cairn = Object.values(RD.roads).reduce((n, r) => n + (r.marks || []).filter(m => m.kind === 'road_cairn').length, 0);
       const day = player.dayTime, lights = (dt) => { player.dayTime = dt; const out = []; for (const f of HOOKS.nightLights || []) f(out, 0, 0, MAP_W - 1, MAP_H - 1); return out.filter(l => l.kind === 'road lantern').length; };
       const night = lights(7 * 60 + 60 + 60), noon = lights(100); player.dayTime = day;
-      check(P + `a milestone stands at each end of every main road (${stones.length}), and E on the Cave Road's names the road, the walk to its far end and every stop on the way; ${lant} lantern posts along the main roads burn at night (none by day); ${cairn} cairns mark the tracks and the Ash Road across the ash`,
-        A.MAIN_ROADS.every(id => byRoad[id] >= 1) && stones.length >= 11 && !!said && /^The Cave Road\. /.test(said) && /on foot/.test(said) && /The Overturned Cart/.test(said) && /Grizzlejaw/.test(said) && lant >= 25 && night === lant && noon === 0 && cairn >= 8,
-        { byRoad, said, lant, night, noon, cairn, unplaced: S.unplaced }); }
+      // every milestone names the place at its far end (the Goblin Road's south stone named 'the far end': its track starts on
+      // the camp's own point, not a port), and its list of stops leaves out the places the road starts and ends at (the Long
+      // Road's stone by Thistledown listed Thistledown and Hollowford)
+      const stoneBad = [];
+      for (const [, c] of stones) { const R = RD.roads[c.road], pts = A.TRACKS[c.road], t = KINDS.milestone.use(c) || '', ends = [pts[0], pts[pts.length - 1]].map(q => wordsOf(placeOfPt(q))).filter(Boolean), way = (t.split(' On the way: ')[1] || '').replace(/\.$/, '').split(', ');
+        if (/the far end/.test(t) || !ends.includes(t.split('To ')[1].split(':')[0]) || way.some(w => ends.includes(w))) stoneBad.push(R.name + (c.end ? ' (end)' : ' (head)') + ': ' + t); }
+      const goblin = [...RD.things].filter(([, c]) => c.kind === 'milestone' && c.road === 'r4_goblin').map(([, c]) => KINDS.milestone.use(c));
+      check(P + `a milestone stands at each end of every main road (${stones.length}), and E on the Cave Road's names the road, the walk to its far end and every stop on the way; each names the place at its far end and never lists the road's own ends on the way (the Goblin Road's: "${(goblin.find(g => /To the Goblin Camp/.test(g)) || '').slice(0, 60)}..."); ${lant} lantern posts along the main roads burn at night (none by day); ${cairn} cairns mark the tracks and the Ash Road across the ash`,
+        A.MAIN_ROADS.every(id => byRoad[id] >= 1) && stones.length >= 11 && !!said && /^The Cave Road\. /.test(said) && /on foot/.test(said) && /The Overturned Cart/.test(said) && /Grizzlejaw/.test(said) && lant >= 25 && night === lant && noon === 0 && cairn >= 8 && !stoneBad.length && goblin.some(g => /To the Goblin Camp: /.test(g)),
+        { byRoad, said, lant, night, noon, cairn, unplaced: S.unplaced, stoneBad: stoneBad.slice(0, 6) }); }
     // 7. the places to stop for: every one placed beside its road, and walked to from the cave mouth (story gates open)
     { const pass = t => walkable(t), seen = new Uint8Array(MAP_W * MAP_H), q = []; const [mx, my] = A.port('cave.mouth').map(Math.round);
       const push = (x, y) => { if (!inMap(x, y)) return; const i = y * MAP_W + x; if (seen[i] || !pass(map[i])) return; seen[i] = 1; q.push(i); };
@@ -82252,7 +82353,18 @@ const MOUNT_LOOK = (() => {
       check(P + 'nothing is set down on the road: placing on it is refused in plain words', refused, { at, notice: notice && notice.text }); }
     // 16. the A* time budget: the whole roads pass is cheap (spec §7's boot budget holds the world; this pass is a small
     //     part of it), each search bounded to its leg's box plus 24
-    check(P + `the roads pass takes ${S.passMs} ms in all (its ${S.legs} A* searches ${S.aStarMs} ms, ${S.pops} cells settled): under 250 ms, the searches under 120 ms`, S.passMs < 250 && S.aStarMs < 120 && !S.failed.length, { passMs: S.passMs, aStarMs: S.aStarMs, pops: S.pops, legs: S.legs, failed: S.failed });
+    //     (counted in the work it does, not the clock: a busy machine took 225 to 495 ms over the same pass; the clock budget
+    //     is tools/boot-budget.mjs's, the whole world in 2.0 s; the times are printed here)
+    { const want = A.ROAD_IDS.reduce((n, id) => n + A.track(id).length - 1, 0);
+      check(P + `the roads pass is cheap by its work: ${S.legs} A* searches (one a leg, ${want} legs), ${S.pops} cells settled (under 40,000), none failed (this run: the pass ${S.passMs} ms, its searches ${S.aStarMs} ms)`, S.legs === want && S.pops < 40000 && !S.failed.length, { passMs: S.passMs, aStarMs: S.aStarMs, pops: S.pops, legs: S.legs, want, failed: S.failed, phases: S.phases }); }
+    // 16b. the footprint (REVS[7], the worldRev sweep) is what the pass changed or stood, grown by 2: every changed tile is
+    //     in it and no tile of it is further than 2 from one (it swept every track and adopted stretch: 4,442 tiles of
+    //     ground the roads never touched, a knight's bulldozer 13 tiles from any change among them)
+    { const ch = RD.changed, foot = RD.foot; let out = 0, far = 0, n = 0;
+      const grown = new Uint8Array(MAP_W * MAP_H); for (let i = 0; i < ch.length; i++) if (ch[i]) { const x = i % MAP_W, y = (i / MAP_W) | 0; for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) if (inMap(x + dx, y + dy)) grown[(y + dy) * MAP_W + x + dx] = 1; }
+      for (let i = 0; i < foot.length; i++) { if (foot[i]) n++; if (ch[i] && !foot[i]) out++; if (foot[i] && !grown[i]) far++; }
+      const runs = (A.REVS[7].boxes || []).reduce((m, b) => m + b[2] - b[0] + 1, 0);
+      check(P + `the worldRev 7 footprint is what the pass changed or stood, grown by 2 (${n} tiles in ${A.REVS[7].boxes.length} row runs): nothing changed outside it, nothing in it further than 2 from a change`, out === 0 && far === 0 && runs === n && n > 0, { n, out, far, runs }); }
     // 17. the horse on the road: a ride down every main road on the mare takes its length over 7.3 tiles a second, within 10%
     { const rides = A.MAIN_ROADS.map(id => RD.ride(id, F)), bad = rides.filter(r => !r || !r.done || r.err || Math.abs(r.off) > 10);
       check(P + `the mare on the road: a ride down each of the six main roads (${rides.map(r => r && (RD.roads[r.id].name.replace(/^The /, '') + ' ' + r.tiles + ' tiles ' + r.secs + ' s')).join(', ')}) takes its length over 7.3 tiles a second within 10%`,
@@ -88075,7 +88187,13 @@ const MOUNT_LOOK = (() => {
     const res = [];
     for (const s of seams()) {
       const runs = [];
-      for (const L0 of s.lines) {
+      const RV = new Set(['ROAD', 'VERGE'].map(Tn).filter(v => v >= 0)), along = (x0, y0, dx, dy) => { let n = 0; for (let t = -16; t <= 16; t++) { const x = x0 + dx * t, y = y0 + dy * t; if (inMap(x, y) && RV.has(map[y * MAP_W + x])) n++; } return n; };
+      for (const L1 of s.lines) {
+        // (a line that runs along a main road (Stage 6: the Long Road comes into Hollowford along the burn's lines) reads the
+        // road's own straight edge, not the seam: it is stepped off the road, up to 6 tiles either side, to the nearest line
+        // that only crosses it)
+        let L0 = L1;
+        if (along(L1.x, L1.y, L1.dx, L1.dy) >= 8) for (let o = 1; o <= 6 && L0 === L1; o++) for (const sg of [1, -1]) { const x = L1.x + L1.dy * o * sg, y = L1.y + L1.dx * o * sg; if (L0 === L1 && along(x, y, L1.dx, L1.dy) < 3) L0 = { x, y, dx: L1.dx, dy: L1.dy }; }
         // the border on this line: the first tile (from A's side) that is B's region, within 12 of the seam's line
         let L = L0; if (s.bRegion) for (let t = -12; t <= 12; t++) { const x = L0.x + L0.dx * t, y = L0.y + L0.dy * t; if (inMap(x, y) && s.bRegion.includes(regionAt(x, y).name)) { L = { x, y, dx: L0.dx, dy: L0.dy }; break; } }
         // how far B (or the fade) reaches onto A's side of the border, plus how far A (or the fade) reaches onto B's
@@ -88269,7 +88387,7 @@ const MOUNT_LOOK = (() => {
         check(PF + "the scarp seal: from the cave mouth the Wolfwood is reached by exactly the Old Bridge, the goblin-road bridge and the Agility 18 steps (all three shut: none of it; each one alone: all of it)",
           r.none.length === 0 && Object.values(r.each).every(n => n === 5) && Object.values(r.tiles).every(n => n > 0), r); }
       { const r = transects();
-        check(PF + "the land seams blend over 8 tiles or more: 20 lines across each (the Wolfwood / Jungle giants, the Ashfields' fade into the Jungle, the Jungle's edge on the Wilds, the burn round Hollowford, the quarry's edge), the median line's mixed run 8+ and no more than 5 lines nearly ruled (under 3: a road or a ford crossing); cliffs, water and story gates are exempt (SEAM_EXEMPT)",
+        check(PF + "the land seams blend over 8 tiles or more: 20 lines across each (the Wolfwood / Jungle giants, the Ashfields' fade into the Jungle, the Jungle's edge on the Wilds, the burn round Hollowford, the quarry's edge), the median line's mixed run 8+ and no more than 5 lines nearly ruled (under 3: a road or a ford crossing; a line along a main road is stepped off it); cliffs, water and story gates are exempt (SEAM_EXEMPT)",
           r.length === 5 && r.every(s => s.median >= 8 && s.runs.filter(v => v < 3).length <= 5), { seams: r.map(s => ({ id: s.id, median: s.median, min: s.min, ruled: s.runs.filter(v => v < 3).length, runs: s.runs.join(' ') })), exempt: SEAM_EXEMPT }); }
       { const bad = roadsClear();
         check(PF + "the main roads are clear surface: no solid tile and no builders' prop on either lane of the six main roads (gates, doors, the story signpost and Hollowford's ruins aside)", bad.length === 0, { bad: bad.slice(0, 10), more: Math.max(0, bad.length - 10) }); }
