@@ -350,8 +350,9 @@ const NECRO = (() => {
     if (spirit() < need) return refuse(`Not enough spirit (${Math.floor(spirit())} of ${need}). It refills by itself.`);
     const ok = DO[id](s);
     if (!ok) return false;
-    N().spirit -= need; N().known[id] = true;
-    if (s.rest) { if (s.id === 'walk') Q().walkUntil = (player.dayTime || 0) + s.rest; else Q().knightUntil = (player.dayTime || 0) + s.rest; }
+    N().known[id] = true;
+    if (id !== 'walk') N().spirit -= need;   // Grave Walk pays its spirit, its dust and its rest when the knight lands (stepWalk)
+    if (s.rest && s.id !== 'walk') Q().knightUntil = (player.dayTime || 0) + s.rest;
     else CD[id] = time + s.cd;
     STATS.cast++; lookC++; lookS = id;
     return true;
@@ -400,9 +401,9 @@ const NECRO = (() => {
       if (window.__instance) return refuse('Grave Walk only works under the open sky.');
       if (time - lastBlow < 10) return refuse('Too much fighting. Grave Walk needs 10 quiet seconds.');
       if (countItem('grave_dust') < 1) return refuse('Grave Walk needs 1 grave dust.');
-      CH.walk = { t: 0, x: player.x, y: player.y, hp: player.hp };
+      CH.walk = { t: 0, x: player.x, y: player.y, hp: player.hp, need: costOf(SPELL.walk) };
       notify('Stand still. The mist is rising.');
-      return true;   // the dust and the rest are paid now; moving breaks the channel (and the spell is spent)
+      return true;   // nothing is paid yet: the spirit, the dust and the rest are paid when he lands; a broken channel costs nothing
     },
   };
   // where Grave Walk lands: the Old Barrow's lych-gate (89-oldbarrow sets it); null until the place is built
@@ -434,7 +435,8 @@ const NECRO = (() => {
     CH.walk = null;
     const at = landing.at();
     if (!at) { notify('The mist has nowhere to take you yet.'); return; }
-    removeItem('grave_dust', 1);
+    if (countItem('grave_dust') < 1) { notify('The mist needs 1 grave dust.'); return; }
+    removeItem('grave_dust', 1); N().spirit = Math.max(0, N().spirit - (c.need || 0)); Q().walkUntil = (player.dayTime || 0) + SPELL.walk.rest;
     FLASHES.push({ kind: 'mist', x: player.x, y: player.y, t: 0, life: 1.2, map: 'over' });
     const s = safeSpot(tc(at[0]), tc(at[1]), player.r, 'player') || { x: tc(at[0]), y: tc(at[1]) };
     player.x = s.x; player.y = s.y; player.action = null;
@@ -830,12 +832,13 @@ const NECRO = (() => {
         INSTANCES.enter('spider_den'); notice = null; r.instance = !cast('walk') && /open sky/.test(notice ? notice.text : ''); INSTANCES.leave(); open();
         lastBlow = time; notice = null; r.fight = !cast('walk') && /quiet/.test(notice ? notice.text : ''); lastBlow = -1e9;
         player.mech = { kind: 'horse', hp: 10, maxHp: 10 }; notice = null; r.riding = !cast('walk') && /Climb down/.test(notice ? notice.text : ''); player.mech = keep.mech;
-        Q().walkUntil = 0; r.start = cast('walk'); tick(30); player.x += 30; tick(2); r.broken = !CH.walk && countItem('grave_dust') === 3;
+        Q().walkUntil = 0; const sp0 = N().spirit; r.start = cast('walk'); tick(30); player.x += 30; tick(2); r.broken = !CH.walk && countItem('grave_dust') === 3 && coolLeft(SPELL.walk) <= 0 && N().spirit >= sp0;
+        N().spirit = 30;
         Q().walkUntil = 0; const j0 = window.PLAYERS ? PLAYERS.presence().j : 0; r.start2 = cast('walk'); tick(140);
         const at = ATLAS.port('necromancy.door'), j1 = window.PLAYERS ? PLAYERS.presence().j : 0;
         r.landed = Math.floor(player.x / TILE) === Math.round(at[0]) && Math.abs(Math.floor(player.y / TILE) - Math.round(at[1])) <= 1 && countItem('grave_dust') === 2; r.jump = j1 === j0 + 1;
         r.rest = coolLeft(SPELL.walk) > 100 && RESTS_AWAY.RESTS.some(([k, f]) => k === 'necro' && f === 'walkUntil');
-        check(P + 'N7 Grave Walk: refused in an instance, within 10 s of a blow and while riding; a step during the 2 s channel breaks it; still for 2 s he wakes at the Old Barrow\'s lych-gate, one grave dust spent, a jump on presence (j + 1), and a 120 s rest on the day clock (96-rests lists it)',
+        check(P + 'N7 Grave Walk: refused in an instance, within 10 s of a blow and while riding; a step during the 2 s channel breaks it and costs nothing (no dust, no spirit, no rest); still for 2 s he wakes at the Old Barrow\'s lych-gate, one grave dust spent, a jump on presence (j + 1), and a 120 s rest on the day clock (96-rests lists it)',
           r.instance && r.fight && r.riding && r.start && r.broken && r.start2 && r.landed && r.jump && r.rest, r); }
       freshState(); empty();
       // ---- N8 Ghost Step ----
