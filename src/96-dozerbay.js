@@ -180,7 +180,7 @@
     return true;
   }
   // the first time down, Sprocket calls out (once a knight; his story is told when he is talked to)
-  function greet() { const b = S(); if (!b.met && !b.called) { b.called = true; say("Oi! A knight! Mind the oil. Come and say hello, I'm over by the posts.", 'Sprocket'); } }
+  function greet() { const b = S(); if (!b.met && !b.called) { b.called = true; say("Oi! A knight! Mind the oil. Come over here and say hello.", 'Sprocket'); } }
 
   // ---------- out: climb into a stored machine and drive it up onto the street ----------
   function takeOut(k) {
@@ -274,11 +274,11 @@
     if (c.kind === 'chest') { notify('Sprocket\'s tool chest. Every spanner has its own drawer.'); return; }
     if (c.kind === 'wheels') { notify('Spare wheels off machines that are not coming back.'); return; }
   }
-  // the fixture the knight faces (the core's front tile), else one he stands right beside
+  // the fixture the knight faces (the core's front tile)
   function faced() {
     if (!inBay() || player.dead || player.mech) return null;
-    const ft = frontTile(player); let c = tileAt(ft.tx, ft.ty) === T.TD_PROP ? cellAt(ft.tx, ft.ty) : null;
-    return c;
+    const ft = frontTile(player);
+    return tileAt(ft.tx, ft.ty) === T.TD_PROP ? cellAt(ft.tx, ft.ty) : null;
   }
   HOOKS.use.push((t, tx, ty) => {
     if (!inBay()) return false;
