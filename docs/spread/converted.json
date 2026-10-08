@@ -109,5 +109,7 @@
 "tools/teacher-browser.mjs",
 "86-outposts.js",
 "86-bandits.js",
-"86-banditart.js"
+"86-banditart.js",
+"84-ridetogether.js",
+"tools/mmo-sim-ride.js"
 ]

@@ -58,6 +58,7 @@ import { MoveCheck, MoveBook, wireMap } from './move.js';
 import { isHouse } from './atlas.js';
 import { MemoryStore, ALWAYS, WORD_LOCK_MS } from './store.js';
 import { Worlds } from './sim/worlds.js';
+import { Rides } from './ride.js';
 import {
   TILE, HAT_CHOICES, PARTY_LIFE, PRIZE_KEEP, LIGHT_RANGE, MAX_LIVE_CRACKERS, FUSE_MIN, FUSE_MAX, ID_RE,
   rollCracker, crackerId, parseCrackerId, checkTable, checkSpots, cryptoRandom, commas,
@@ -196,6 +197,8 @@ export class Room {
     this.sim = { move: this.move.mode };
     // the shared world, Stage 2: maps whose monsters the world's own game copy runs (the World gives it its SimHost)
     this.worlds = new Worlds(this, { book: opts.simBook || null, save: opts.simSave || (() => { }) });
+    // riding together (ride.js, docs/ONLINE.md "Riding together"): which friend rides in which seat of whose machine
+    this.rides = new Rides(this);
     this.knights = new Map();   // sock -> knight
     this.byName = new Map();    // lower-case name -> knight
     this.maps = new Map();      // map name -> { members: Set<knight>, keeper: knight|null }
@@ -392,6 +395,7 @@ export class Room {
     if (k.trade) this.cancelTrade(k.trade, 'left', k);
     this.dropAsk(k);
     for (const o of this.knights.values()) if (o.ask && o.ask.to === k.lc) { o.ask = null; this.send(o.sock, { t: 'trade_no', code: 'offline', n: k.name }); }
+    this.rides.gone(k);   // his seat is free; if he drove, his riders get down
     if (k.hello && k.map) this.leaveMap(k);
     // gifts on their way to this knight go straight back; gifts this knight sent have nowhere to go
     for (const g of Array.from(this.gifts.values())) {
@@ -483,23 +487,26 @@ export class Room {
     k.pAt = this.now();
     if (str.length > MAX_P) return this.strike(k, CAPS.p);
     const map = (typeof m.map === 'string' && m.map) ? mapKey(k, m.map.slice(0, 64)) : k.map;
-    let changed = false;
-    if (map !== k.map) { this.moveMap(k, map); changed = true; }
+    let changed = false, moved = false;
+    if (map !== k.map) { this.rides.moving(k); this.moveMap(k, map); changed = true; moved = true; }   // riders hear why before the left
     if (typeof m.region === 'string' && m.region.slice(0, 40) !== k.region) { k.region = m.region.slice(0, 40); changed = true; }
     if (typeof m.lv === 'number' && m.lv !== k.lv) { k.lv = m.lv; changed = true; }
     // where the knight stands, for the party, cracker and trade range checks
     if (Number.isFinite(m.x) && Number.isFinite(m.y)) { k.x = m.x; k.y = m.y; }
     k.dead = !!m.dead;
+    // riding together (ride.js): is the ride this presence names real? A real one is relayed as the world spells it, and a
+    // rider is judged at his machine's speed; anything else is taken off the relayed presence
+    const ride = this.rides.presence(k, m, moved);
     this.worlds.presence(k, m);   // a world-run map's copy is told where its knights are
     // the movement check only watches (move.js): it never sends, and nothing it finds changes what is relayed
-    try { this.move.judge(k, m, this.now()); } catch (e) { }
+    try { this.move.judge(k, ride.spd ? Object.assign({}, m, { spd: Math.max(typeof m.spd === 'number' ? m.spd : 0, ride.spd) }) : m, this.now()); } catch (e) { }
     // an open trade ends when either knight falls or walks away
     if (k.trade) { const o = this.otherOf(k.trade, k); if (k.dead) this.cancelTrade(k.trade, 'dead', k); else if (!this.within(k, o, TRADE_LEAVE, true)) this.cancelTrade(k.trade, 'far', k); }
     if (changed) { this.attach(k); this.rosterLater(); }
     this.keeperCheck(k, was);   // a quiet keeper on his map hands it to this knight, who is playing (KEEPER_STALE)
     this.retell(k);        // a map a wake rebuilt: everyone on it hears who keeps it, once
     // the role on a relayed p is always the server's word: whatever the sender put there is overwritten
-    const out = JSON.stringify(Object.assign({}, m, { t: 'p', n: k.name, map: wireMap(k.map), role: k.role }));
+    const out = JSON.stringify(Object.assign({}, m, { t: 'p', n: k.name, map: wireMap(k.map), role: k.role, ride: ride.ride || undefined }));
     k.last = out;
     for (const o of this.members(k.map)) if (o !== k) this.raw(o.sock, out);
     this.hooks.presence(k, m);   // the teacher view's frame rides on this (at most once a second, only while a screen is open)
