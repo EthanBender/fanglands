@@ -1023,10 +1023,11 @@ rev 6; straight (world 1 to rev 7) fixture + matrix + the same export 120/120; 0
 **Proved on this build:** `./build.sh` (literals 0 bare, changetile, compass, boot budget: node 1,290 ms, Chromium 4x
 2,289 ms); headless ALL 1494; `--play` ALL 1495, the Fang dead; online 442; mmo-sim 43, `--room` 43, `--sim` 47; dom-keys
 16; mmo-sim-admin 8; mmo-sim-party 18; mmo-sim-teacher 9; sim-suite 28; mmo-sim-world 16; build-sim `--strip --reads`;
-atlas-drift; the footprint; the migration as above. Shots: `~/.fanglands/work/spread/s6b/shots/` (the Mill Lane fork and
+atlas-drift; the footprint; the migration as above. Shots: `~/.fanglands/work/spread/s6-roads-shot-*.png` (the Mill Lane fork and
 its signpost, a lantern road at night, the Cave Road's milestone, the Drovers' Track, the goblin-road bridge, the Old
 Bridge, a cairn on the ash, the mare on the Sea Road; laptop 1280x800 and iPad 1024x768); full map
-`s6b/fullmap-roads.png`. The fingerprint baseline is this build's (0a9081a8bd939131).
+`s6-roads-fullmap.png`. Deployed to the TEST world (test.gorkscape.ca, WORLD_REV 7) after a backup
+(`~/.fanglands/backups/20261007-202337-pre-roads-test`), nobody online. The fingerprint baseline is this build's (0a9081a8bd939131).
 
 ## Proving "nothing visible changed" (spec §9.4)
 
